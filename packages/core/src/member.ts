@@ -49,11 +49,16 @@ export const memberSessionSchema = z.object({
 
 export type MemberSession = z.infer<typeof memberSessionSchema>
 
-/** Admin-side creation: no password, the member sets one by registering with the same email. */
-export const createMemberSchema = z.object({
+/**
+ * Admin-side creation. There is no password field on purpose: a member's password is theirs to
+ * choose, so adding one here emails them a link instead. Nobody hands out a credential they know.
+ *
+ * Strict, so a caller still sending `password` is told it is refused rather than watching it be
+ * silently dropped and wondering later why the account it thought it made cannot sign in.
+ */
+export const createMemberSchema = z.strictObject({
   email: z.email(),
   name: z.string().min(1).max(120),
-  password: passwordSchema.optional(),
 })
 
 export type CreateMemberInput = z.infer<typeof createMemberSchema>

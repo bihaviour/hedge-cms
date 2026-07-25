@@ -1,6 +1,6 @@
 import { ROLES, roleAtLeast, SITE_ROLES, type SiteRole, type User } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { KeySquare, Trash2, UserPlus } from 'lucide-react'
+import { KeySquare, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
@@ -48,6 +48,12 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       toast.success('User removed')
     },
+    onError: (error) => toast.error(error.message),
+  })
+
+  const resend = useMutation({
+    mutationFn: api.auth.resendInvite,
+    onSuccess: () => toast.success('Invite sent again'),
     onError: (error) => toast.error(error.message),
   })
 
@@ -133,16 +139,30 @@ export function UsersPage() {
                       {formatDate(user.createdAt)}
                     </TableCell>
                     <TableCell>
-                      {user.role !== 'owner' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Remove ${user.name}`}
-                          onClick={() => remove.mutate(user.id)}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      )}
+                      <div className="flex justify-end gap-1">
+                        {user.pending && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Resend the invite to ${user.email}`}
+                            title="Resend invite"
+                            disabled={resend.isPending}
+                            onClick={() => resend.mutate(user.id)}
+                          >
+                            <Send className="size-4" />
+                          </Button>
+                        )}
+                        {user.role !== 'owner' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Remove ${user.name}`}
+                            onClick={() => remove.mutate(user.id)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -43,8 +43,20 @@ export class ApiError extends Error {
     return new ApiError('not_found', `${what} not found`)
   }
 
+  /**
+   * The site the request asked for does not exist. Still a 404, but distinguishable, so the admin
+   * can tell "the site I remembered is gone" from "the entry you asked for is gone".
+   */
+  static unknownSite(selector: string) {
+    return new ApiError('unknown_site', `No site matches "${selector}"`)
+  }
+
   static conflict(message: string) {
     return new ApiError('conflict', message)
+  }
+
+  static rateLimited(message = 'Too many requests — try again shortly') {
+    return new ApiError('rate_limited', message)
   }
 
   static fromZod(error: ZodError): ApiError {

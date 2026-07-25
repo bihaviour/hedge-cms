@@ -49,6 +49,67 @@ export function inviteEmail(
   }
 }
 
+/**
+ * Members read these on the website, not in the admin, so both links are handed in by the caller:
+ * one points at the site's own reset page, the other at the Worker route that marks the address
+ * verified.
+ */
+
+/**
+ * What an admin-added member gets. It is the same link as a reset — the difference is that there
+ * is no password to reset yet, which is exactly how this email is chosen over the other one.
+ */
+export function memberInviteEmail(
+  env: Bindings,
+  args: { to: string; name: string; setUrl: string },
+): EmailMessage {
+  return {
+    to: args.to,
+    subject: `Set up your ${env.APP_NAME} account`,
+    html: layout(
+      env.APP_NAME,
+      `Hi ${args.name}, your account is ready`,
+      `<p style="margin:0">Choose a password to finish setting up the account for ${args.to}. This link expires in 24 hours — ask for a new one if it lapses.</p>`,
+      { url: args.setUrl, label: 'Set your password' },
+    ),
+    text: `Hi ${args.name},\n\nChoose a password to finish setting up your account (expires in 24 hours):\n${args.setUrl}\n`,
+  }
+}
+
+export function memberResetEmail(
+  env: Bindings,
+  args: { to: string; name: string; token: string; resetUrl: string },
+): EmailMessage {
+  return {
+    to: args.to,
+    subject: `Reset your password`,
+    html: layout(
+      env.APP_NAME,
+      'Reset your password',
+      `<p style="margin:0">We received a request to reset the password for ${args.to}. This link expires in 24 hours. If you didn't ask for this, you can ignore this email.</p>`,
+      { url: args.resetUrl, label: 'Reset password' },
+    ),
+    text: `Hi ${args.name},\n\nReset your password here (expires in 24 hours):\n${args.resetUrl}\n\nIf you didn't request this, ignore this email.\n`,
+  }
+}
+
+export function memberVerifyEmail(
+  env: Bindings,
+  args: { to: string; name: string; verifyUrl: string },
+): EmailMessage {
+  return {
+    to: args.to,
+    subject: `Confirm your email address`,
+    html: layout(
+      env.APP_NAME,
+      'Confirm your email address',
+      `<p style="margin:0">Confirm ${args.to} so we know we can reach you. This link expires in 24 hours.</p>`,
+      { url: args.verifyUrl, label: 'Confirm email' },
+    ),
+    text: `Hi ${args.name},\n\nConfirm your email address (expires in 24 hours):\n${args.verifyUrl}\n`,
+  }
+}
+
 export function passwordResetEmail(
   env: Bindings,
   args: { to: string; name: string; token: string },

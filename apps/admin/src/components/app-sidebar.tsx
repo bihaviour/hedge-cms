@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronsUpDown, Layers, LogOut, Plus } from 'lucide-react'
 import type * as React from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +20,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -29,6 +31,19 @@ import {
 import { useLogout } from '@/hooks/use-session'
 import { useActiveSite, useActiveSiteSlug, useSwitchSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
+
+/** Your own profile and credentials. Reached from the footer, not from the nav. */
+const ACCOUNT_PATH = '/settings/account'
+
+/** Up to two letters, so a long name and a mononym both come out the same size. */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  const letters = parts.length > 1 ? [parts[0]!, parts.at(-1)!] : [parts[0] ?? '?']
+  return letters
+    .map((part) => part[0]!.toUpperCase())
+    .join('')
+    .slice(0, 2)
+}
 
 /**
  * Static nav. Collections fills its sub-items from the API; everything else is fixed.
@@ -126,18 +141,33 @@ export function AppSidebar({
 
       <SidebarFooter>
         <SidebarMenu>
+          {/*
+            The profile bar is a link to your own account, not a menu: the one thing it does
+            besides that is sign out, and that needs its own button — leaving on the way to
+            changing a password is exactly the accident this avoids.
+          */}
           <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              onClick={() => logout.mutate()}
-              disabled={logout.isPending}
-            >
-              <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-xs capitalize opacity-70">{user.role}</span>
-              </div>
-              <LogOut className="ml-auto size-4" />
+            <SidebarMenuButton size="lg" asChild isActive={pathname === ACCOUNT_PATH}>
+              <NavLink to={ACCOUNT_PATH}>
+                <Avatar className="size-8 rounded-lg">
+                  <AvatarFallback className="rounded-lg">{initials(user.name)}</AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left leading-tight">
+                  <span className="truncate font-medium">{user.name}</span>
+                  <span className="truncate text-xs opacity-70">{user.email}</span>
+                </div>
+              </NavLink>
             </SidebarMenuButton>
+
+            <SidebarMenuAction
+              className="top-1/2 -translate-y-1/2"
+              aria-label="Sign out"
+              title="Sign out"
+              disabled={logout.isPending}
+              onClick={() => logout.mutate()}
+            >
+              <LogOut />
+            </SidebarMenuAction>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

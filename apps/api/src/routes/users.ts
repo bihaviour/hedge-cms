@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
-import { sites, siteUsers, users } from '../db/schema'
+import { accounts, sites, siteUsers, users } from '../db/schema'
 import type { AppEnv } from '../env'
 import { requireActor, requireRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
@@ -11,19 +11,27 @@ import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
-const toUser = (row: typeof users.$inferSelect): User & { pending: boolean } => ({
+const toUser = (row: typeof users.$inferSelect, pending = false): User & { pending: boolean } => ({
   id: row.id,
   email: row.email,
   name: row.name,
   role: row.role,
-  createdAt: row.createdAt,
-  pending: row.passwordHash === null,
+  createdAt: row.createdAt.toISOString(),
+  pending,
 })
 
 app.get('/', requireRole('admin'), async (c) => {
   const db = getDb(c.env)
-  const rows = await db.select().from(users).orderBy(asc(users.createdAt))
-  return c.json({ data: rows.map(toUser) })
+
+  // "Pending" is now the absence of a credential: an invited user has a row here from the moment
+  // they are invited, but no password until they follow the link.
+  const rows = await db
+    .select({ user: users, credential: accounts.id })
+    .from(users)
+    .leftJoin(accounts, and(eq(accounts.userId, users.id), eq(accounts.providerId, 'credential')))
+    .orderBy(asc(users.createdAt))
+
+  return c.json({ data: rows.map((row) => toUser(row.user, row.credential === null)) })
 })
 
 app.patch('/:id', requireRole('admin'), async (c) => {
@@ -47,7 +55,7 @@ app.patch('/:id', requireRole('admin'), async (c) => {
     .set({
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.role !== undefined ? { role: input.role } : {}),
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(),
     })
     .where(eq(users.id, id))
     .returning()

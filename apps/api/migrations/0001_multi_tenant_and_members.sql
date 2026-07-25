@@ -39,11 +39,15 @@ ALTER TABLE `entries` ADD `visibility` text DEFAULT 'public' NOT NULL;--> statem
  Everything that existed before this migration belonged to a single implicit site. Create it and
  move all of that content onto it, so a single-site install sees no change.
 
+ Only for an instance that was already in use, which is what the `users` check means: a database
+ migrated from empty has nothing to move, and its first site is the one the owner names in the
+ onboarding wizard. Handing them a site called "Default site" would be a decision made for them.
+
  `site_id` is NOT NULL and carries a foreign key, which SQLite cannot add to an existing table —
  hence the create/copy/drop/rename dance below rather than a plain ADD COLUMN.
 */
 INSERT INTO `sites` (`id`, `slug`, `name`, `description`, `domain`, `allow_member_signup`, `created_at`, `updated_at`)
-VALUES (
+SELECT
 	'sit_default',
 	'default',
 	'Default site',
@@ -52,7 +56,7 @@ VALUES (
 	1,
 	strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
 	strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-);
+WHERE EXISTS (SELECT 1 FROM `users`);
 --> statement-breakpoint
 PRAGMA defer_foreign_keys = on;--> statement-breakpoint
 CREATE TABLE `__new_collections` (

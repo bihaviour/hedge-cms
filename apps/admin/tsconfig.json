@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    // `bun` is here for the test files only — the app itself runs in a browser.
+    "types": ["vite/client", "bun"],
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {

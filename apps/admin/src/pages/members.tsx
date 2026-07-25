@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, CircleCheck, Trash2, UserPlus } from 'lucide-react'
+import { Ban, CircleCheck, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { EmptyState, PageHeader } from '@/components/page-header'
@@ -63,6 +63,12 @@ export function MembersPage() {
     onError: (error) => toast.error(error.message),
   })
 
+  const resend = useMutation({
+    mutationFn: api.members.invite,
+    onSuccess: () => toast.success('Invite sent again'),
+    onError: (error) => toast.error(error.message),
+  })
+
   return (
     <>
       <PageHeader
@@ -75,7 +81,7 @@ export function MembersPage() {
         actions={
           <Button onClick={() => setOpen(true)}>
             <UserPlus className="size-4" />
-            Add member
+            Invite member
           </Button>
         }
       />
@@ -95,10 +101,10 @@ export function MembersPage() {
             title="No members yet"
             description={
               site?.allowMemberSignup
-                ? 'Visitors can register themselves at POST /api/v1/member/register, or you can add one here.'
-                : 'Signup is off for this site, so members can only be added here.'
+                ? 'Visitors can register themselves at POST /api/v1/member/register, or you can invite one here.'
+                : 'Signup is off for this site, so members can only be invited from here.'
             }
-            action={<Button onClick={() => setOpen(true)}>Add a member</Button>}
+            action={<Button onClick={() => setOpen(true)}>Invite a member</Button>}
           />
         )}
 
@@ -120,8 +126,13 @@ export function MembersPage() {
                     <TableCell className="font-medium">{member.name}</TableCell>
                     <TableCell className="text-muted-foreground">{member.email}</TableCell>
                     <TableCell>
-                      <Badge variant={member.status === 'active' ? 'secondary' : 'outline'}>
-                        {member.status}
+                      {/* Invited but not yet arrived: the account exists, the password does not. */}
+                      <Badge
+                        variant={
+                          member.pending || member.status === 'blocked' ? 'outline' : 'secondary'
+                        }
+                      >
+                        {member.pending ? 'invited' : member.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
@@ -129,6 +140,18 @@ export function MembersPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        {member.pending && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Resend the invite to ${member.email}`}
+                            title="Resend invite"
+                            disabled={resend.isPending}
+                            onClick={() => resend.mutate(member.id)}
+                          >
+                            <Send className="size-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -181,15 +204,19 @@ function AddMemberDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({ name: '', email: '', password: '' })
+  const [form, setForm] = useState({ name: '', email: '' })
 
   const create = useMutation({
     mutationFn: api.members.create,
-    onSuccess: () => {
+    onSuccess: (member) => {
       queryClient.invalidateQueries({ queryKey: ['members'] })
-      toast.success('Member added')
+      toast.success(
+        member.pending
+          ? `Invite sent to ${member.email}`
+          : `${member.name} already had an account and now reads this site too`,
+      )
       onOpenChange(false)
-      setForm({ name: '', email: '', password: '' })
+      setForm({ name: '', email: '' })
     },
     onError: (error) => toast.error(error.message),
   })
@@ -200,18 +227,14 @@ function AddMemberDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            create.mutate({
-              name: form.name,
-              email: form.email,
-              ...(form.password ? { password: form.password } : {}),
-            })
+            create.mutate(form)
           }}
         >
           <DialogHeader>
-            <DialogTitle>Add a member</DialogTitle>
+            <DialogTitle>Invite a member</DialogTitle>
             <DialogDescription>
-              Leave the password empty and they can claim the account by registering on the site
-              with this email.
+              They get an email with a link to choose their own password. You never set one for
+              them.
             </DialogDescription>
           </DialogHeader>
 
@@ -235,18 +258,6 @@ function AddMemberDialog({
                 onChange={(event) => setForm({ ...form, email: event.target.value })}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="member-password">Password (optional)</Label>
-              <Input
-                id="member-password"
-                type="password"
-                minLength={12}
-                autoComplete="new-password"
-                value={form.password}
-                onChange={(event) => setForm({ ...form, password: event.target.value })}
-              />
-              <p className="text-muted-foreground text-xs">At least 12 characters if set.</p>
-            </div>
           </div>
 
           <DialogFooter>
@@ -254,7 +265,7 @@ function AddMemberDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={create.isPending || !form.email}>
-              Add member
+              Send invite
             </Button>
           </DialogFooter>
         </form>

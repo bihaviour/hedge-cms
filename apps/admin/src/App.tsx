@@ -1,8 +1,11 @@
-import { Navigate, Route, Routes } from 'react-router'
+import { OAUTH_CONSENT_PATH, roleAtLeast } from '@hedge/core'
+import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { AppLayout } from '@/components/app-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession, useSetupRequired } from '@/hooks/use-session'
+import { useSites } from '@/hooks/use-site'
 import { AcceptInvitePage } from '@/pages/accept-invite'
+import { AccountPage } from '@/pages/account'
 import { ApiKeysPage } from '@/pages/api-keys'
 import { CollectionSettingsPage } from '@/pages/collection-settings'
 import { CollectionsPage } from '@/pages/collections'
@@ -11,13 +14,16 @@ import { EntryEditorPage } from '@/pages/entry-editor'
 import { LoginPage } from '@/pages/login'
 import { MediaPage } from '@/pages/media'
 import { MembersPage } from '@/pages/members'
-import { SetupPage } from '@/pages/setup'
+import { OAuthConsentPage } from '@/pages/oauth-consent'
+import { OnboardingPage } from '@/pages/onboarding'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
 
 export function App() {
   const session = useSession()
   const setup = useSetupRequired()
+  const sites = useSites({ enabled: Boolean(session.data) })
+  const location = useLocation()
 
   if (session.isLoading || setup.isLoading) {
     return (
@@ -40,8 +46,8 @@ export function App() {
     return (
       <Routes>
         {publicRoutes}
-        <Route path="/setup" element={<SetupPage />} />
-        <Route path="*" element={<Navigate to="/setup" replace />} />
+        <Route path="/onboarding" element={<OnboardingPage hasAccount={false} />} />
+        <Route path="*" element={<Navigate to="/onboarding" replace />} />
       </Routes>
     )
   }
@@ -51,7 +57,24 @@ export function App() {
       <Routes>
         {publicRoutes}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Keep the query: an MCP client's authorization request is carried in it, and dropping
+            it here would leave the client waiting on a callback that never arrives. */}
+        <Route path="*" element={<Navigate to={`/login${location.search}`} replace />} />
+      </Routes>
+    )
+  }
+
+  /**
+   * Setup that stopped after the account was made leaves an instance with nowhere to put content,
+   * so the wizard is picked up where it was left rather than dropping the owner into an admin with
+   * no site. Only for someone who can actually create one — an editor with no grants sees the app,
+   * and an empty site switcher, which is the truth about their access rather than a wizard they
+   * would be refused.
+   */
+  if (sites.data?.length === 0 && roleAtLeast(session.data.role, 'admin')) {
+    return (
+      <Routes>
+        <Route path="*" element={<OnboardingPage hasAccount />} />
       </Routes>
     )
   }
@@ -71,7 +94,10 @@ export function App() {
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />
+        <Route path="/settings/account" element={<AccountPage />} />
       </Route>
+      {/* Outside the app shell: it is a decision to make, not a place to browse. */}
+      <Route path={OAUTH_CONSENT_PATH} element={<OAuthConsentPage />} />
       <Route path="*" element={<Navigate to="/collections" replace />} />
     </Routes>
   )

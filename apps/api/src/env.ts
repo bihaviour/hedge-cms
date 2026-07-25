@@ -13,15 +13,26 @@ export interface Bindings {
   EMAIL_FROM: string
   EMAIL_FROM_NAME: string
 
-  /** HMAC key for session ids, invite tokens and API key hashing. */
+  /**
+   * Better Auth's signing secret, and the HMAC key for delivery API keys and invite tokens.
+   * Rotating it invalidates every session, every invite link and every API key.
+   */
   AUTH_SECRET: string
 }
 
-/** A caller allowed into the CMS: a signed-in user, or an API key acting on one site's behalf. */
+/**
+ * A caller allowed into the CMS.
+ *
+ * `kind` is *who* is acting: a person, or a key acting for one site. `via` is what they presented,
+ * which matters because the three credentials do not reach the same routes — a delivery key is
+ * only resolved on the delivery API, and an OAuth token only on the MCP endpoint.
+ */
 export interface Actor {
   kind: 'user' | 'api_key'
+  via: 'session' | 'oauth' | 'api_key'
   id: string
   role: Role
+  /** Scopes carried by a key or a delegated OAuth client. Empty for a signed-in user. */
   scopes: string[]
   /** Set for API keys, which are issued per site. Users are global to the deployment. */
   siteId: string | null

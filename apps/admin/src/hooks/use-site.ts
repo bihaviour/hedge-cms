@@ -4,8 +4,8 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { getActiveSite, setActiveSite, subscribeToActiveSite } from '@/lib/active-site'
 import { api } from '@/lib/api'
 
-export function useSites() {
-  return useQuery({ queryKey: ['sites'], queryFn: api.sites.list, staleTime: 60_000 })
+export function useSites({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({ queryKey: ['sites'], queryFn: api.sites.list, staleTime: 60_000, enabled })
 }
 
 /**

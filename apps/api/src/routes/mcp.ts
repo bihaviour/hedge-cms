@@ -1,15 +1,17 @@
 import {
   type CreateCollectionInput,
   createCollectionSchema,
+  MCP_SCOPES,
   roleAtLeast,
   slugSchema,
   type UpdateCollectionInput,
   updateCollectionSchema,
 } from '@hedge/core'
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
 import { z } from 'zod'
+import { getCmsAuth } from '../auth/cms'
 import type { AppEnv, Bindings } from '../env'
-import { currentSiteRole, requireActor, requireSiteRole } from '../lib/auth'
+import { currentSiteRole, userRole } from '../lib/auth'
 import {
   createCollection,
   deleteCollection,
@@ -139,26 +141,70 @@ function collectionTools(
 }
 
 /**
- * The MCP endpoint. Authentication and site resolution are the same as the rest of the API — an
- * API key (bound to its site) or a signed-in user selecting a site. The connection itself needs
- * at least viewer access; finer-grained checks live on each tool.
+ * An unauthenticated MCP request is answered with the challenge RFC 9728 defines, pointing at the
+ * metadata document that tells a client where to get a token. That pointer is the whole reason a
+ * client can connect with nothing but a URL: it discovers the authorization server, registers
+ * itself, and sends the operator through a browser sign-in.
  */
-app.post('/', requireSiteRole('viewer'), async (c) => {
-  const actor = requireActor(c)
+function challenge(c: Context<AppEnv>, message: string) {
+  const value = `Bearer resource_metadata="${c.env.PUBLIC_URL}/.well-known/oauth-protected-resource"`
+  c.header('WWW-Authenticate', value)
+  c.header('Access-Control-Expose-Headers', 'WWW-Authenticate')
+  return c.json({ jsonrpc: '2.0', id: null, error: { code: -32000, message } }, 401)
+}
+
+/**
+ * The MCP endpoint.
+ *
+ * Callers authenticate with an OAuth 2.1 access token — not with a delivery API key, which is the
+ * credential a public website holds and has no business rewriting content models. The token acts
+ * for the user who approved it, so their site role still decides what it can reach; the token's
+ * scopes only ever narrow that further.
+ */
+app.post('/', async (c) => {
+  const token = await getCmsAuth(c.env).api.getMcpSession({ headers: c.req.raw.headers })
+  if (!token) return challenge(c, 'Unauthorized: Authentication required')
+
   const site = requireSite(c)
+  const role = await userRole(c.env, token.userId)
+  if (!role) return challenge(c, 'Unauthorized: the account behind this token no longer exists')
+
+  const scopes = token.scopes.split(/[\s,]+/).filter(Boolean)
+  c.set('actor', {
+    kind: 'user',
+    via: 'oauth',
+    id: token.userId,
+    role,
+    scopes,
+    siteId: null,
+  })
+
+  const siteRole = await currentSiteRole(c)
+  if (!siteRole) {
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32000, message: `You do not have access to the "${site.slug}" site` },
+      },
+      403,
+    )
+  }
 
   const read = () => {
-    if (actor.kind === 'api_key' && !actor.scopes.includes('content:read')) {
-      throw new McpToolError('API key is missing the "content:read" scope')
+    if (!scopes.includes(MCP_SCOPES.collectionsRead)) {
+      throw new McpToolError(
+        `This client was not granted the "${MCP_SCOPES.collectionsRead}" scope`,
+      )
     }
   }
   const write = async () => {
-    if (actor.kind === 'api_key') {
-      if (!actor.scopes.includes('collections:write')) {
-        throw new McpToolError('API key is missing the "collections:write" scope')
-      }
-      return
+    if (!scopes.includes(MCP_SCOPES.collectionsWrite)) {
+      throw new McpToolError(
+        `This client was not granted the "${MCP_SCOPES.collectionsWrite}" scope`,
+      )
     }
+    // The scope is what the operator delegated; the role is what they actually have. Both apply.
     const role = await currentSiteRole(c)
     if (!role || !roleAtLeast(role, 'admin')) {
       throw new McpToolError(`Requires admin access to the "${site.slug}" site`)
