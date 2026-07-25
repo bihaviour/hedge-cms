@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import {
   createEntrySchema,
   createSiteSchema,
+  entryMetadataSchema,
   memberRegisterSchema,
   setSiteRoleSchema,
+  siteMetadataSchema,
   updateCollectionSchema,
   updateEntrySchema,
+  updateSiteConfigSchema,
 } from './index'
 
 describe('updateEntrySchema', () => {
@@ -82,5 +85,45 @@ describe('memberRegisterSchema', () => {
 describe('updateCollectionSchema', () => {
   test('does not default `kind` when omitted', () => {
     expect(updateCollectionSchema.parse({ name: 'Renamed' }).kind).toBeUndefined()
+  })
+})
+
+describe('siteMetadataSchema', () => {
+  test('fills empty defaults for the array fields', () => {
+    const parsed = siteMetadataSchema.parse({})
+    expect(parsed.keywords).toEqual([])
+    expect(parsed.custom).toEqual([])
+  })
+
+  test('rejects a custom metadata key that is unsafe to emit into a tag', () => {
+    expect(
+      siteMetadataSchema.safeParse({ custom: [{ key: 'og:title', value: 'ok' }] }).success,
+    ).toBe(true)
+    expect(
+      siteMetadataSchema.safeParse({ custom: [{ key: 'has spaces', value: 'x' }] }).success,
+    ).toBe(false)
+  })
+})
+
+describe('entryMetadataSchema', () => {
+  test('defaults noIndex off and custom to an empty record', () => {
+    const parsed = entryMetadataSchema.parse({})
+    expect(parsed.noIndex).toBe(false)
+    expect(parsed.custom).toEqual({})
+  })
+})
+
+describe('updateSiteConfigSchema', () => {
+  test('accepts metadata and custom field definitions together', () => {
+    const parsed = updateSiteConfigSchema.parse({
+      metadata: { description: 'A site' },
+      customFields: [{ kind: 'url', name: 'social', label: 'Social' }],
+    })
+    expect(parsed.metadata?.description).toBe('A site')
+    expect(parsed.customFields?.[0]?.kind).toBe('url')
+  })
+
+  test('leaves both keys optional so one can be updated alone', () => {
+    expect(updateSiteConfigSchema.parse({}).metadata).toBeUndefined()
   })
 })

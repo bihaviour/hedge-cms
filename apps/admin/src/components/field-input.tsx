@@ -163,6 +163,50 @@ export function FieldInput({
           />
         )
 
+      case 'url':
+        return (
+          <Input
+            id={id}
+            type="url"
+            inputMode="url"
+            placeholder="https://example.com"
+            value={String(value ?? '')}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )
+
+      case 'email':
+        return (
+          <Input
+            id={id}
+            type="email"
+            inputMode="email"
+            placeholder="name@example.com"
+            value={String(value ?? '')}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )
+
+      case 'color':
+        return (
+          <div className="flex items-center gap-2">
+            <Input
+              id={id}
+              type="color"
+              className="h-9 w-14 p-1"
+              value={/^#[0-9a-fA-F]{6}$/.test(String(value)) ? String(value) : '#000000'}
+              onChange={(event) => onChange(event.target.value)}
+            />
+            <Input
+              aria-label={`${field.label} hex value`}
+              className="font-mono"
+              placeholder="#000000"
+              value={String(value ?? '')}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          </div>
+        )
+
       case 'json':
         return (
           <Textarea

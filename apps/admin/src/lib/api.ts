@@ -18,6 +18,7 @@ import type {
   UpdateCollectionInput,
   UpdateEntryInput,
   UpdateMemberInput,
+  UpdateSiteConfigInput,
   UpdateSiteInput,
   User,
   UserSession,
@@ -140,6 +141,9 @@ export const api = {
     create: (input: CreateSiteInput) => request<Site>('/sites', { method: 'POST', ...json(input) }),
     update: (slug: string, input: UpdateSiteInput) =>
       request<Site>(`/sites/${slug}`, { method: 'PATCH', ...json(input) }),
+    /** A site's own metadata defaults and custom fields — authorised at the site level. */
+    updateConfig: (slug: string, input: UpdateSiteConfigInput) =>
+      request<Site>(`/sites/${slug}/config`, { method: 'PATCH', ...json(input) }),
     remove: (slug: string) => request<void>(`/sites/${slug}`, { method: 'DELETE' }),
   },
 
