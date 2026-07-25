@@ -63,7 +63,11 @@ const NAV = [
   },
   {
     title: 'Audience',
-    items: [{ title: 'Members', url: '/members' }],
+    items: [
+      { title: 'Members', url: '/members' },
+      { title: 'Newsletters', url: '/newsletters' },
+      { title: 'Subscribers', url: '/subscribers' },
+    ],
   },
   {
     title: 'Email',

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { DEFAULT_EMAIL_TEMPLATES } from '@hedge/core'
-import { renderMessage } from './render'
+import { renderMessage, renderNewsletter } from './render'
 
 const vars = { to: 'reader@example.com', name: 'Alex', url: 'https://cms.example/accept?token=abc' }
 
@@ -48,5 +48,24 @@ describe('renderMessage', () => {
     expect(message.text).not.toContain('<')
     expect(message.text).toContain('reader@example.com')
     expect(message.text.trim().endsWith(vars.url)).toBe(true)
+  })
+})
+
+describe('renderNewsletter', () => {
+  const args = {
+    subject: 'Issue #1',
+    body: '<p>Hello there</p>',
+    unsubscribeUrl: 'https://cms.example/api/v1/newsletter/unsubscribe?token=xyz',
+  }
+
+  test('wraps the body and always includes the unsubscribe link', () => {
+    const message = renderNewsletter('Hedge', args)
+
+    expect(message.subject).toBe('Issue #1')
+    expect(message.html).toContain('Hello there')
+    expect(message.html).toContain(args.unsubscribeUrl)
+    expect(message.html.toLowerCase()).toContain('unsubscribe')
+    // The plain-text alternative carries the link too.
+    expect(message.text).toContain(args.unsubscribeUrl)
   })
 })

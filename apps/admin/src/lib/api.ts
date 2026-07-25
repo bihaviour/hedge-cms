@@ -7,7 +7,9 @@ import type {
   CreateCollectionInput,
   CreateEntryInput,
   CreateMemberInput,
+  CreateNewsletterInput,
   CreateSiteInput,
+  CreateSubscriberInput,
   EmailConfig,
   EmailLog,
   EmailTemplate,
@@ -17,15 +19,21 @@ import type {
   ListEntriesQuery,
   Media,
   Member,
+  Newsletter,
+  NewsletterAudience,
+  SendResult,
   Site,
   SiteAccess,
   SiteRole,
+  Subscriber,
   UpdateCollectionInput,
   UpdateEmailConfigInput,
   UpdateEmailTemplateInput,
   UpdateEntryInput,
   UpdateMemberInput,
+  UpdateNewsletterInput,
   UpdateSiteInput,
+  UpdateSubscriberInput,
   User,
   UserSession,
 } from '@hedge/core'
@@ -268,6 +276,41 @@ export const api = {
     config: () => request<EmailConfig>('/email/config'),
     updateConfig: (input: UpdateEmailConfigInput) =>
       request<EmailConfig>('/email/config', { method: 'PATCH', ...json(input) }),
+  },
+
+  /** Per-site newsletter subscriber list. `pending` has no meaning here — everyone is just an email. */
+  subscribers: {
+    list: (query: { q?: string; cursor?: string } = {}) => {
+      const params = new URLSearchParams(
+        Object.entries(query).filter(([, value]) => value) as [string, string][],
+      )
+      return requestPage<Subscriber>(`/subscribers?${params}`)
+    },
+    create: (input: CreateSubscriberInput) =>
+      request<Subscriber>('/subscribers', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateSubscriberInput) =>
+      request<Subscriber>(`/subscribers/${id}`, { method: 'PATCH', ...json(input) }),
+    remove: (id: string) => request<void>(`/subscribers/${id}`, { method: 'DELETE' }),
+  },
+
+  /** Per-site newsletter campaigns. */
+  newsletters: {
+    list: (cursor?: string) =>
+      requestPage<Newsletter>(
+        `/newsletters${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+      ),
+    get: (id: string) => request<Newsletter>(`/newsletters/${id}`),
+    create: (input: CreateNewsletterInput) =>
+      request<Newsletter>('/newsletters', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateNewsletterInput) =>
+      request<Newsletter>(`/newsletters/${id}`, { method: 'PATCH', ...json(input) }),
+    remove: (id: string) => request<void>(`/newsletters/${id}`, { method: 'DELETE' }),
+    /** How many recipients the given audience would reach right now. */
+    recipientCount: (audience: NewsletterAudience) =>
+      request<{ count: number }>(`/newsletters/recipients/count?audience=${audience}`),
+    test: (id: string, email: string) =>
+      request<{ ok: true }>(`/newsletters/${id}/test`, { method: 'POST', ...json({ email }) }),
+    send: (id: string) => request<SendResult>(`/newsletters/${id}/send`, { method: 'POST' }),
   },
 }
 

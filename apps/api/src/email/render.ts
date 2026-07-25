@@ -51,6 +51,41 @@ export function layout(
 </html>`
 }
 
+/**
+ * A newsletter message: the author's HTML body wrapped in the branded card, with a required
+ * unsubscribe footer. Kept separate from `layout` because a newsletter has no heading/CTA slot —
+ * the body is the whole message — and every one must carry a working unsubscribe link.
+ */
+export function renderNewsletter(
+  appName: string,
+  args: { subject: string; body: string; unsubscribeUrl: string },
+): EmailMessage {
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f6f6f7;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;color:#18181b">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="center">
+        <table role="presentation" width="100%" style="max-width:600px;background:#fff;border-radius:12px;padding:32px">
+          <tr><td>
+            <p style="margin:0 0 24px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#71717a">${appName}</p>
+            <div style="font-size:15px;line-height:1.6;color:#18181b">${args.body}</div>
+            <hr style="margin:32px 0 16px;border:none;border-top:1px solid #e4e4e7" />
+            <p style="margin:0;font-size:12px;color:#a1a1aa">You are receiving this because you subscribed to ${appName}. <a href="${args.unsubscribeUrl}" style="color:#71717a">Unsubscribe</a>.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`
+
+  const text = `${args.body
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()}\n\n—\nUnsubscribe: ${args.unsubscribeUrl}\n`
+
+  return { to: '', subject: args.subject, html, text }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')

@@ -298,6 +298,11 @@ export const memberSites = sqliteTable(
     status: text('status', { enum: ['active', 'blocked'] })
       .notNull()
       .default('active'),
+    /** Whether this member receives the site's newsletter. Cleared by the unsubscribe link, so a
+     * member can drop the newsletter without losing their account or gated-content access. */
+    newsletterSubscribed: integer('newsletter_subscribed', { mode: 'boolean' })
+      .notNull()
+      .default(true),
     lastLoginAt: text('last_login_at'),
     createdAt: text('created_at')
       .notNull()
@@ -554,6 +559,64 @@ export const emailConfig = sqliteTable('email_config', {
   ...timestamps,
 })
 
+/* ------------------------------------------------------------------ *
+ * Newsletters. Per-site — a newsletter is audience content, so it hangs off `siteId` like
+ * collections and members, unlike the deployment-level email management above.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A per-site list of newsletter recipients that are not necessarily members: just an email address,
+ * a name, and whether they are still subscribed. Public signup adds a row; the unsubscribe link
+ * flips its status rather than deleting it, so a re-subscribe is recognisable and an address is
+ * never silently re-added after opting out.
+ */
+export const newsletterSubscribers = sqliteTable(
+  'newsletter_subscribers',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    name: text('name'),
+    status: text('status', { enum: ['subscribed', 'unsubscribed'] })
+      .notNull()
+      .default('subscribed'),
+    source: text('source'),
+    unsubscribedAt: text('unsubscribed_at'),
+    ...timestamps,
+  },
+  (t) => [
+    // One row per address per site; a site gets its own list.
+    uniqueIndex('newsletter_subscribers_site_email_idx').on(t.siteId, t.email),
+    index('newsletter_subscribers_site_idx').on(t.siteId),
+  ],
+)
+
+/** A newsletter campaign. Draft until sent; `recipientCount` and `sentAt` are filled on send. */
+export const newsletters = sqliteTable(
+  'newsletters',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    subject: text('subject').notNull(),
+    body: text('body').notNull(),
+    status: text('status', { enum: ['draft', 'sending', 'sent'] })
+      .notNull()
+      .default('draft'),
+    audience: text('audience', { enum: ['subscribers', 'members', 'both'] })
+      .notNull()
+      .default('both'),
+    sentAt: text('sent_at'),
+    recipientCount: integer('recipient_count'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [index('newsletters_site_idx').on(t.siteId, t.createdAt)],
+)
+
 export type SiteRow = typeof sites.$inferSelect
 export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
@@ -568,3 +631,5 @@ export type OAuthApplicationRow = typeof oauthApplications.$inferSelect
 export type EmailTemplateRow = typeof emailTemplates.$inferSelect
 export type EmailLogRow = typeof emailLog.$inferSelect
 export type EmailConfigRow = typeof emailConfig.$inferSelect
+export type NewsletterSubscriberRow = typeof newsletterSubscribers.$inferSelect
+export type NewsletterRow = typeof newsletters.$inferSelect

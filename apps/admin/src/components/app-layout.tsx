@@ -20,6 +20,8 @@ const LABELS: Record<string, string> = {
   collections: 'Collections',
   media: 'Media',
   members: 'Members',
+  newsletters: 'Newsletters',
+  subscribers: 'Subscribers',
   settings: 'Settings',
   sites: 'Sites',
   users: 'Users',
