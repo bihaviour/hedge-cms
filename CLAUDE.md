@@ -1,0 +1,95 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Hedge is a headless CMS running entirely on Cloudflare Workers — one Worker serves the admin SPA,
+the management API, a cached delivery API, media, and an MCP endpoint. Bun workspaces monorepo.
+
+## Detailed rules — read the relevant file before working in that area
+
+These are **not** loaded automatically. Read the file when the task touches its area; that keeps
+this document short and the detail close to the code it governs.
+
+| Read | Before |
+| --- | --- |
+| `.claude/rules/api-routes.md` | Adding or changing a Worker route: the credential-by-prefix pipeline, the two authorization levels, errors, validation, pagination, caching |
+| `.claude/rules/auth.md` | Sessions, invites, members, or the MCP OAuth server: the two Better Auth instances and the policy that must not drift |
+| `.claude/rules/database.md` | Touching `schema.ts` or writing a query: the migration workflow, SQLite limits, tenancy, timestamp formats |
+| `.claude/rules/admin-ui.md` | Changing the React admin: the API client, active-site handling, shadcn, adding a field kind |
+| `.claude/rules/workers-config.md` | Editing `wrangler.jsonc`, adding a binding, or deploying |
+
+When something in a rule file turns out to be wrong or incomplete, fix that file — don't move the
+correction into this one.
+
+## Commands
+
+```bash
+bun run dev:api          # Worker on :8787 (wrangler dev — emulates D1, R2, assets locally)
+bun run dev:admin        # Admin SPA on :5173, proxies /api and /media to :8787
+```
+
+Both are needed for local work; run them in separate terminals. No Cloudflare account required
+locally. Emails aren't sent in development — invite and reset links print to the `dev:api` console.
+
+```bash
+bun run lint             # biome check .          (lint:fix to write)
+bun run typecheck        # tsc --noEmit in every workspace
+bun test                 # bun's runner, whole repo
+bun test apps/api/src/lib/mcp.test.ts          # one file
+bun test -t 'rejects a plain code challenge'   # one test by name
+bun run build            # core typecheck → admin vite build → worker dry-run bundle
+```
+
+CI (`.github/workflows/ci.yml`) runs `cf-typegen`, then lint, typecheck, test, build. Run all four
+before opening a PR — `/gh` (`.claude/skills/gh/SKILL.md`) does this and the codegen checks for you.
+
+```bash
+bun run db:generate      # drizzle-kit generate — a migration from schema.ts changes
+bun run db:migrate       # apply to local D1
+bun run db:migrate:remote
+bun run db:seed          # apps/api/seeds/dev.sql
+bun run cf-typegen       # regenerate worker-configuration.d.ts after wrangler.jsonc edits
+```
+
+First-time setup also needs `echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > apps/api/.dev.vars`
+and real D1/R2 ids pasted into `apps/api/wrangler.jsonc`.
+
+A `PostToolUse` hook (`.claude/hooks/check.sh`) runs `biome check --write` on every file you edit and
+typechecks the owning workspace, blocking on failures. Don't reformat by hand.
+
+## Layout
+
+| Path | What |
+| --- | --- |
+| `apps/api/` | The Worker: Hono routes, Better Auth, Drizzle/D1, R2, email, MCP |
+| `apps/admin/` | React 19 + Vite + Tailwind v4 SPA, built to `dist/` and served by the Worker |
+| `packages/core/` | Zod schemas, wire types, roles, field kinds — imported by both sides |
+
+`@hedge/core` is consumed as source (no build step; its `build` is just a typecheck). The admin
+aliases it to `packages/core/src/index.ts` in `vite.config.ts`; `@/` maps to `apps/admin/src`.
+
+**A shape crossing the wire is defined once, in `packages/core`.** Both sides import it, so an API
+change that breaks the admin fails typecheck instead of failing in a browser. Never redeclare a
+request or response type in `apps/api` or `apps/admin`.
+
+## Invariants
+
+Details are in the rule files; these are the ones worth knowing before you read anything.
+
+- **Credentials are separated by route prefix, in middleware** (`apps/api/src/index.ts`), so a
+  delivery API key cannot reach the management API even if a route's own check is wrong. A new
+  management route must be added to `ADMIN_PREFIXES`.
+- **Operators and website members are two Better Auth instances over separate tables.** A member
+  token isn't rejected by the admin API, it's unresolvable there.
+- **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
+  (`site_users`) are checked independently in `lib/auth.ts`.
+- **`siteId` is the tenant boundary.** A content query that doesn't filter on it is a bug.
+- **Generated files are committed, never hand-edited**: `migrations/` + `migrations/meta/` from
+  `db:generate`, `worker-configuration.d.ts` from `cf-typegen`, `apps/admin/src/components/ui/` from
+  the shadcn CLI (also excluded from linting).
+
+## Style
+
+Biome: single quotes, no semicolons, 100 columns, 2-space indent. Comments explain non-obvious
+decisions, not what the code already says — the existing code is heavily commented in that style,
+so match it rather than stripping or padding it.
