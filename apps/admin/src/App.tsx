@@ -9,6 +9,9 @@ import { AccountPage } from '@/pages/account'
 import { ApiKeysPage } from '@/pages/api-keys'
 import { CollectionSettingsPage } from '@/pages/collection-settings'
 import { CollectionsPage } from '@/pages/collections'
+import { EmailLogPage } from '@/pages/email-log'
+import { EmailSettingsPage } from '@/pages/email-settings'
+import { EmailTemplatesPage } from '@/pages/email-templates'
 import { EntriesPage } from '@/pages/entries'
 import { EntryEditorPage } from '@/pages/entry-editor'
 import { LoginPage } from '@/pages/login'
@@ -94,6 +97,9 @@ export function App() {
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />
+        <Route path="/settings/email" element={<EmailSettingsPage />} />
+        <Route path="/settings/email/templates" element={<EmailTemplatesPage />} />
+        <Route path="/settings/email/log" element={<EmailLogPage />} />
         <Route path="/settings/account" element={<AccountPage />} />
       </Route>
       {/* Outside the app shell: it is a decision to make, not a place to browse. */}

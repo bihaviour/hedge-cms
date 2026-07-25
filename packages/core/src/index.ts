@@ -1,6 +1,7 @@
 export * from './api'
 export * from './auth'
 export * from './collection'
+export * from './email'
 export * from './entry'
 export * from './fields'
 export * from './media'

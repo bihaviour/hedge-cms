@@ -66,6 +66,14 @@ const NAV = [
     items: [{ title: 'Members', url: '/members' }],
   },
   {
+    title: 'Email',
+    items: [
+      { title: 'Settings', url: '/settings/email', instanceOnly: true },
+      { title: 'Templates', url: '/settings/email/templates', instanceOnly: true },
+      { title: 'Log', url: '/settings/email/log', instanceOnly: true },
+    ],
+  },
+  {
     title: 'Settings',
     items: [
       { title: 'Sites', url: '/settings/sites', instanceOnly: true },

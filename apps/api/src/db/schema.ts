@@ -1,3 +1,4 @@
+import { EMAIL_STATUSES, EMAIL_TEMPLATE_KEYS } from '@hedge/core'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 const timestamps = {
@@ -492,6 +493,67 @@ export const media = sqliteTable(
   ],
 )
 
+/* ------------------------------------------------------------------ *
+ * Email. Templates, a log of every send, and sender configuration.
+ *
+ * These are deployment-level, not site-scoped: there is one Cloudflare Email binding and one
+ * onboarded `from` domain per deployment, so email is infrastructure the instance owns rather than
+ * content a tenant owns — the same reason it sits behind the instance-admin role in the admin, next
+ * to users and sites.
+ * ------------------------------------------------------------------ */
+
+/**
+ * An override of a built-in system email. A row exists only when an operator has customised that
+ * template; its absence is what "use the default" means. Keyed by `key`, one row per template.
+ */
+export const emailTemplates = sqliteTable(
+  'email_templates',
+  {
+    id: text('id').primaryKey(),
+    key: text('key', { enum: EMAIL_TEMPLATE_KEYS }).notNull(),
+    subject: text('subject').notNull(),
+    heading: text('heading').notNull(),
+    body: text('body').notNull(),
+    ctaLabel: text('cta_label'),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('email_templates_key_idx').on(t.key)],
+)
+
+/** A record of every email Hedge composed, whether it was sent, skipped, or rejected. */
+export const emailLog = sqliteTable(
+  'email_log',
+  {
+    id: text('id').primaryKey(),
+    to: text('to').notNull(),
+    subject: text('subject').notNull(),
+    /** The template that produced it, or null for a one-off. */
+    templateKey: text('template_key', { enum: EMAIL_TEMPLATE_KEYS }),
+    status: text('status', { enum: EMAIL_STATUSES }).notNull(),
+    error: text('error'),
+    // Ids are timestamp-prefixed, so paginating by id desc is newest-first without a second index.
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [index('email_log_created_at_idx').on(t.createdAt)],
+)
+
+/**
+ * Singleton sender configuration, always stored under the id `default`. Overrides layer on top of
+ * the `EMAIL_FROM` / `EMAIL_FROM_NAME` environment variables; a null column falls back to those.
+ */
+export const emailConfig = sqliteTable('email_config', {
+  id: text('id').primaryKey(),
+  fromEmail: text('from_email'),
+  fromName: text('from_name'),
+  replyTo: text('reply_to'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+})
+
 export type SiteRow = typeof sites.$inferSelect
 export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
@@ -503,3 +565,6 @@ export type EntryRow = typeof entries.$inferSelect
 export type MediaRow = typeof media.$inferSelect
 export type ApiKeyRow = typeof apiKeys.$inferSelect
 export type OAuthApplicationRow = typeof oauthApplications.$inferSelect
+export type EmailTemplateRow = typeof emailTemplates.$inferSelect
+export type EmailLogRow = typeof emailLog.$inferSelect
+export type EmailConfigRow = typeof emailConfig.$inferSelect

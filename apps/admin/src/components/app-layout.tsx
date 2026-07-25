@@ -24,6 +24,9 @@ const LABELS: Record<string, string> = {
   sites: 'Sites',
   users: 'Users',
   'api-keys': 'API keys',
+  email: 'Email',
+  templates: 'Templates',
+  log: 'Log',
   entries: 'Entries',
   new: 'New',
 }

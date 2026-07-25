@@ -8,6 +8,11 @@ import type {
   CreateEntryInput,
   CreateMemberInput,
   CreateSiteInput,
+  EmailConfig,
+  EmailLog,
+  EmailTemplate,
+  EmailTemplateKey,
+  EmailTemplatePreview,
   Entry,
   ListEntriesQuery,
   Media,
@@ -16,6 +21,8 @@ import type {
   SiteAccess,
   SiteRole,
   UpdateCollectionInput,
+  UpdateEmailConfigInput,
+  UpdateEmailTemplateInput,
   UpdateEntryInput,
   UpdateMemberInput,
   UpdateSiteInput,
@@ -237,6 +244,30 @@ export const api = {
     create: (input: CreateApiKeyInput) =>
       request<ApiKey & { key: string }>('/api-keys', { method: 'POST', ...json(input) }),
     remove: (id: string) => request<void>(`/api-keys/${id}`, { method: 'DELETE' }),
+  },
+
+  /** Deployment-wide email management: system templates, the send log, and sender config. */
+  email: {
+    templates: () => request<EmailTemplate[]>('/email/templates'),
+    template: (key: EmailTemplateKey) => request<EmailTemplate>(`/email/templates/${key}`),
+    updateTemplate: (key: EmailTemplateKey, input: UpdateEmailTemplateInput) =>
+      request<EmailTemplate>(`/email/templates/${key}`, { method: 'PUT', ...json(input) }),
+    /** Removes the override, restoring the built-in default. */
+    resetTemplate: (key: EmailTemplateKey) =>
+      request<EmailTemplate>(`/email/templates/${key}`, { method: 'DELETE' }),
+    /** Renders an unsaved draft with sample data for the editor's preview. */
+    previewTemplate: (key: EmailTemplateKey, input: UpdateEmailTemplateInput) =>
+      request<EmailTemplatePreview>(`/email/templates/${key}/preview`, {
+        method: 'POST',
+        ...json(input),
+      }),
+
+    log: (cursor?: string) =>
+      requestPage<EmailLog>(`/email/log${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+
+    config: () => request<EmailConfig>('/email/config'),
+    updateConfig: (input: UpdateEmailConfigInput) =>
+      request<EmailConfig>('/email/config', { method: 'PATCH', ...json(input) }),
   },
 }
 

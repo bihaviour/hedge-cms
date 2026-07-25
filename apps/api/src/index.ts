@@ -17,6 +17,7 @@ import apiKeys from './routes/api-keys'
 import auth from './routes/auth'
 import collections from './routes/collections'
 import content from './routes/content'
+import email from './routes/email'
 import entries from './routes/entries'
 import mcp from './routes/mcp'
 import media from './routes/media'
@@ -35,6 +36,7 @@ const ADMIN_PREFIXES = [
   '/api/v1/collections',
   '/api/v1/media',
   '/api/v1/members',
+  '/api/v1/email',
 ]
 
 const DELIVERY_PREFIX = '/api/v1/content'
@@ -179,6 +181,7 @@ app.route('/api/v1/api-keys', apiKeys)
 app.route('/api/v1/collections', collections)
 app.route('/api/v1/collections/:collection/entries', entries)
 app.route('/api/v1/media', media)
+app.route('/api/v1/email', email)
 app.route('/api/v1/content', content)
 // Model Context Protocol endpoint — collection management for MCP clients (Streamable HTTP).
 app.route('/api/v1/mcp', mcp)
