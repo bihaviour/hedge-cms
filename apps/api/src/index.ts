@@ -14,6 +14,7 @@ import auth from './routes/auth'
 import collections from './routes/collections'
 import content from './routes/content'
 import entries from './routes/entries'
+import mcp from './routes/mcp'
 import media from './routes/media'
 import members, { memberAuth } from './routes/members'
 import sites from './routes/sites'
@@ -68,6 +69,8 @@ app.route('/api/v1/collections', collections)
 app.route('/api/v1/collections/:collection/entries', entries)
 app.route('/api/v1/media', media)
 app.route('/api/v1/content', content)
+// Model Context Protocol endpoint — collection management for MCP clients (Streamable HTTP).
+app.route('/api/v1/mcp', mcp)
 // Website visitors sign in here; `/members` below is admin-side management of the same people.
 app.route('/api/v1/member', memberAuth)
 app.route('/api/v1/members', members)

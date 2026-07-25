@@ -54,6 +54,9 @@ export const API_KEY_SCOPES = [
   'content:write',
   'media:read',
   'media:write',
+  // Managing collection schemas — creating, editing and deleting collections. An admin power,
+  // so a key can only carry it if an admin issued it. Used by the MCP endpoint.
+  'collections:write',
 ] as const
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]
 
