@@ -15,6 +15,7 @@ import type { AppEnv } from '../env'
 import { requireActor, requireRole, requireScope } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
 import { findCollection } from './collections'
 
@@ -27,6 +28,7 @@ function toEntry(row: EntryRow, collection: CollectionRow): Entry {
     collectionSlug: collection.slug,
     slug: row.slug,
     status: row.status,
+    visibility: row.visibility,
     locale: row.locale,
     data: row.data,
     publishedAt: row.publishedAt,
@@ -44,13 +46,14 @@ function validateData(collection: CollectionRow, data: Record<string, unknown>) 
 }
 
 app.get('/', requireScope('content:read'), async (c) => {
-  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const query = validateQuery(c, listEntriesQuerySchema)
   const db = getDb(c.env)
 
   const column = entries[query.sort]
   const filters: SQL[] = [eq(entries.collectionId, collection.id)]
   if (query.status) filters.push(eq(entries.status, query.status))
+  if (query.visibility) filters.push(eq(entries.visibility, query.visibility))
   if (query.locale) filters.push(eq(entries.locale, query.locale))
   if (query.q) filters.push(like(entries.slug, `%${query.q}%`))
   // Keyset pagination: the cursor is the last row's sort value, which keeps deep pages cheap.
@@ -76,7 +79,7 @@ app.get('/', requireScope('content:read'), async (c) => {
 })
 
 app.get('/:slug', requireScope('content:read'), async (c) => {
-  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const db = getDb(c.env)
   const locale = c.req.query('locale') ?? 'en'
 
@@ -97,7 +100,7 @@ app.get('/:slug', requireScope('content:read'), async (c) => {
 })
 
 app.post('/', requireRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const input = await validate(c, createEntrySchema)
   const actor = requireActor(c)
   const db = getDb(c.env)
@@ -122,6 +125,7 @@ app.post('/', requireRole('editor'), requireScope('content:write'), async (c) =>
       collectionId: collection.id,
       slug,
       status: input.status,
+      visibility: input.visibility,
       locale: input.locale,
       data,
       publishedAt: input.status === 'published' ? now : null,
@@ -140,7 +144,7 @@ app.post('/', requireRole('editor'), requireScope('content:write'), async (c) =>
 })
 
 app.patch('/:slug', requireRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const input = await validate(c, updateEntrySchema)
   const actor = requireActor(c)
   const db = getDb(c.env)
@@ -178,6 +182,7 @@ app.patch('/:slug', requireRole('editor'), requireScope('content:write'), async 
     .set({
       ...(input.slug ? { slug: input.slug } : {}),
       ...(input.locale ? { locale: input.locale } : {}),
+      ...(input.visibility ? { visibility: input.visibility } : {}),
       status,
       data,
       publishedAt:
@@ -196,7 +201,7 @@ app.patch('/:slug', requireRole('editor'), requireScope('content:write'), async 
 })
 
 app.delete('/:slug', requireRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const db = getDb(c.env)
   const locale = c.req.query('locale') ?? 'en'
 
@@ -216,7 +221,7 @@ app.delete('/:slug', requireRole('editor'), requireScope('content:write'), async
 })
 
 app.get('/:slug/revisions', requireRole('editor'), async (c) => {
-  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const db = getDb(c.env)
   const locale = c.req.query('locale') ?? 'en'
 

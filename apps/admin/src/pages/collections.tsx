@@ -25,17 +25,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 
 export function CollectionsPage() {
   const [open, setOpen] = useState(false)
-  const collections = useQuery({ queryKey: ['collections'], queryFn: api.collections.list })
+  const siteSlug = useActiveSiteSlug()
+  const collections = useQuery({
+    queryKey: ['collections', siteSlug],
+    queryFn: api.collections.list,
+    enabled: Boolean(siteSlug),
+  })
 
   return (
     <>
       <PageHeader
         title="Collections"
-        description="Content types available in this workspace."
+        description="Content types on this site."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" />

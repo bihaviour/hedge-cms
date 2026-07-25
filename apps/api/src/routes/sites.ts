@@ -1,0 +1,126 @@
+import { createSiteSchema, type Site, updateSiteSchema } from '@hedge/core'
+import { and, asc, count, eq, ne } from 'drizzle-orm'
+import { Hono } from 'hono'
+import { getDb } from '../db/client'
+import { type SiteRow, sites } from '../db/schema'
+import type { AppEnv, Bindings } from '../env'
+import { requireActor, requireRole } from '../lib/auth'
+import { ApiError } from '../lib/errors'
+import { newId } from '../lib/id'
+import { validate } from '../lib/validate'
+
+const app = new Hono<AppEnv>()
+
+export function toSite(row: SiteRow): Site {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    domain: row.domain,
+    allowMemberSignup: row.allowMemberSignup,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+async function findSite(env: Bindings, slug: string): Promise<SiteRow> {
+  const [row] = await getDb(env).select().from(sites).where(eq(sites.slug, slug)).limit(1)
+  if (!row) throw ApiError.notFound('Site')
+  return row
+}
+
+/** Two sites answering to the same hostname would make `Host` resolution ambiguous. */
+async function assertDomainFree(env: Bindings, domain: string, exceptSiteId?: string) {
+  const [clash] = await getDb(env)
+    .select({ slug: sites.slug })
+    .from(sites)
+    .where(
+      exceptSiteId
+        ? and(eq(sites.domain, domain), ne(sites.id, exceptSiteId))
+        : eq(sites.domain, domain),
+    )
+    .limit(1)
+
+  if (clash) throw ApiError.conflict(`"${domain}" is already pointed at the "${clash.slug}" site`)
+}
+
+/** Every signed-in user sees the whole list — it is what fills the admin's site switcher. */
+app.get('/', async (c) => {
+  const actor = requireActor(c)
+  const db = getDb(c.env)
+
+  // An API key only ever sees the one site it was issued for.
+  const rows =
+    actor.kind === 'api_key' && actor.siteId
+      ? await db.select().from(sites).where(eq(sites.id, actor.siteId))
+      : await db.select().from(sites).orderBy(asc(sites.name))
+
+  return c.json({ data: rows.map(toSite) })
+})
+
+app.post('/', requireRole('admin'), async (c) => {
+  const input = await validate(c, createSiteSchema)
+  const db = getDb(c.env)
+
+  const [existing] = await db.select({ id: sites.id }).from(sites).where(eq(sites.slug, input.slug))
+  if (existing) throw ApiError.conflict(`A site with slug "${input.slug}" already exists`)
+  if (input.domain) await assertDomainFree(c.env, input.domain)
+
+  const [row] = await db
+    .insert(sites)
+    .values({
+      id: newId('sit'),
+      slug: input.slug,
+      name: input.name,
+      description: input.description ?? null,
+      domain: input.domain ?? null,
+      allowMemberSignup: input.allowMemberSignup,
+    })
+    .returning()
+
+  return c.json({ data: toSite(row!) }, 201)
+})
+
+app.get('/:slug', async (c) => {
+  const row = await findSite(c.env, c.req.param('slug'))
+  const actor = requireActor(c)
+  if (actor.kind === 'api_key' && actor.siteId !== row.id) throw ApiError.notFound('Site')
+  return c.json({ data: toSite(row) })
+})
+
+app.patch('/:slug', requireRole('admin'), async (c) => {
+  const input = await validate(c, updateSiteSchema)
+  const existing = await findSite(c.env, c.req.param('slug'))
+  if (input.domain) await assertDomainFree(c.env, input.domain, existing.id)
+
+  const [row] = await getDb(c.env)
+    .update(sites)
+    .set({
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.domain !== undefined ? { domain: input.domain } : {}),
+      ...(input.allowMemberSignup !== undefined
+        ? { allowMemberSignup: input.allowMemberSignup }
+        : {}),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(sites.id, existing.id))
+    .returning()
+
+  return c.json({ data: toSite(row!) })
+})
+
+/** Deleting a site takes its collections, entries, media rows, keys and members with it. */
+app.delete('/:slug', requireRole('owner'), async (c) => {
+  const existing = await findSite(c.env, c.req.param('slug'))
+  const db = getDb(c.env)
+
+  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(sites)
+  if (total <= 1) throw ApiError.badRequest('An instance must keep at least one site')
+
+  await db.delete(sites).where(eq(sites.id, existing.id))
+  return c.body(null, 204)
+})
+
+export default app

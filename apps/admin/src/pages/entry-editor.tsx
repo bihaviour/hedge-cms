@@ -1,4 +1,4 @@
-import type { EntryStatus } from '@hedge/core'
+import type { EntryStatus, EntryVisibility } from '@hedge/core'
 import { slugify } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Trash2 } from 'lucide-react'
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useActiveSiteSlug } from '@/hooks/use-site'
 import { ApiClientError, api } from '@/lib/api'
 
 export function EntryEditorPage() {
@@ -28,20 +29,24 @@ export function EntryEditorPage() {
   const queryClient = useQueryClient()
   const isNew = !slug
 
+  const siteSlug = useActiveSiteSlug()
+
   const collection = useQuery({
-    queryKey: ['collection', collectionSlug],
+    queryKey: ['collection', siteSlug, collectionSlug],
     queryFn: () => api.collections.get(collectionSlug),
+    enabled: Boolean(siteSlug),
   })
 
   const entry = useQuery({
-    queryKey: ['entry', collectionSlug, slug, locale],
+    queryKey: ['entry', siteSlug, collectionSlug, slug, locale],
     queryFn: () => api.entries.get(collectionSlug, slug!, locale),
-    enabled: !isNew,
+    enabled: !isNew && Boolean(siteSlug),
   })
 
   const [data, setData] = useState<Record<string, unknown>>({})
   const [entrySlug, setEntrySlug] = useState('')
   const [status, setStatus] = useState<EntryStatus>('draft')
+  const [visibility, setVisibility] = useState<EntryVisibility>('public')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
@@ -49,12 +54,13 @@ export function EntryEditorPage() {
       setData(entry.data.data)
       setEntrySlug(entry.data.slug)
       setStatus(entry.data.status)
+      setVisibility(entry.data.visibility)
     }
   }, [entry.data])
 
   const save = useMutation({
     mutationFn: () => {
-      const payload = { data, status, ...(entrySlug ? { slug: entrySlug } : {}) }
+      const payload = { data, status, visibility, ...(entrySlug ? { slug: entrySlug } : {}) }
       return isNew
         ? api.entries.create(collectionSlug, { ...payload, locale })
         : api.entries.update(collectionSlug, slug!, payload, locale)
@@ -168,6 +174,27 @@ export function EntryEditorPage() {
                 <SelectItem value="archived">Archived</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="visibility">Visibility</Label>
+            <Select
+              value={visibility}
+              onValueChange={(value) => setVisibility(value as EntryVisibility)}
+            >
+              <SelectTrigger id="visibility">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="public">Public</SelectItem>
+                <SelectItem value="members">Members only</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {visibility === 'members'
+                ? 'The delivery API returns this entry without its content until a member signs in.'
+                : 'Anyone with a delivery API key can read this entry once published.'}
+            </p>
           </div>
 
           <div className="space-y-2">

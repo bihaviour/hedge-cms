@@ -24,7 +24,9 @@ export function SetupPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Set up Hedge</CardTitle>
-          <CardDescription>Create the owner account for this instance.</CardDescription>
+          <CardDescription>
+            Create the owner account for this instance. Your first site is created with it.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form

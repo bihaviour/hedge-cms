@@ -62,7 +62,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        description="People with access to this workspace."
+        description="People who can sign in to the CMS. Their role applies to every site."
         actions={
           <Button onClick={() => setOpen(true)}>
             <UserPlus className="size-4" />

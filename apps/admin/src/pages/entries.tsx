@@ -1,6 +1,6 @@
 import type { EntryStatus } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Settings2 } from 'lucide-react'
+import { Lock, Plus, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EmptyState, PageHeader } from '@/components/page-header'
@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 
@@ -37,18 +38,22 @@ export function EntriesPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<EntryStatus | 'all'>('all')
 
+  const siteSlug = useActiveSiteSlug()
+
   const collection = useQuery({
-    queryKey: ['collection', slug],
+    queryKey: ['collection', siteSlug, slug],
     queryFn: () => api.collections.get(slug),
+    enabled: Boolean(siteSlug),
   })
 
   const entries = useQuery({
-    queryKey: ['entries', slug, status, search],
+    queryKey: ['entries', siteSlug, slug, status, search],
     queryFn: () =>
       api.entries.list(slug, {
         ...(status === 'all' ? {} : { status }),
         ...(search ? { q: search } : {}),
       }),
+    enabled: Boolean(siteSlug),
   })
 
   return (
@@ -116,6 +121,7 @@ export function EntriesPage() {
                 <TableRow>
                   <TableHead>Title</TableHead>
                   <TableHead className="w-32">Status</TableHead>
+                  <TableHead className="w-32">Visibility</TableHead>
                   <TableHead className="w-20">Locale</TableHead>
                   <TableHead className="w-36">Updated</TableHead>
                 </TableRow>
@@ -136,6 +142,16 @@ export function EntriesPage() {
                       <Badge variant={STATUS_VARIANT[entry.status]} className="capitalize">
                         {entry.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {entry.visibility === 'members' ? (
+                        <Badge variant="outline">
+                          <Lock className="size-3" />
+                          Members
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">Public</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{entry.locale}</TableCell>
                     <TableCell className="text-muted-foreground text-sm">

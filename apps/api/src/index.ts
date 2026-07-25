@@ -1,3 +1,4 @@
+import { MEMBER_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -6,12 +7,16 @@ import type { AppEnv } from './env'
 import { resolveActor } from './lib/auth'
 import { errorResponse } from './lib/errors'
 import { newId } from './lib/id'
+import { resolveMember } from './lib/member-auth'
+import { resolveSite } from './lib/site'
 import apiKeys from './routes/api-keys'
 import auth from './routes/auth'
 import collections from './routes/collections'
 import content from './routes/content'
 import entries from './routes/entries'
 import media from './routes/media'
+import members, { memberAuth } from './routes/members'
+import sites from './routes/sites'
 import users from './routes/users'
 
 const app = new Hono<AppEnv>()
@@ -23,10 +28,33 @@ app.use('*', async (c, next) => {
 app.use('*', logger())
 app.use('*', secureHeaders())
 
-// The admin SPA is same-origin, so CORS only needs to open up the read-only delivery API.
-app.use('/api/v1/content/*', cors({ origin: '*', allowMethods: ['GET', 'OPTIONS'], maxAge: 86400 }))
+// The admin SPA is same-origin, so CORS only needs to open up what a website calls: the
+// read-only delivery API and member sign-in. Both are token-authenticated rather than
+// cookie-authenticated, so `origin: '*'` carries no ambient credentials.
+app.use(
+  '/api/v1/content/*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'OPTIONS'],
+    allowHeaders: ['authorization', 'content-type', SITE_HEADER, MEMBER_TOKEN_HEADER],
+    maxAge: 86400,
+  }),
+)
+app.use(
+  '/api/v1/member/*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['content-type', SITE_HEADER, MEMBER_TOKEN_HEADER],
+    maxAge: 86400,
+  }),
+)
 
+// Order matters: the site is resolved from the actor's API key, and a member token is only
+// honoured for the site it was issued on.
 app.use('/api/*', resolveActor)
+app.use('/api/*', resolveSite)
+app.use('/api/*', resolveMember)
 
 app.get('/api/health', (c) =>
   c.json({ status: 'ok', environment: c.env.ENVIRONMENT, version: '0.0.1' }),
@@ -34,11 +62,15 @@ app.get('/api/health', (c) =>
 
 app.route('/api/v1/auth', auth)
 app.route('/api/v1/users', users)
+app.route('/api/v1/sites', sites)
 app.route('/api/v1/api-keys', apiKeys)
 app.route('/api/v1/collections', collections)
 app.route('/api/v1/collections/:collection/entries', entries)
 app.route('/api/v1/media', media)
 app.route('/api/v1/content', content)
+// Website visitors sign in here; `/members` below is admin-side management of the same people.
+app.route('/api/v1/member', memberAuth)
+app.route('/api/v1/members', members)
 
 /**
  * Public media passthrough. Objects are written with an immutable cache-control header, so

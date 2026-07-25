@@ -10,7 +10,9 @@ import { EntriesPage } from '@/pages/entries'
 import { EntryEditorPage } from '@/pages/entry-editor'
 import { LoginPage } from '@/pages/login'
 import { MediaPage } from '@/pages/media'
+import { MembersPage } from '@/pages/members'
 import { SetupPage } from '@/pages/setup'
+import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
 
 export function App() {
@@ -65,6 +67,8 @@ export function App() {
         <Route path="/collections/:collection/entries/new" element={<EntryEditorPage />} />
         <Route path="/collections/:collection/entries/:slug" element={<EntryEditorPage />} />
         <Route path="/media" element={<MediaPage />} />
+        <Route path="/members" element={<MembersPage />} />
+        <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />
       </Route>

@@ -9,7 +9,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
-import { authTokens, users } from '../db/schema'
+import { authTokens, sites, users } from '../db/schema'
 import { sendEmail } from '../email/send'
 import { inviteEmail, passwordResetEmail } from '../email/templates'
 import type { AppEnv } from '../env'
@@ -82,6 +82,17 @@ app.post('/setup', async (c) => {
   const db = getDb(c.env)
   const [existing] = await db.select({ id: users.id }).from(users).limit(1)
   if (existing) throw ApiError.conflict('This instance has already been set up')
+
+  // Content needs a tenant to live in, so the first run also creates the first site.
+  const [firstSite] = await db.select({ id: sites.id }).from(sites).limit(1)
+  if (!firstSite) {
+    await db.insert(sites).values({
+      id: newId('sit'),
+      slug: 'default',
+      name: 'Default site',
+      description: 'Rename this, or add more sites under Settings → Sites.',
+    })
+  }
 
   const [user] = await db
     .insert(users)

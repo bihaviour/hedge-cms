@@ -58,7 +58,7 @@ async function actorFromSession(c: Context<AppEnv>): Promise<Actor | null> {
     .limit(1)
 
   if (!row) return null
-  return { kind: 'user', id: row.userId, role: row.role, scopes: [] }
+  return { kind: 'user', id: row.userId, role: row.role, scopes: [], siteId: null }
 }
 
 async function actorFromApiKey(c: Context<AppEnv>): Promise<Actor | null> {
@@ -88,7 +88,13 @@ async function actorFromApiKey(c: Context<AppEnv>): Promise<Actor | null> {
   )
 
   const canWrite = row.scopes.some((scope) => scope.endsWith(':write'))
-  return { kind: 'api_key', id: row.id, role: canWrite ? 'editor' : 'viewer', scopes: row.scopes }
+  return {
+    kind: 'api_key',
+    id: row.id,
+    role: canWrite ? 'editor' : 'viewer',
+    scopes: row.scopes,
+    siteId: row.siteId,
+  }
 }
 
 /** Resolves the caller from a session cookie or API key. Never rejects — sets `actor` to null. */
@@ -126,12 +132,18 @@ export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
 }
 
 /** Generates an API key, returning the raw value (shown once) and the row to persist. */
-export async function generateApiKey(env: Bindings, name: string, scopes: string[]) {
+export async function generateApiKey(
+  env: Bindings,
+  siteId: string,
+  name: string,
+  scopes: string[],
+) {
   const raw = `${API_KEY_PREFIX}${randomToken(24)}`
   return {
     raw,
     row: {
       id: newId('key'),
+      siteId,
       name,
       prefix: raw.slice(0, 12),
       keyHash: await hmac(env.AUTH_SECRET, raw),

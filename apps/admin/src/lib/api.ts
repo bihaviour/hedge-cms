@@ -5,13 +5,20 @@ import type {
   CreateApiKeyInput,
   CreateCollectionInput,
   CreateEntryInput,
+  CreateMemberInput,
+  CreateSiteInput,
   Entry,
   ListEntriesQuery,
   Media,
+  Member,
+  Site,
   UpdateCollectionInput,
   UpdateEntryInput,
+  UpdateMemberInput,
+  UpdateSiteInput,
   User,
 } from '@hedge/core'
+import { siteHeaders } from './active-site'
 
 const BASE = '/api/v1'
 
@@ -33,6 +40,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       ...(init?.body instanceof FormData ? {} : { 'content-type': 'application/json' }),
+      // Every content route is scoped to the site the admin is currently in.
+      ...siteHeaders(),
       ...init?.headers,
     },
   })
@@ -73,6 +82,28 @@ export const api = {
       request<{ ok: true }>('/auth/forgot-password', { method: 'POST', ...json(input) }),
     resetPassword: (input: { token: string; password: string }) =>
       request<{ ok: true }>('/auth/reset-password', { method: 'POST', ...json(input) }),
+  },
+
+  sites: {
+    list: () => request<Site[]>('/sites'),
+    create: (input: CreateSiteInput) => request<Site>('/sites', { method: 'POST', ...json(input) }),
+    update: (slug: string, input: UpdateSiteInput) =>
+      request<Site>(`/sites/${slug}`, { method: 'PATCH', ...json(input) }),
+    remove: (slug: string) => request<void>(`/sites/${slug}`, { method: 'DELETE' }),
+  },
+
+  members: {
+    list: (query: { q?: string; cursor?: string } = {}) => {
+      const params = new URLSearchParams(
+        Object.entries(query).filter(([, value]) => value) as [string, string][],
+      )
+      return requestPage<Member>(`/members?${params}`)
+    },
+    create: (input: CreateMemberInput) =>
+      request<Member>('/members', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateMemberInput) =>
+      request<Member>(`/members/${id}`, { method: 'PATCH', ...json(input) }),
+    remove: (id: string) => request<void>(`/members/${id}`, { method: 'DELETE' }),
   },
 
   users: {
@@ -140,7 +171,10 @@ export const api = {
 
 /** Same as `request`, but preserves the `nextCursor` alongside the rows. */
 async function requestPage<T>(path: string): Promise<{ data: T[]; nextCursor: string | null }> {
-  const response = await fetch(`${BASE}${path}`, { credentials: 'same-origin' })
+  const response = await fetch(`${BASE}${path}`, {
+    credentials: 'same-origin',
+    headers: siteHeaders(),
+  })
   const payload = await response.json().catch(() => null)
 
   if (!response.ok) {
