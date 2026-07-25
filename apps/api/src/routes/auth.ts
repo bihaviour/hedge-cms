@@ -23,17 +23,14 @@ import {
   siteUsers,
   users,
 } from '../db/schema'
-import { sendEmail } from '../email/send'
-import { inviteEmail } from '../email/templates'
 import type { AppEnv } from '../env'
 import { requireActor, requireRole, requireUserActor } from '../lib/auth'
-import { hashPassword, hmac, randomToken } from '../lib/crypto'
+import { hashPassword, hmac } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { hasCredential, sendUserInvite } from '../lib/invites'
 import { requireSite } from '../lib/site'
 import { validate } from '../lib/validate'
-
-const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7
 
 const app = new Hono<AppEnv>()
 
@@ -239,17 +236,22 @@ app.post('/invite', requireRole('admin'), async (c) => {
       .values({ siteId: requireSite(c).id, userId: user!.id, role: input.role })
   }
 
-  const token = randomToken(32)
-  await db.insert(authTokens).values({
-    id: newId('tok'),
-    userId: user!.id,
-    purpose: 'invite',
-    tokenHash: await hmac(c.env.AUTH_SECRET, token),
-    expiresAt: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
-  })
-
-  await sendEmail(c.env, inviteEmail(c.env, { to: email, name: input.name, token }))
+  await sendUserInvite(c.env, user!)
   return c.json({ data: toUser(user!) }, 201)
+})
+
+/** Sends the invite again — the first one bounced, went to spam, or simply expired. */
+app.post('/invite/:id/resend', requireRole('admin'), async (c) => {
+  const user = await userById(c.env, c.req.param('id'))
+
+  if (await hasCredential(c.env, user.id)) {
+    throw ApiError.badRequest(
+      `${user.name} has already set a password — they can reset it from the sign-in page`,
+    )
+  }
+
+  await sendUserInvite(c.env, user)
+  return c.json({ data: { ok: true } })
 })
 
 app.post('/accept-invite', async (c) => {

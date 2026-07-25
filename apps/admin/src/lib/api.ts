@@ -80,6 +80,9 @@ export const api = {
     me: () => request<User>('/auth/me'),
     invite: (input: { email: string; name: string; role: string }) =>
       request<User>('/auth/invite', { method: 'POST', ...json(input) }),
+    /** Sends the "set your password" email again, replacing the outstanding link. */
+    resendInvite: (id: string) =>
+      request<{ ok: true }>(`/auth/invite/${id}/resend`, { method: 'POST' }),
     acceptInvite: (input: { token: string; password: string }) =>
       request<User>('/auth/accept-invite', { method: 'POST', ...json(input) }),
     forgotPassword: (input: { email: string }) =>

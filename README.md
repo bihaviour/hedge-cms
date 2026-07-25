@@ -203,6 +203,10 @@ For anyone below instance admin the grant *is* their access: no row, no site —
 appear in their site switcher. Inviting an editor or viewer grants them the site you invited them
 from; anything after that is handed out under **Settings → Users → Manage**.
 
+Users are invited by email and set their own password, so an invited account shows as *pending*
+until they do. The invite can be sent again from that row — and doing so spends the previous link,
+so an invite forwarded to the wrong inbox stops working the moment a new one goes out.
+
 ## Members and gated content
 
 Set an entry's visibility to **Members only** and the delivery API stops handing out its `data`.
