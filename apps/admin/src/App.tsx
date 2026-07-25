@@ -16,6 +16,7 @@ import { MediaPage } from '@/pages/media'
 import { MembersPage } from '@/pages/members'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { OnboardingPage } from '@/pages/onboarding'
+import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
 
@@ -91,6 +92,7 @@ export function App() {
         <Route path="/collections/:collection/entries/:slug" element={<EntryEditorPage />} />
         <Route path="/media" element={<MediaPage />} />
         <Route path="/members" element={<MembersPage />} />
+        <Route path="/settings/site" element={<SiteSettingsPage />} />
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />

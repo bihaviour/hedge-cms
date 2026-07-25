@@ -1,4 +1,12 @@
-import { type EntryVisibility, fieldsSchema, MEMBER_TOKEN_HEADER } from '@hedge/core'
+import {
+  type EntryMetadata,
+  type EntryVisibility,
+  entryMetadataSchema,
+  fieldsSchema,
+  MEMBER_TOKEN_HEADER,
+  type SiteMetadata,
+  siteMetadataSchema,
+} from '@hedge/core'
 import { and, asc, desc, eq, gt, lt, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
@@ -37,6 +45,7 @@ const DELIVERY_COLUMNS = {
   locale: entries.locale,
   visibility: entries.visibility,
   data: entries.data,
+  metadata: entries.metadata,
   publishedAt: entries.publishedAt,
   updatedAt: entries.updatedAt,
 }
@@ -46,8 +55,42 @@ interface DeliveryRow {
   locale: string
   visibility: EntryVisibility
   data: Record<string, unknown>
+  metadata: Record<string, unknown> | null
   publishedAt: string | null
   updatedAt: string
+}
+
+/** Apply a site's title template to an entry title — `"%s · Docs"` + `"Routing"` → `"Routing · Docs"`. */
+function applyTitleTemplate(template: string | undefined, title: string | undefined) {
+  if (!title) return undefined
+  return template ? template.replace(/%s/g, title) : title
+}
+
+/**
+ * The metadata a frontend renders for one entry: the entry's own SEO/social overrides falling back
+ * to the site's defaults, its custom field values, and the site's own custom pairs. Resolved here so
+ * a delivery client gets a ready-to-use head without a second request or any merge logic of its own.
+ */
+function resolveDeliveryMetadata(
+  siteMeta: SiteMetadata,
+  entryMeta: EntryMetadata,
+  data: Record<string, unknown>,
+) {
+  const title = typeof data.title === 'string' ? data.title : undefined
+  return {
+    title:
+      entryMeta.metaTitle ??
+      applyTitleTemplate(siteMeta.titleTemplate, title) ??
+      siteMeta.metaTitle,
+    description: entryMeta.description ?? siteMeta.description,
+    canonicalUrl: entryMeta.canonicalUrl,
+    ogImage: entryMeta.ogImage ?? siteMeta.ogImage,
+    keywords: siteMeta.keywords,
+    twitterHandle: siteMeta.twitterHandle,
+    noIndex: entryMeta.noIndex,
+    custom: entryMeta.custom,
+    siteCustom: siteMeta.custom,
+  }
 }
 
 /**
@@ -59,15 +102,21 @@ function setCacheHeaders(c: Context<AppEnv>, unlocked: boolean) {
   c.header('cache-control', unlocked ? MEMBER_CACHE_CONTROL : PUBLIC_CACHE_CONTROL)
 }
 
-/** Drops `data` from anything the caller has not unlocked, so a teaser can still be rendered. */
-function toDelivery(row: DeliveryRow, isMember: boolean) {
+/**
+ * Drops `data` from anything the caller has not unlocked, so a teaser can still be rendered.
+ * Metadata is kept even when locked — a paywalled page still needs its title, description and
+ * social tags to be indexed and to render in a link preview.
+ */
+function toDelivery(row: DeliveryRow, isMember: boolean, siteMeta: SiteMetadata) {
   const locked = row.visibility === 'members' && !isMember
+  const entryMeta = entryMetadataSchema.parse(row.metadata ?? {})
   return {
     slug: row.slug,
     locale: row.locale,
     visibility: row.visibility,
     locked,
     ...(locked ? {} : { data: row.data }),
+    metadata: resolveDeliveryMetadata(siteMeta, entryMeta, row.data),
     publishedAt: row.publishedAt,
     updatedAt: row.updatedAt,
   }
@@ -109,10 +158,11 @@ app.get('/:collection', async (c) => {
 
   const hasMore = rows.length > query.limit
   const page = hasMore ? rows.slice(0, query.limit) : rows
+  const siteMeta = siteMetadataSchema.parse(site.metadata ?? {})
 
   setCacheHeaders(c, isMember)
   return c.json({
-    data: page.map((row) => toDelivery(row, isMember)),
+    data: page.map((row) => toDelivery(row, isMember, siteMeta)),
     nextCursor: hasMore ? String(page.at(-1)?.[query.sort] ?? '') : null,
   })
 })
@@ -165,8 +215,9 @@ app.get('/:collection/:slug', async (c) => {
     throw ApiError.forbidden('This entry is for members only')
   }
 
+  const siteMeta = siteMetadataSchema.parse(site.metadata ?? {})
   setCacheHeaders(c, isMember)
-  return c.json({ data: toDelivery(row, isMember) })
+  return c.json({ data: toDelivery(row, isMember, siteMeta) })
 })
 
 export default app

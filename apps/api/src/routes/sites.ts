@@ -1,4 +1,12 @@
-import { createSiteSchema, type Site, updateSiteSchema } from '@hedge/core'
+import {
+  createSiteSchema,
+  fieldsSchema,
+  roleAtLeast,
+  type Site,
+  siteMetadataSchema,
+  updateSiteConfigSchema,
+  updateSiteSchema,
+} from '@hedge/core'
 import { and, count, eq, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { getDb } from '../db/client'
@@ -19,6 +27,9 @@ export function toSite(row: SiteRow): Site {
     description: row.description,
     domain: row.domain,
     allowMemberSignup: row.allowMemberSignup,
+    // Null on rows predating these columns and on freshly created sites — parse into empty defaults.
+    metadata: siteMetadataSchema.parse(row.metadata ?? {}),
+    customFields: fieldsSchema.parse(row.customFields ?? []),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -99,6 +110,35 @@ app.patch('/:slug', requireRole('admin'), async (c) => {
       ...(input.allowMemberSignup !== undefined
         ? { allowMemberSignup: input.allowMemberSignup }
         : {}),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(sites.id, existing.id))
+    .returning()
+
+  return c.json({ data: toSite(row!) })
+})
+
+/**
+ * A site's metadata defaults and custom fields. Authorised at the site level — a per-site admin
+ * owns their own site's content configuration — rather than requiring an instance admin the way
+ * renaming or re-domaining a site does. Role is checked against the site named in the path, exactly
+ * as `GET /:slug` does, so the active-site header cannot widen a caller's reach here.
+ */
+app.patch('/:slug/config', async (c) => {
+  const actor = requireActor(c)
+  const existing = await findSite(c.env, c.req.param('slug'))
+
+  const role = await siteRoleFor(c.env, actor, existing.id)
+  if (!role || !roleAtLeast(role, 'admin')) {
+    throw ApiError.forbidden('Site admin access is required to change site settings')
+  }
+
+  const input = await validate(c, updateSiteConfigSchema)
+  const [row] = await getDb(c.env)
+    .update(sites)
+    .set({
+      ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
+      ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(eq(sites.id, existing.id))
