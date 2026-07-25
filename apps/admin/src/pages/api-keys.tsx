@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 
@@ -34,7 +35,12 @@ export function ApiKeysPage() {
   const [issued, setIssued] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const keys = useQuery({ queryKey: ['api-keys'], queryFn: api.apiKeys.list })
+  const siteSlug = useActiveSiteSlug()
+  const keys = useQuery({
+    queryKey: ['api-keys', siteSlug],
+    queryFn: api.apiKeys.list,
+    enabled: Boolean(siteSlug),
+  })
 
   const remove = useMutation({
     mutationFn: api.apiKeys.remove,
@@ -48,7 +54,7 @@ export function ApiKeysPage() {
     <>
       <PageHeader
         title="API keys"
-        description="Bearer tokens for the read-only delivery API and programmatic writes."
+        description="Bearer tokens for this site's delivery API and programmatic writes."
         actions={
           <Button onClick={() => setOpen(true)}>
             <KeyRound className="size-4" />
@@ -188,7 +194,10 @@ function CreateKeyDialog({
         >
           <DialogHeader>
             <DialogTitle>New API key</DialogTitle>
-            <DialogDescription>Grant only the scopes the consumer needs.</DialogDescription>
+            <DialogDescription>
+              Grant only the scopes the consumer needs. The key is issued for the site you are
+              currently in and cannot read any other.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">

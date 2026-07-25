@@ -1,4 +1,5 @@
 import type { Role } from '@hedge/core'
+import type { MemberRow, SiteRow } from './db/schema'
 
 export interface Bindings {
   DB: D1Database
@@ -16,15 +17,25 @@ export interface Bindings {
   AUTH_SECRET: string
 }
 
+/** A caller allowed into the CMS: a signed-in user, or an API key acting on one site's behalf. */
 export interface Actor {
   kind: 'user' | 'api_key'
   id: string
   role: Role
   scopes: string[]
+  /** Set for API keys, which are issued per site. Users are global to the deployment. */
+  siteId: string | null
 }
 
 export interface Variables {
   actor: Actor | null
+  /** The tenant this request is operating on — see `lib/site.ts`. */
+  site: SiteRow | null
+  /** A signed-in website member. Never grants access to anything under the admin API. */
+  member: MemberRow | null
+  /** The actor's role on `site`, memoised per request. `null` means no access; unset means
+   * it has not been looked up yet. */
+  siteRole?: Role | null
   requestId: string
 }
 

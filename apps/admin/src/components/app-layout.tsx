@@ -1,98 +1,106 @@
-import type { User } from '@hedge/core'
-import { useQuery } from '@tanstack/react-query'
-import { Boxes, Image, KeyRound, LogOut, Users } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router'
+import { roleAtLeast, type User } from '@hedge/core'
+import { Fragment } from 'react'
+import { Link, Outlet, useLocation } from 'react-router'
+import { AppSidebar } from '@/components/app-sidebar'
+import { EmptyState } from '@/components/page-header'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { useLogout } from '@/hooks/use-session'
-import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { useActiveSite } from '@/hooks/use-site'
 
-const NAV = [
-  { to: '/collections', label: 'Collections', icon: Boxes },
-  { to: '/media', label: 'Media', icon: Image },
-  { to: '/settings/users', label: 'Users', icon: Users },
-  { to: '/settings/api-keys', label: 'API keys', icon: KeyRound },
-]
+const LABELS: Record<string, string> = {
+  collections: 'Collections',
+  media: 'Media',
+  members: 'Members',
+  settings: 'Settings',
+  sites: 'Sites',
+  users: 'Users',
+  'api-keys': 'API keys',
+  entries: 'Entries',
+  new: 'New',
+}
+
+const titleCase = (segment: string) =>
+  LABELS[segment] ??
+  segment.replace(/-/g, ' ').replace(/^./, (character) => character.toUpperCase())
 
 export function AppLayout({ user }: { user: User }) {
-  const logout = useLogout()
-  const collections = useQuery({ queryKey: ['collections'], queryFn: api.collections.list })
+  const { pathname } = useLocation()
+  const { site, sites, isLoading } = useActiveSite()
+
+  // The trail always starts at the site, so it is obvious which tenant you are editing.
+  const segments = pathname.split('/').filter(Boolean)
+  const crumbs = segments.map((segment, index) => ({
+    label: titleCase(segment),
+    href: `/${segments.slice(0, index + 1).join('/')}`,
+    isLast: index === segments.length - 1,
+  }))
 
   return (
-    <div className="flex min-h-svh">
-      <aside className="flex w-60 shrink-0 flex-col border-r bg-card/40">
-        <div className="px-5 py-5">
-          <p className="font-semibold tracking-tight">Hedge</p>
-          <p className="text-muted-foreground text-xs">headless + edge CMS</p>
-        </div>
-        <Separator />
-
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
-                  isActive
-                    ? 'bg-accent text-accent-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                )
-              }
-            >
-              <Icon className="size-4" />
-              {label}
-            </NavLink>
-          ))}
-
-          {collections.data && collections.data.length > 0 && (
-            <div className="pt-4">
-              <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Content
-              </p>
-              {collections.data.map((collection) => (
-                <NavLink
-                  key={collection.id}
-                  to={`/collections/${collection.slug}`}
-                  className={({ isActive }) =>
-                    cn(
-                      'block truncate rounded-md px-3 py-1.5 text-sm transition-colors',
-                      isActive
-                        ? 'bg-accent text-accent-foreground font-medium'
-                        : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                    )
-                  }
-                >
-                  {collection.name}
-                </NavLink>
+    <SidebarProvider>
+      <AppSidebar user={user} />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden md:block">
+                <BreadcrumbPage className="text-muted-foreground">
+                  {site?.name ?? 'Hedge'}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+              {crumbs.map((crumb) => (
+                <Fragment key={crumb.href}>
+                  <BreadcrumbSeparator className="hidden md:block" />
+                  <BreadcrumbItem>
+                    {crumb.isLast ? (
+                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    ) : (
+                      <BreadcrumbLink asChild>
+                        <Link to={crumb.href}>{crumb.label}</Link>
+                      </BreadcrumbLink>
+                    )}
+                  </BreadcrumbItem>
+                </Fragment>
               ))}
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+
+        <div className="min-w-0 flex-1">
+          {/* An editor or viewer with no grants would otherwise stare at empty pages. */}
+          {!isLoading && sites.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                title="No sites yet"
+                description={
+                  roleAtLeast(user.role, 'admin')
+                    ? 'Create a site to start adding content.'
+                    : 'You have not been given access to a site yet. Ask an admin to grant it.'
+                }
+                action={
+                  roleAtLeast(user.role, 'admin') ? (
+                    <Button asChild>
+                      <Link to="/settings/sites">Go to Sites</Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
             </div>
+          ) : (
+            <Outlet />
           )}
-        </nav>
-
-        <Separator />
-        <div className="flex items-center justify-between gap-2 p-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{user.name}</p>
-            <p className="truncate text-muted-foreground text-xs capitalize">{user.role}</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Sign out"
-            onClick={() => logout.mutate()}
-            disabled={logout.isPending}
-          >
-            <LogOut className="size-4" />
-          </Button>
         </div>
-      </aside>
-
-      <main className="min-w-0 flex-1">
-        <Outlet />
-      </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

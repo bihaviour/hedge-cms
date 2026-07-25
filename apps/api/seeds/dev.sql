@@ -1,13 +1,21 @@
 -- Development seed data. Run with: bun run db:seed
--- Creates one "Posts" collection with a couple of entries. The first user is created through
--- the /api/v1/auth/setup endpoint (or the admin UI's setup screen), not here.
+-- Creates two sites — a blog and a docs site — so multi-tenancy is visible from the first run,
+-- each with a collection and a few entries. The first user is created through the
+-- /api/v1/auth/setup endpoint (or the admin UI's setup screen), not here.
 
-DELETE FROM entries WHERE collection_id = 'col_seed_posts';
-DELETE FROM collections WHERE id = 'col_seed_posts';
+DELETE FROM entries WHERE collection_id IN ('col_seed_posts', 'col_seed_guides');
+DELETE FROM collections WHERE id IN ('col_seed_posts', 'col_seed_guides');
+DELETE FROM sites WHERE id IN ('sit_seed_blog', 'sit_seed_docs');
 
-INSERT INTO collections (id, slug, name, description, kind, fields, created_at, updated_at)
+INSERT INTO sites (id, slug, name, description, domain, allow_member_signup, created_at, updated_at)
+VALUES
+  ('sit_seed_blog', 'blog', 'Blog', 'Articles and release notes', NULL, 1, datetime('now'), datetime('now')),
+  ('sit_seed_docs', 'docs', 'Documentation', 'Product documentation', NULL, 0, datetime('now'), datetime('now'));
+
+INSERT INTO collections (id, site_id, slug, name, description, kind, fields, created_at, updated_at)
 VALUES (
   'col_seed_posts',
+  'sit_seed_blog',
   'posts',
   'Posts',
   'Blog posts and articles',
@@ -24,13 +32,31 @@ VALUES (
   datetime('now')
 );
 
-INSERT INTO entries (id, collection_id, slug, status, locale, data, published_at, created_at, updated_at)
+-- Same `posts`-shaped content on a different site: slugs are unique per site, not per instance.
+INSERT INTO collections (id, site_id, slug, name, description, kind, fields, created_at, updated_at)
+VALUES (
+  'col_seed_guides',
+  'sit_seed_docs',
+  'posts',
+  'Guides',
+  'How-to guides for the documentation site',
+  'multiple',
+  json('[
+    {"kind":"text","name":"title","label":"Title","required":true,"localized":false,"maxLength":200},
+    {"kind":"richtext","name":"body","label":"Body","required":false,"localized":false,"format":"markdown"}
+  ]'),
+  datetime('now'),
+  datetime('now')
+);
+
+INSERT INTO entries (id, collection_id, slug, status, visibility, locale, data, published_at, created_at, updated_at)
 VALUES
   (
     'ent_seed_hello',
     'col_seed_posts',
     'hello-world',
     'published',
+    'public',
     'en',
     json('{"title":"Hello world","excerpt":"The first post on this Hedge instance.","body":"# Hello world\n\nEdit this entry in the admin, or fetch it from the delivery API.","category":"engineering"}'),
     datetime('now'),
@@ -42,9 +68,36 @@ VALUES
     'col_seed_posts',
     'a-draft-post',
     'draft',
+    'public',
     'en',
     json('{"title":"A draft post","excerpt":"Drafts are invisible to the delivery API.","body":"Still cooking.","category":"product"}'),
     NULL,
+    datetime('now'),
+    datetime('now')
+  ),
+  -- Published, but the delivery API returns it with `locked: true` and no `data` until the
+  -- caller presents a member token for the blog site.
+  (
+    'ent_seed_members',
+    'col_seed_posts',
+    'members-only-deep-dive',
+    'published',
+    'members',
+    'en',
+    json('{"title":"Members only: a deep dive","excerpt":"Visible to anyone, readable by members.","body":"The part behind the sign-in wall.","category":"engineering"}'),
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  ),
+  (
+    'ent_seed_guide',
+    'col_seed_guides',
+    'getting-started',
+    'published',
+    'public',
+    'en',
+    json('{"title":"Getting started","body":"This entry lives on the docs site, not the blog."}'),
+    datetime('now'),
     datetime('now'),
     datetime('now')
   );

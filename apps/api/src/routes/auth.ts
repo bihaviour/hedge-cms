@@ -9,7 +9,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
-import { authTokens, users } from '../db/schema'
+import { authTokens, sites, siteUsers, users } from '../db/schema'
 import { sendEmail } from '../email/send'
 import { inviteEmail, passwordResetEmail } from '../email/templates'
 import type { AppEnv } from '../env'
@@ -17,6 +17,7 @@ import { createSession, destroySession, requireActor, requireRole } from '../lib
 import { hashPassword, hmac, randomToken, verifyPassword } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { requireSite } from '../lib/site'
 import { validate } from '../lib/validate'
 
 const INVITE_TTL_SECONDS = 60 * 60 * 24 * 7
@@ -83,6 +84,17 @@ app.post('/setup', async (c) => {
   const [existing] = await db.select({ id: users.id }).from(users).limit(1)
   if (existing) throw ApiError.conflict('This instance has already been set up')
 
+  // Content needs a tenant to live in, so the first run also creates the first site.
+  const [firstSite] = await db.select({ id: sites.id }).from(sites).limit(1)
+  if (!firstSite) {
+    await db.insert(sites).values({
+      id: newId('sit'),
+      slug: 'default',
+      name: 'Default site',
+      description: 'Rename this, or add more sites under Settings → Sites.',
+    })
+  }
+
   const [user] = await db
     .insert(users)
     .values({
@@ -116,6 +128,14 @@ app.post('/invite', requireRole('admin'), async (c) => {
     .insert(users)
     .values({ id: newId('usr'), email, name: input.name, role: input.role })
     .returning()
+
+  // Owners and admins reach every site. Everyone else needs a grant or they would sign in to
+  // nothing at all, so start them on the site the invite was sent from.
+  if (input.role === 'editor' || input.role === 'viewer') {
+    await db
+      .insert(siteUsers)
+      .values({ siteId: requireSite(c).id, userId: user!.id, role: input.role })
+  }
 
   const token = randomToken(32)
   await db.insert(authTokens).values({

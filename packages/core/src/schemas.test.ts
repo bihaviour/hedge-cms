@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { createEntrySchema, updateCollectionSchema, updateEntrySchema } from './index'
+import {
+  createEntrySchema,
+  createSiteSchema,
+  memberRegisterSchema,
+  setSiteRoleSchema,
+  updateCollectionSchema,
+  updateEntrySchema,
+} from './index'
 
 describe('updateEntrySchema', () => {
   test('leaves omitted fields undefined instead of applying create-time defaults', () => {
@@ -22,6 +29,53 @@ describe('createEntrySchema', () => {
     const parsed = createEntrySchema.parse({ data: {} })
     expect(parsed.status).toBe('draft')
     expect(parsed.locale).toBe('en')
+  })
+
+  test('entries are public unless asked otherwise', () => {
+    expect(createEntrySchema.parse({ data: {} }).visibility).toBe('public')
+    expect(createEntrySchema.parse({ data: {}, visibility: 'members' }).visibility).toBe('members')
+  })
+})
+
+describe('updateEntrySchema visibility', () => {
+  test('omitting visibility leaves it alone rather than unlocking the entry', () => {
+    expect(updateEntrySchema.parse({ status: 'published' }).visibility).toBeUndefined()
+  })
+})
+
+describe('createSiteSchema', () => {
+  test('defaults member signup on and accepts a bare hostname', () => {
+    const parsed = createSiteSchema.parse({
+      slug: 'docs',
+      name: 'Docs',
+      domain: 'docs.example.com',
+    })
+    expect(parsed.allowMemberSignup).toBe(true)
+    expect(parsed.domain).toBe('docs.example.com')
+  })
+
+  test('rejects a domain that is really a URL', () => {
+    expect(
+      createSiteSchema.safeParse({ slug: 'docs', name: 'Docs', domain: 'https://x.com/a' }).success,
+    ).toBe(false)
+  })
+})
+
+describe('setSiteRoleSchema', () => {
+  test('accepts site roles but not owner — owner is an instance role', () => {
+    expect(setSiteRoleSchema.safeParse({ role: 'admin' }).success).toBe(true)
+    expect(setSiteRoleSchema.safeParse({ role: 'viewer' }).success).toBe(true)
+    expect(setSiteRoleSchema.safeParse({ role: 'owner' }).success).toBe(false)
+  })
+})
+
+describe('memberRegisterSchema', () => {
+  test('holds members to the same password length as CMS users', () => {
+    const short = { email: 'a@b.com', name: 'A', password: 'short' }
+    expect(memberRegisterSchema.safeParse(short).success).toBe(false)
+    expect(
+      memberRegisterSchema.safeParse({ ...short, password: 'long-enough-password' }).success,
+    ).toBe(true)
   })
 })
 

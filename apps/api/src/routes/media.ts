@@ -1,13 +1,14 @@
 import { isAllowedUploadType, MAX_UPLOAD_BYTES, type Media, updateMediaSchema } from '@hedge/core'
-import { desc, eq, lt } from 'drizzle-orm'
+import { and, desc, eq, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
 import { type MediaRow, media } from '../db/schema'
 import type { AppEnv, Bindings } from '../env'
-import { requireActor, requireRole, requireScope } from '../lib/auth'
+import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
@@ -27,8 +28,8 @@ function toMedia(row: MediaRow, env: Bindings): Media {
   }
 }
 
-/** `2026/07/k1a2b3-photo.jpg` — date-prefixed so the bucket stays browsable. */
-function buildKey(filename: string): string {
+/** `blog/2026/07/k1a2b3-photo.jpg` — site- and date-prefixed so the bucket stays browsable. */
+function buildKey(siteSlug: string, filename: string): string {
   const now = new Date()
   const safe = filename
     .toLowerCase()
@@ -36,10 +37,10 @@ function buildKey(filename: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(-80)
   const month = String(now.getUTCMonth() + 1).padStart(2, '0')
-  return `${now.getUTCFullYear()}/${month}/${newId()}-${safe || 'file'}`
+  return `${siteSlug}/${now.getUTCFullYear()}/${month}/${newId()}-${safe || 'file'}`
 }
 
-app.get('/', requireScope('media:read'), async (c) => {
+app.get('/', requireSiteRole('viewer'), requireScope('media:read'), async (c) => {
   const query = validateQuery(
     c,
     z.object({
@@ -47,12 +48,16 @@ app.get('/', requireScope('media:read'), async (c) => {
       cursor: z.string().optional(),
     }),
   )
+  const site = requireSite(c)
   const db = getDb(c.env)
+
+  const filters: SQL[] = [eq(media.siteId, site.id)]
+  if (query.cursor) filters.push(lt(media.id, query.cursor))
 
   const rows = await db
     .select()
     .from(media)
-    .where(query.cursor ? lt(media.id, query.cursor) : undefined)
+    .where(and(...filters))
     .orderBy(desc(media.id))
     .limit(query.limit + 1)
 
@@ -65,7 +70,8 @@ app.get('/', requireScope('media:read'), async (c) => {
   })
 })
 
-app.post('/', requireRole('editor'), requireScope('media:write'), async (c) => {
+app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
+  const site = requireSite(c)
   const actor = requireActor(c)
   const contentLength = Number(c.req.header('content-length') ?? 0)
   if (contentLength > MAX_UPLOAD_BYTES) {
@@ -86,7 +92,7 @@ app.post('/', requireRole('editor'), requireScope('media:write'), async (c) => {
     throw new ApiError('unsupported_media_type', `Files of type "${contentType}" are not allowed`)
   }
 
-  const key = buildKey(file.name || 'file')
+  const key = buildKey(site.slug, file.name || 'file')
   await c.env.MEDIA.put(key, file.stream(), {
     httpMetadata: {
       contentType,
@@ -99,6 +105,7 @@ app.post('/', requireRole('editor'), requireScope('media:write'), async (c) => {
     .insert(media)
     .values({
       id: newId('med'),
+      siteId: site.id,
       key,
       filename: file.name || 'file',
       contentType,
@@ -111,7 +118,8 @@ app.post('/', requireRole('editor'), requireScope('media:write'), async (c) => {
   return c.json({ data: toMedia(row!, c.env) }, 201)
 })
 
-app.patch('/:id', requireRole('editor'), requireScope('media:write'), async (c) => {
+app.patch('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
+  const site = requireSite(c)
   const input = await validate(c, updateMediaSchema)
   const db = getDb(c.env)
 
@@ -121,18 +129,19 @@ app.patch('/:id', requireRole('editor'), requireScope('media:write'), async (c) 
       ...(input.alt !== undefined ? { alt: input.alt } : {}),
       ...(input.filename !== undefined ? { filename: input.filename } : {}),
     })
-    .where(eq(media.id, c.req.param('id')))
+    .where(and(eq(media.id, c.req.param('id')), eq(media.siteId, site.id)))
     .returning()
 
   if (!row) throw ApiError.notFound('Media')
   return c.json({ data: toMedia(row, c.env) })
 })
 
-app.delete('/:id', requireRole('editor'), requireScope('media:write'), async (c) => {
+app.delete('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
+  const site = requireSite(c)
   const db = getDb(c.env)
   const [row] = await db
     .delete(media)
-    .where(eq(media.id, c.req.param('id')))
+    .where(and(eq(media.id, c.req.param('id')), eq(media.siteId, site.id)))
     .returning()
   if (!row) throw ApiError.notFound('Media')
 

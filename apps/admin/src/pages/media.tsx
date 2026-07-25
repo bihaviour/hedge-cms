@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { EmptyState, PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { formatBytes } from '@/lib/utils'
 
@@ -13,7 +14,12 @@ export function MediaPage() {
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const media = useQuery({ queryKey: ['media'], queryFn: () => api.media.list() })
+  const siteSlug = useActiveSiteSlug()
+  const media = useQuery({
+    queryKey: ['media', siteSlug],
+    queryFn: () => api.media.list(),
+    enabled: Boolean(siteSlug),
+  })
 
   const upload = useMutation({
     mutationFn: (file: File) => api.media.upload(file),

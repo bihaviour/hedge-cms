@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 
 interface Row {
@@ -31,8 +32,10 @@ export function CollectionSettingsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
+  const siteSlug = useActiveSiteSlug()
+
   const collection = useQuery({
-    queryKey: ['collection', slug],
+    queryKey: ['collection', siteSlug, slug],
     queryFn: () => api.collections.get(slug),
   })
 
