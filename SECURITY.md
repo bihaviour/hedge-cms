@@ -44,6 +44,11 @@ check can promote one into an operator.
 - Changing or resetting a password ends every other session for that account.
 - Every MCP authorization request goes through a consent screen, whether or not the client asked
   for one. A token that acts as an admin is never issued by a redirect nobody read.
+- No account's password is ever chosen by somebody else. Users and members are both added by
+  email, and the invited person sets their own credential from a single-use link — so a password
+  is never known to the admin who created the account, transmitted over an admin API, or left
+  sitting in a support ticket. The API refuses a `password` field on those routes rather than
+  ignoring it.
 - `POST /api/v1/auth/setup` creates the first owner account and refuses to run once any user
   exists. Better Auth's own sign-up endpoint is disabled, so this is the only route to a first
   account. Complete setup immediately after deploying.

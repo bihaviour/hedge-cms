@@ -9,7 +9,7 @@ import {
 import { and, desc, eq, like, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getMemberAuth } from '../auth/member'
+import { getMemberAuth, hasCredential } from '../auth/member'
 import { getDb } from '../db/client'
 import {
   type MemberRow,
@@ -44,6 +44,18 @@ function toMember(row: MemberRow, grant: Pick<MemberSiteRow, 'siteId' | 'status'
     lastLoginAt: grant.lastLoginAt,
     createdAt: row.createdAt.toISOString(),
   } satisfies Member
+}
+
+/**
+ * The same member, as the admin sees them. `pending` is the absence of a password: an invited
+ * member exists from the moment they are added, but cannot sign in until they follow their link.
+ */
+function toAdminMember(
+  row: MemberRow,
+  grant: Pick<MemberSiteRow, 'siteId' | 'status' | 'lastLoginAt'>,
+  pending: boolean,
+): Member & { pending: boolean } {
+  return { ...toMember(row, grant), pending }
 }
 
 async function memberByEmail(env: Bindings, email: string): Promise<MemberRow | null> {
@@ -273,9 +285,13 @@ app.get('/', requireSiteRole('editor'), async (c) => {
   if (query.cursor) filters.push(lt(members.id, query.cursor))
 
   const rows = await getDb(c.env)
-    .select({ member: members, grant: memberSites })
+    .select({ member: members, grant: memberSites, credential: memberAccounts.id })
     .from(memberSites)
     .innerJoin(members, eq(members.id, memberSites.memberId))
+    .leftJoin(
+      memberAccounts,
+      and(eq(memberAccounts.userId, members.id), eq(memberAccounts.providerId, 'credential')),
+    )
     .where(and(...filters))
     .orderBy(desc(members.id))
     .limit(query.limit + 1)
@@ -284,11 +300,17 @@ app.get('/', requireSiteRole('editor'), async (c) => {
   const page = hasMore ? rows.slice(0, query.limit) : rows
 
   return c.json({
-    data: page.map((row) => toMember(row.member, row.grant)),
+    data: page.map((row) => toAdminMember(row.member, row.grant, row.credential === null)),
     nextCursor: hasMore ? (page.at(-1)?.member.id ?? null) : null,
   })
 })
 
+/**
+ * Adds a member to this site and emails them a link to choose a password.
+ *
+ * An admin never sets that password: the only person who should ever know a member's credential is
+ * the member, and an emailed link is also what proves the address is theirs.
+ */
 app.post('/', requireSiteRole('admin'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, createMemberSchema)
@@ -309,15 +331,38 @@ app.post('/', requireSiteRole('admin'), async (c) => {
     member = row!
   }
 
-  // Left unset when no password is given: the member sets one by registering with this email.
-  if (input.password) await setMemberPassword(c.env, member.id, input.password)
-
   const [grant] = await db
     .insert(memberSites)
     .values({ siteId: site.id, memberId: member.id })
     .returning()
 
-  return c.json({ data: toMember(member, grant!) }, 201)
+  // Someone who already reads another site in this deployment has a password and an inbox full of
+  // nothing to do about it, so only a genuinely new account is invited.
+  const pending = !(await hasCredential(c.env, member.id))
+  if (pending) await sendInvite(c.env, site, email)
+
+  return c.json({ data: toAdminMember(member, grant!, pending) }, 201)
+})
+
+/** Sends the invite again — the first one bounced, went to spam, or simply expired. */
+app.post('/:id/invite', requireSiteRole('admin'), async (c) => {
+  const site = requireSite(c)
+  const id = c.req.param('id')
+
+  const grant = await memberGrant(c.env, id, site.id)
+  if (!grant) throw ApiError.notFound('Member')
+
+  const [member] = await getDb(c.env).select().from(members).where(eq(members.id, id)).limit(1)
+  if (!member) throw ApiError.notFound('Member')
+
+  if (await hasCredential(c.env, member.id)) {
+    throw ApiError.badRequest(
+      `${member.name} has already set a password — they can reset it themselves from the site`,
+    )
+  }
+
+  await sendInvite(c.env, site, member.email)
+  return c.json({ data: { ok: true } })
 })
 
 app.patch('/:id', requireSiteRole('admin'), async (c) => {
@@ -397,13 +442,29 @@ async function signIn(c: { env: Bindings }, email: string, password: string) {
 }
 
 /**
+ * Emails a member the link that lets them choose their first password.
+ *
+ * It is Better Auth's own reset flow — the token, its expiry and its single use are all handled
+ * there, and it picks the invitation wording precisely because there is no password yet.
+ */
+async function sendInvite(env: Bindings, site: SiteRow, email: string): Promise<void> {
+  await getMemberAuth(env).api.requestPasswordReset({
+    body: { email, redirectTo: resetRedirect(env, site) },
+  })
+}
+
+/**
  * Only ever a URL on the site's own domain — a reset link is emailed on nothing but an address, so
  * an unchecked `redirectTo` would turn this into an open redirect anyone could aim anywhere.
+ *
+ * With no domain configured there is no website to land on, so the link comes back to the admin's
+ * own reset page. `audience=member` is what tells that page to set a *member's* password: the token
+ * belongs to the member instance, and the CMS instance could not read it.
  */
 function resetRedirect(env: Bindings, site: SiteRow, requested?: string): string {
   const fallback = site.domain
     ? `https://${site.domain}/reset-password`
-    : `${env.PUBLIC_URL}/reset-password`
+    : `${env.PUBLIC_URL}/reset-password?audience=member`
 
   if (!requested) return fallback
   if (!site.domain) return fallback

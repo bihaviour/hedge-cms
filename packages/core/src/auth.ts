@@ -34,7 +34,12 @@ export type LoginInput = z.infer<typeof loginSchema>
 
 export const passwordSchema = z.string().min(12, 'must be at least 12 characters').max(200)
 
-export const inviteUserSchema = z.object({
+/**
+ * Inviting is the only way to add a user, and it carries no password: the invitee sets their own
+ * from the emailed link. Strict for the same reason as `createMemberSchema` — a password sent here
+ * is an error worth reporting, not a field to quietly ignore.
+ */
+export const inviteUserSchema = z.strictObject({
   email: z.email(),
   name: z.string().min(1).max(120),
   role: z.enum(ROLES).default('editor'),

@@ -112,18 +112,31 @@ export const api = {
     remove: (slug: string) => request<void>(`/sites/${slug}`, { method: 'DELETE' }),
   },
 
+  /** Admin-side management of one site's members. `pending` means they have not set a password. */
   members: {
     list: (query: { q?: string; cursor?: string } = {}) => {
       const params = new URLSearchParams(
         Object.entries(query).filter(([, value]) => value) as [string, string][],
       )
-      return requestPage<Member>(`/members?${params}`)
+      return requestPage<Member & { pending: boolean }>(`/members?${params}`)
     },
     create: (input: CreateMemberInput) =>
-      request<Member>('/members', { method: 'POST', ...json(input) }),
+      request<Member & { pending: boolean }>('/members', { method: 'POST', ...json(input) }),
     update: (id: string, input: UpdateMemberInput) =>
       request<Member>(`/members/${id}`, { method: 'PATCH', ...json(input) }),
     remove: (id: string) => request<void>(`/members/${id}`, { method: 'DELETE' }),
+    /** Sends the "choose a password" email again. */
+    invite: (id: string) => request<{ ok: true }>(`/members/${id}/invite`, { method: 'POST' }),
+  },
+
+  /**
+   * The public member API, which the admin normally has no business calling. The exception is the
+   * reset page: with no site domain configured, a member's emailed link lands here, and the token
+   * has to go back to the member instance that issued it.
+   */
+  member: {
+    resetPassword: (input: { token: string; password: string }) =>
+      request<{ ok: true }>('/member/reset-password', { method: 'POST', ...json(input) }),
   },
 
   users: {

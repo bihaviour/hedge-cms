@@ -29,9 +29,10 @@ cached read-only delivery API.
 - **Per-site roles** — owners and admins run the instance and reach every site; editors and
   viewers only reach the sites they are granted, at the role they are granted.
 - **Auth** — [Better Auth](https://www.better-auth.com) on both sides: signed session cookies for
-  operators, bearer tokens for website members, and OAuth 2.1 for MCP clients. First-run owner
-  setup, emailed invites, password reset, email verification, revocable sessions, and rate
-  limiting backed by D1.
+  operators, bearer tokens for website members, and OAuth 2.1 for MCP clients. A first-run
+  onboarding wizard, emailed invites, password reset, email verification, revocable sessions, and
+  rate limiting backed by D1. Nobody ever sets somebody else's password: users and members alike
+  are added by email and choose their own.
 - **Collections** — user-defined content types. Nine field kinds (text, richtext, number,
   boolean, date, select, media, reference, json), edited in the admin and enforced on write.
 - **Entries** — draft/published/archived, public or members-only, per-locale, keyset-paginated,
@@ -80,7 +81,9 @@ bun run dev:api             # Worker on http://localhost:8787
 bun run dev:admin           # Admin UI on http://localhost:5173 (proxies /api to the Worker)
 ```
 
-Open http://localhost:5173 and create the owner account on the setup screen.
+Open http://localhost:5173. A deployment with no users starts in the onboarding wizard: it creates
+the owner account, then the first site. Nothing is created behind your back — a fresh database has
+no site until you name one, and an interrupted setup picks up where it left off when you sign in.
 
 In development, emails are not sent — invite and reset links are printed to the `dev:api`
 console so you can follow them locally.
@@ -237,6 +240,12 @@ member keeps using it, and register, login and reset are rate limited.
 Registering sends a confirmation email. It is not required to sign in, but `emailVerified` is there
 for a site that wants to gate on it. Reset links point at `https://<your site domain>/reset-password`
 when the site has a domain set; pass `redirectTo` to choose another page on that same domain.
+
+**Adding a member from the admin emails them a link.** There is no field for a password, because an
+account a stranger knows the password to is not the reader's account. Until they follow that link
+they show as *invited* in **Members**, and the invite can be sent again from the same row. Someone
+who already reads another site in this deployment is simply granted this one — they keep the
+password they have.
 
 Responses that carry a member token are returned `private, no-store`, so gated content never lands
 in a shared cache. Members have no access to the admin API at all — they authenticate against a

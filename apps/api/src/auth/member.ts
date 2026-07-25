@@ -1,6 +1,7 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { betterAuth } from 'better-auth'
 import { bearer } from 'better-auth/plugins'
+import { and, eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   memberAccounts,
@@ -10,7 +11,7 @@ import {
   rateLimits,
 } from '../db/schema'
 import { sendEmail } from '../email/send'
-import { memberResetEmail, memberVerifyEmail } from '../email/templates'
+import { memberInviteEmail, memberResetEmail, memberVerifyEmail } from '../email/templates'
 import type { Bindings } from '../env'
 import { hashPassword, verifyPassword } from '../lib/crypto'
 import { newId } from '../lib/id'
@@ -77,21 +78,26 @@ function createMemberAuth(env: Bindings) {
       maxPasswordLength: 200,
       autoSignIn: true,
       revokeSessionsOnPasswordReset: true,
-      resetPasswordTokenExpiresIn: 60 * 60,
+      // A day rather than Better Auth's hour: this same link is what an admin-added member gets as
+      // their invite, and a reader who checks mail once a day should not arrive to a dead link.
+      resetPasswordTokenExpiresIn: 60 * 60 * 24,
       /**
        * The reset link points at the website, not at the CMS: `redirectTo` is checked against the
        * site's own domain by the facade before it gets here, so this cannot be turned into an open
        * redirect by asking for a reset.
+       *
+       * A member with no credential yet has nothing to reset — they were added by an admin, who
+       * cannot set a password for them. So the same link is sent as an invitation instead.
        */
       sendResetPassword: async ({ user, url, token }) => {
+        const setUrl = withToken(callbackFrom(url) ?? `${env.PUBLIC_URL}/reset-password`, token)
+        const invited = !(await hasCredential(env, user.id))
+
         await sendEmail(
           env,
-          memberResetEmail(env, {
-            to: user.email,
-            name: user.name,
-            token,
-            resetUrl: withToken(callbackFrom(url) ?? `${env.PUBLIC_URL}/reset-password`, token),
-          }),
+          invited
+            ? memberInviteEmail(env, { to: user.email, name: user.name, setUrl })
+            : memberResetEmail(env, { to: user.email, name: user.name, token, resetUrl: setUrl }),
         )
       },
       password: {
@@ -143,6 +149,22 @@ function createMemberAuth(env: Bindings) {
       bearer(),
     ],
   })
+}
+
+/**
+ * Whether this member has a password at all.
+ *
+ * The absence of one is what "pending" means everywhere in Hedge: an admin can add a member, but
+ * cannot choose a credential for them, so the account stays half-made until they follow the link.
+ */
+export async function hasCredential(env: Bindings, memberId: string): Promise<boolean> {
+  const [row] = await getDb(env)
+    .select({ id: memberAccounts.id })
+    .from(memberAccounts)
+    .where(and(eq(memberAccounts.userId, memberId), eq(memberAccounts.providerId, 'credential')))
+    .limit(1)
+
+  return row !== undefined
 }
 
 /** Pulls the `callbackURL` Better Auth embeds in the reset link it builds. */

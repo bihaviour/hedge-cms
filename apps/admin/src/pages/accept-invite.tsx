@@ -16,12 +16,23 @@ export function AcceptInvitePage({ mode = 'invite' }: { mode?: 'invite' | 'reset
   const [password, setPassword] = useState('')
   const token = params.get('token') ?? ''
 
+  /**
+   * A member's link lands here only when their site has no domain of its own to host a reset page.
+   * The token was issued by the member instance and is meaningless to the CMS one, so the marker
+   * in the link is what decides where the password goes.
+   */
+  const forMember = mode === 'reset' && params.get('audience') === 'member'
+
   const submit = useMutation<unknown, Error, { token: string; password: string }>({
-    mutationFn: (input) =>
-      mode === 'invite' ? api.auth.acceptInvite(input) : api.auth.resetPassword(input),
+    mutationFn: (input) => {
+      if (mode === 'invite') return api.auth.acceptInvite(input)
+      return forMember ? api.member.resetPassword(input) : api.auth.resetPassword(input)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries()
       toast.success(mode === 'invite' ? 'Welcome aboard' : 'Password updated')
+      // A member has no admin to be sent to — the CMS login would only refuse them.
+      if (forMember) return
       navigate(mode === 'invite' ? '/collections' : '/login', { replace: true })
     },
   })
@@ -36,7 +47,12 @@ export function AcceptInvitePage({ mode = 'invite' }: { mode?: 'invite' | 'reset
           <CardDescription>Pick a password of at least 12 characters.</CardDescription>
         </CardHeader>
         <CardContent>
-          {token ? (
+          {submit.isSuccess && forMember ? (
+            <p className="text-muted-foreground text-sm">
+              Your password is set. You can sign in on the website now — this account is for reading
+              members-only content, not for the CMS.
+            </p>
+          ) : token ? (
             <form
               className="space-y-4"
               onSubmit={(event) => {

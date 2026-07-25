@@ -1,8 +1,9 @@
-import { OAUTH_CONSENT_PATH } from '@hedge/core'
+import { OAUTH_CONSENT_PATH, roleAtLeast } from '@hedge/core'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { AppLayout } from '@/components/app-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession, useSetupRequired } from '@/hooks/use-session'
+import { useSites } from '@/hooks/use-site'
 import { AcceptInvitePage } from '@/pages/accept-invite'
 import { AccountPage } from '@/pages/account'
 import { ApiKeysPage } from '@/pages/api-keys'
@@ -14,13 +15,14 @@ import { LoginPage } from '@/pages/login'
 import { MediaPage } from '@/pages/media'
 import { MembersPage } from '@/pages/members'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
-import { SetupPage } from '@/pages/setup'
+import { OnboardingPage } from '@/pages/onboarding'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
 
 export function App() {
   const session = useSession()
   const setup = useSetupRequired()
+  const sites = useSites({ enabled: Boolean(session.data) })
   const location = useLocation()
 
   if (session.isLoading || setup.isLoading) {
@@ -44,8 +46,8 @@ export function App() {
     return (
       <Routes>
         {publicRoutes}
-        <Route path="/setup" element={<SetupPage />} />
-        <Route path="*" element={<Navigate to="/setup" replace />} />
+        <Route path="/onboarding" element={<OnboardingPage hasAccount={false} />} />
+        <Route path="*" element={<Navigate to="/onboarding" replace />} />
       </Routes>
     )
   }
@@ -58,6 +60,21 @@ export function App() {
         {/* Keep the query: an MCP client's authorization request is carried in it, and dropping
             it here would leave the client waiting on a callback that never arrives. */}
         <Route path="*" element={<Navigate to={`/login${location.search}`} replace />} />
+      </Routes>
+    )
+  }
+
+  /**
+   * Setup that stopped after the account was made leaves an instance with nowhere to put content,
+   * so the wizard is picked up where it was left rather than dropping the owner into an admin with
+   * no site. Only for someone who can actually create one — an editor with no grants sees the app,
+   * and an empty site switcher, which is the truth about their access rather than a wizard they
+   * would be refused.
+   */
+  if (sites.data?.length === 0 && roleAtLeast(session.data.role, 'admin')) {
+    return (
+      <Routes>
+        <Route path="*" element={<OnboardingPage hasAccount />} />
       </Routes>
     )
   }

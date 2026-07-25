@@ -20,7 +20,6 @@ import {
   oauthApplications,
   oauthConsents,
   sessions,
-  sites,
   siteUsers,
   users,
 } from '../db/schema'
@@ -165,8 +164,9 @@ app.post('/sessions/revoke-all', async (c) => {
  * ------------------------------------------------------------------ */
 
 /**
- * Bootstraps the very first owner account. Only works while the users table is empty, so it
- * is safe to leave enabled — after setup it returns 409 for everyone.
+ * Bootstraps the very first owner account — the first step of the onboarding wizard, which goes on
+ * to create the first site. Only works while the users table is empty, so it is safe to leave
+ * enabled: after setup it returns 409 for everyone.
  *
  * The account row is written directly rather than through Better Auth's sign-up endpoint, because
  * that endpoint is disabled: a CMS with an open sign-up route is a CMS anyone can join.
@@ -184,17 +184,6 @@ app.post('/setup', async (c) => {
   const db = getDb(c.env)
   const [existing] = await db.select({ id: users.id }).from(users).limit(1)
   if (existing) throw ApiError.conflict('This instance has already been set up')
-
-  // Content needs a tenant to live in, so the first run also creates the first site.
-  const [firstSite] = await db.select({ id: sites.id }).from(sites).limit(1)
-  if (!firstSite) {
-    await db.insert(sites).values({
-      id: newId('sit'),
-      slug: 'default',
-      name: 'Default site',
-      description: 'Rename this, or add more sites under Settings → Sites.',
-    })
-  }
 
   const [user] = await db
     .insert(users)
