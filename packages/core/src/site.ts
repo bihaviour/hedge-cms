@@ -10,6 +10,28 @@ import { slugSchema } from './collection'
 /** Header the admin UI and delivery clients use to pick a site. Accepts a slug or an id. */
 export const SITE_HEADER = 'x-hedge-site'
 
+/**
+ * Roles a user can hold *on one site*. `owner` is missing on purpose: it is an instance-level
+ * role, and site-level `admin` already means full control of that site's content, keys and
+ * members — it does not confer the right to add users or create sites.
+ */
+export const SITE_ROLES = ['admin', 'editor', 'viewer'] as const
+export type SiteRole = (typeof SITE_ROLES)[number]
+
+/** A user's role on one site, as shown in the admin's access editor. */
+export const siteAccessSchema = z.object({
+  siteId: z.string(),
+  siteSlug: z.string(),
+  siteName: z.string(),
+  role: z.enum(SITE_ROLES),
+})
+
+export type SiteAccess = z.infer<typeof siteAccessSchema>
+
+export const setSiteRoleSchema = z.object({ role: z.enum(SITE_ROLES) })
+
+export type SetSiteRoleInput = z.infer<typeof setSiteRoleSchema>
+
 export const siteSchema = z.object({
   id: z.string(),
   slug: slugSchema,

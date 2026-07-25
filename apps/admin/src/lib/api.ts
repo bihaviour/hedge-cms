@@ -12,6 +12,8 @@ import type {
   Media,
   Member,
   Site,
+  SiteAccess,
+  SiteRole,
   UpdateCollectionInput,
   UpdateEntryInput,
   UpdateMemberInput,
@@ -111,6 +113,13 @@ export const api = {
     update: (id: string, input: { name?: string; role?: string }) =>
       request<User>(`/users/${id}`, { method: 'PATCH', ...json(input) }),
     remove: (id: string) => request<void>(`/users/${id}`, { method: 'DELETE' }),
+
+    /** Per-site grants. Only meaningful for editors and viewers — admins reach every site. */
+    siteAccess: (id: string) => request<SiteAccess[]>(`/users/${id}/sites`),
+    grantSite: (id: string, siteId: string, role: SiteRole) =>
+      request<SiteAccess>(`/users/${id}/sites/${siteId}`, { method: 'PUT', ...json({ role }) }),
+    revokeSite: (id: string, siteId: string) =>
+      request<void>(`/users/${id}/sites/${siteId}`, { method: 'DELETE' }),
   },
 
   collections: {

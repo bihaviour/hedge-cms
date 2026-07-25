@@ -4,14 +4,15 @@ import { Hono } from 'hono'
 import { getDb } from '../db/client'
 import { type ApiKeyRow, apiKeys } from '../db/schema'
 import type { AppEnv } from '../env'
-import { generateApiKey, requireActor, requireRole } from '../lib/auth'
+import { generateApiKey, requireActor, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { requireSite } from '../lib/site'
 import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
-app.use('*', requireRole('admin'))
+// Keys read a whole site's content, so issuing them is a site-admin power.
+app.use('*', requireSiteRole('admin'))
 
 function toApiKey(row: ApiKeyRow): ApiKey {
   return {

@@ -1,6 +1,6 @@
-import { ROLES } from '@hedge/core'
+import { ROLES, roleAtLeast, SITE_ROLES, type SiteRole, type User } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2, UserPlus } from 'lucide-react'
+import { KeySquare, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
@@ -32,11 +32,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useActiveSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 
 export function UsersPage() {
   const [open, setOpen] = useState(false)
+  const [accessFor, setAccessFor] = useState<User | null>(null)
   const queryClient = useQueryClient()
   const users = useQuery({ queryKey: ['users'], queryFn: api.users.list })
 
@@ -62,7 +64,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        description="People who can sign in to the CMS. Their role applies to every site."
+        description="People who can sign in to the CMS. Owners and admins run the whole instance; editors and viewers only reach the sites they are granted."
         actions={
           <Button onClick={() => setOpen(true)}>
             <UserPlus className="size-4" />
@@ -82,6 +84,7 @@ export function UsersPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead className="w-40">Role</TableHead>
+                  <TableHead className="w-44">Site access</TableHead>
                   <TableHead className="w-32">Joined</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
@@ -116,6 +119,16 @@ export function UsersPage() {
                         </SelectContent>
                       </Select>
                     </TableCell>
+                    <TableCell>
+                      {roleAtLeast(user.role, 'admin') ? (
+                        <span className="text-muted-foreground text-sm">All sites</span>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => setAccessFor(user)}>
+                          <KeySquare className="size-4" />
+                          Manage
+                        </Button>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {formatDate(user.createdAt)}
                     </TableCell>
@@ -140,7 +153,96 @@ export function UsersPage() {
       </div>
 
       <InviteDialog open={open} onOpenChange={setOpen} />
+      <SiteAccessDialog user={accessFor} onOpenChange={() => setAccessFor(null)} />
     </>
+  )
+}
+
+/**
+ * Per-site grants for one editor or viewer. "No access" is the absence of a grant, which is why
+ * clearing a row deletes it rather than storing an empty role.
+ */
+function SiteAccessDialog({
+  user,
+  onOpenChange,
+}: {
+  user: User | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const queryClient = useQueryClient()
+  const { sites } = useActiveSite()
+
+  const access = useQuery({
+    queryKey: ['user-site-access', user?.id],
+    queryFn: () => api.users.siteAccess(user!.id),
+    enabled: Boolean(user),
+  })
+
+  const setRole = useMutation({
+    mutationFn: async ({ siteId, role }: { siteId: string; role: SiteRole | 'none' }) => {
+      if (role === 'none') await api.users.revokeSite(user!.id, siteId)
+      else await api.users.grantSite(user!.id, siteId, role)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-site-access', user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['sites'] })
+      toast.success('Access updated')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  const roleFor = (siteId: string) =>
+    access.data?.find((grant) => grant.siteId === siteId)?.role ?? 'none'
+
+  return (
+    <Dialog open={user !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Site access</DialogTitle>
+          <DialogDescription>
+            Which sites {user?.name} can reach, and as what. A site with no access does not appear
+            in their site switcher at all.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-4">
+          {access.isLoading && <Skeleton className="h-24 w-full" />}
+
+          {access.data &&
+            sites.map((site) => (
+              <div key={site.id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{site.name}</p>
+                  <p className="truncate font-mono text-muted-foreground text-xs">{site.slug}</p>
+                </div>
+                <Select
+                  value={roleFor(site.id)}
+                  disabled={setRole.isPending}
+                  onValueChange={(role) =>
+                    setRole.mutate({ siteId: site.id, role: role as SiteRole | 'none' })
+                  }
+                >
+                  <SelectTrigger className="h-8 w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No access</SelectItem>
+                    {SITE_ROLES.map((role) => (
+                      <SelectItem key={role} value={role} className="capitalize">
+                        {role}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+        </div>
+
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

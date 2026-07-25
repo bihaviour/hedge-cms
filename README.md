@@ -23,9 +23,11 @@ cached read-only delivery API.
 
 - **Sites** — one deployment holds many websites: a blog, a docs site, a landing page. Each is
   its own namespace for collections, entries, media, API keys and members.
-- **Users and members** — two separate account types. A **User** operates the CMS
-  (`owner` › `admin` › `editor` › `viewer`); a **Member** is a visitor of one site who signs in
-  on that site to unlock gated content, and can never reach the admin.
+- **Users and members** — two separate account types. A **User** operates the CMS; a **Member**
+  is a visitor of one site who signs in on that site to unlock gated content, and can never
+  reach the admin.
+- **Per-site roles** — owners and admins run the instance and reach every site; editors and
+  viewers only reach the sites they are granted, at the role they are granted.
 - **Auth** — session cookies with PBKDF2-hashed passwords, first-run owner setup, emailed
   invites, and password reset.
 - **Collections** — user-defined content types. Nine field kinds (text, richtext, number,
@@ -111,6 +113,19 @@ Query parameters: `locale`, `limit`, `cursor`, `sort`, `order`.
 
 A key belongs to the site it was created on and can only read that site's content, so nothing
 extra is needed to pick a tenant.
+
+## Roles
+
+Two levels, deliberately separate — a site admin runs their site, not your instance.
+
+| Level | Where it lives | Grants |
+| ----- | -------------- | ------ |
+| Instance | `users.role` | `owner` and `admin` manage users and sites, and reach every site. `editor` / `viewer` here is only the role a user is granted with by default. |
+| Site | `site_users` | `admin` — the site's content, keys and members. `editor` — write content. `viewer` — read. |
+
+For anyone below instance admin the grant *is* their access: no row, no site — it will not even
+appear in their site switcher. Inviting an editor or viewer grants them the site you invited them
+from; anything after that is handed out under **Settings → Users → Manage**.
 
 ## Members and gated content
 

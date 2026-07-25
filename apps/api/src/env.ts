@@ -33,6 +33,9 @@ export interface Variables {
   site: SiteRow | null
   /** A signed-in website member. Never grants access to anything under the admin API. */
   member: MemberRow | null
+  /** The actor's role on `site`, memoised per request. `null` means no access; unset means
+   * it has not been looked up yet. */
+  siteRole?: Role | null
   requestId: string
 }
 

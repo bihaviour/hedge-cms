@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 const timestamps = {
   createdAt: text('created_at')
@@ -28,7 +28,11 @@ export const sites = sqliteTable(
   (t) => [uniqueIndex('sites_slug_idx').on(t.slug), uniqueIndex('sites_domain_idx').on(t.domain)],
 )
 
-/** CMS operators. Global to the deployment — a user's role applies to every site. */
+/**
+ * CMS operators. `owner` and `admin` run the instance and reach every site; `editor` and
+ * `viewer` here is only the default role they are granted with — what they can actually reach
+ * lives in `site_users`.
+ */
 export const users = sqliteTable(
   'users',
   {
@@ -43,6 +47,30 @@ export const users = sqliteTable(
     ...timestamps,
   },
   (t) => [uniqueIndex('users_email_idx').on(t.email)],
+)
+
+/**
+ * Which sites a user can reach, and as what. Owners and admins run the instance and are not
+ * listed here — they reach every site. For everyone else this table *is* their access: no row,
+ * no site.
+ */
+export const siteUsers = sqliteTable(
+  'site_users',
+  {
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: ['admin', 'editor', 'viewer'] })
+      .notNull()
+      .default('editor'),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [primaryKey({ columns: [t.siteId, t.userId] }), index('site_users_user_idx').on(t.userId)],
 )
 
 export const sessions = sqliteTable(
@@ -236,6 +264,7 @@ export const media = sqliteTable(
 )
 
 export type SiteRow = typeof sites.$inferSelect
+export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
 export type MemberRow = typeof members.$inferSelect
 export type CollectionRow = typeof collections.$inferSelect

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { getDb } from '../db/client'
 import { type MediaRow, media } from '../db/schema'
 import type { AppEnv, Bindings } from '../env'
-import { requireActor, requireRole, requireScope } from '../lib/auth'
+import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { requireSite } from '../lib/site'
@@ -40,7 +40,7 @@ function buildKey(siteSlug: string, filename: string): string {
   return `${siteSlug}/${now.getUTCFullYear()}/${month}/${newId()}-${safe || 'file'}`
 }
 
-app.get('/', requireScope('media:read'), async (c) => {
+app.get('/', requireSiteRole('viewer'), requireScope('media:read'), async (c) => {
   const query = validateQuery(
     c,
     z.object({
@@ -70,7 +70,7 @@ app.get('/', requireScope('media:read'), async (c) => {
   })
 })
 
-app.post('/', requireRole('editor'), requireScope('media:write'), async (c) => {
+app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
   const site = requireSite(c)
   const actor = requireActor(c)
   const contentLength = Number(c.req.header('content-length') ?? 0)
@@ -118,7 +118,7 @@ app.post('/', requireRole('editor'), requireScope('media:write'), async (c) => {
   return c.json({ data: toMedia(row!, c.env) }, 201)
 })
 
-app.patch('/:id', requireRole('editor'), requireScope('media:write'), async (c) => {
+app.patch('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, updateMediaSchema)
   const db = getDb(c.env)
@@ -136,7 +136,7 @@ app.patch('/:id', requireRole('editor'), requireScope('media:write'), async (c) 
   return c.json({ data: toMedia(row, c.env) })
 })
 
-app.delete('/:id', requireRole('editor'), requireScope('media:write'), async (c) => {
+app.delete('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
   const site = requireSite(c)
   const db = getDb(c.env)
   const [row] = await db

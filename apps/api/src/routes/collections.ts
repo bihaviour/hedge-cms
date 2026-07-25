@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { getDb } from '../db/client'
 import { type CollectionRow, collections } from '../db/schema'
 import type { AppEnv } from '../env'
-import { requireRole, requireScope } from '../lib/auth'
+import { requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { requireSite } from '../lib/site'
@@ -47,7 +47,7 @@ export async function findCollection(
   return row
 }
 
-app.get('/', requireScope('content:read'), async (c) => {
+app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
   const site = requireSite(c)
   const rows = await getDb(c.env)
     .select()
@@ -57,12 +57,12 @@ app.get('/', requireScope('content:read'), async (c) => {
   return c.json({ data: rows.map(toCollection) })
 })
 
-app.get('/:slug', requireScope('content:read'), async (c) => {
+app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
   const row = await findCollection(c.env, requireSite(c).id, c.req.param('slug'))
   return c.json({ data: toCollection(row) })
 })
 
-app.post('/', requireRole('admin'), async (c) => {
+app.post('/', requireSiteRole('admin'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, createCollectionSchema)
   const db = getDb(c.env)
@@ -91,7 +91,7 @@ app.post('/', requireRole('admin'), async (c) => {
   return c.json({ data: toCollection(row!) }, 201)
 })
 
-app.patch('/:slug', requireRole('admin'), async (c) => {
+app.patch('/:slug', requireSiteRole('admin'), async (c) => {
   const input = await validate(c, updateCollectionSchema)
   const existing = await findCollection(c.env, requireSite(c).id, c.req.param('slug'))
   const db = getDb(c.env)
@@ -111,7 +111,7 @@ app.patch('/:slug', requireRole('admin'), async (c) => {
   return c.json({ data: toCollection(row!) })
 })
 
-app.delete('/:slug', requireRole('admin'), async (c) => {
+app.delete('/:slug', requireSiteRole('admin'), async (c) => {
   const existing = await findCollection(c.env, requireSite(c).id, c.req.param('slug'))
   const db = getDb(c.env)
   // Entries cascade via the foreign key.

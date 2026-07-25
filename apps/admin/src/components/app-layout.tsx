@@ -1,7 +1,8 @@
-import type { User } from '@hedge/core'
+import { roleAtLeast, type User } from '@hedge/core'
 import { Fragment } from 'react'
 import { Link, Outlet, useLocation } from 'react-router'
 import { AppSidebar } from '@/components/app-sidebar'
+import { EmptyState } from '@/components/page-header'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,6 +11,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
+import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { useActiveSite } from '@/hooks/use-site'
@@ -32,7 +34,7 @@ const titleCase = (segment: string) =>
 
 export function AppLayout({ user }: { user: User }) {
   const { pathname } = useLocation()
-  const { site } = useActiveSite()
+  const { site, sites, isLoading } = useActiveSite()
 
   // The trail always starts at the site, so it is obvious which tenant you are editing.
   const segments = pathname.split('/').filter(Boolean)
@@ -75,7 +77,28 @@ export function AppLayout({ user }: { user: User }) {
         </header>
 
         <div className="min-w-0 flex-1">
-          <Outlet />
+          {/* An editor or viewer with no grants would otherwise stare at empty pages. */}
+          {!isLoading && sites.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                title="No sites yet"
+                description={
+                  roleAtLeast(user.role, 'admin')
+                    ? 'Create a site to start adding content.'
+                    : 'You have not been given access to a site yet. Ask an admin to grant it.'
+                }
+                action={
+                  roleAtLeast(user.role, 'admin') ? (
+                    <Button asChild>
+                      <Link to="/settings/sites">Go to Sites</Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </div>
       </SidebarInset>
     </SidebarProvider>

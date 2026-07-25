@@ -1,10 +1,10 @@
 import { createSiteSchema, type Site, updateSiteSchema } from '@hedge/core'
-import { and, asc, count, eq, ne } from 'drizzle-orm'
+import { and, count, eq, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { getDb } from '../db/client'
 import { type SiteRow, sites } from '../db/schema'
 import type { AppEnv, Bindings } from '../env'
-import { requireActor, requireRole } from '../lib/auth'
+import { accessibleSites, requireActor, requireRole, siteRoleFor } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { validate } from '../lib/validate'
@@ -45,17 +45,13 @@ async function assertDomainFree(env: Bindings, domain: string, exceptSiteId?: st
   if (clash) throw ApiError.conflict(`"${domain}" is already pointed at the "${clash.slug}" site`)
 }
 
-/** Every signed-in user sees the whole list — it is what fills the admin's site switcher. */
+/**
+ * The sites this caller can reach — every site for owners and admins, granted ones for everyone
+ * else, and just its own for an API key. This is what fills the admin's site switcher, so a
+ * user is never offered a site they would be refused on.
+ */
 app.get('/', async (c) => {
-  const actor = requireActor(c)
-  const db = getDb(c.env)
-
-  // An API key only ever sees the one site it was issued for.
-  const rows =
-    actor.kind === 'api_key' && actor.siteId
-      ? await db.select().from(sites).where(eq(sites.id, actor.siteId))
-      : await db.select().from(sites).orderBy(asc(sites.name))
-
+  const rows = await accessibleSites(c.env, requireActor(c))
   return c.json({ data: rows.map(toSite) })
 })
 
@@ -84,8 +80,8 @@ app.post('/', requireRole('admin'), async (c) => {
 
 app.get('/:slug', async (c) => {
   const row = await findSite(c.env, c.req.param('slug'))
-  const actor = requireActor(c)
-  if (actor.kind === 'api_key' && actor.siteId !== row.id) throw ApiError.notFound('Site')
+  // Not a 403: a user without access has no business learning which sites exist.
+  if (!(await siteRoleFor(c.env, requireActor(c), row.id))) throw ApiError.notFound('Site')
   return c.json({ data: toSite(row) })
 })
 

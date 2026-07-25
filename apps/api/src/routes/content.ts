@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { getDb } from '../db/client'
 import { collections, entries } from '../db/schema'
 import type { AppEnv } from '../env'
-import { requireScope } from '../lib/auth'
+import { requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { requireSite } from '../lib/site'
 import { validateQuery } from '../lib/validate'
@@ -73,6 +73,8 @@ function toDelivery(row: DeliveryRow, isMember: boolean) {
   }
 }
 
+// A user browsing the delivery API still needs to be able to see the site it belongs to.
+app.use('*', requireSiteRole('viewer'))
 app.use('*', requireScope('content:read'))
 
 app.get('/:collection', async (c) => {

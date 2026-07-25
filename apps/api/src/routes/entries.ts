@@ -12,7 +12,7 @@ import { Hono } from 'hono'
 import { getDb } from '../db/client'
 import { type CollectionRow, type EntryRow, entries, entryRevisions } from '../db/schema'
 import type { AppEnv } from '../env'
-import { requireActor, requireRole, requireScope } from '../lib/auth'
+import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { requireSite } from '../lib/site'
@@ -45,7 +45,7 @@ function validateData(collection: CollectionRow, data: Record<string, unknown>) 
   return result.data
 }
 
-app.get('/', requireScope('content:read'), async (c) => {
+app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
   const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const query = validateQuery(c, listEntriesQuerySchema)
   const db = getDb(c.env)
@@ -78,7 +78,7 @@ app.get('/', requireScope('content:read'), async (c) => {
   })
 })
 
-app.get('/:slug', requireScope('content:read'), async (c) => {
+app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
   const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const db = getDb(c.env)
   const locale = c.req.query('locale') ?? 'en'
@@ -99,7 +99,7 @@ app.get('/:slug', requireScope('content:read'), async (c) => {
   return c.json({ data: toEntry(row, collection) })
 })
 
-app.post('/', requireRole('editor'), requireScope('content:write'), async (c) => {
+app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
   const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const input = await validate(c, createEntrySchema)
   const actor = requireActor(c)
@@ -143,7 +143,7 @@ app.post('/', requireRole('editor'), requireScope('content:write'), async (c) =>
   return c.json({ data: toEntry(row!, collection) }, 201)
 })
 
-app.patch('/:slug', requireRole('editor'), requireScope('content:write'), async (c) => {
+app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
   const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const input = await validate(c, updateEntrySchema)
   const actor = requireActor(c)
@@ -200,7 +200,7 @@ app.patch('/:slug', requireRole('editor'), requireScope('content:write'), async 
   return c.json({ data: toEntry(row!, collection) })
 })
 
-app.delete('/:slug', requireRole('editor'), requireScope('content:write'), async (c) => {
+app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
   const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const db = getDb(c.env)
   const locale = c.req.query('locale') ?? 'en'
@@ -220,7 +220,7 @@ app.delete('/:slug', requireRole('editor'), requireScope('content:write'), async
   return c.body(null, 204)
 })
 
-app.get('/:slug/revisions', requireRole('editor'), async (c) => {
+app.get('/:slug/revisions', requireSiteRole('editor'), async (c) => {
   const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
   const db = getDb(c.env)
   const locale = c.req.query('locale') ?? 'en'

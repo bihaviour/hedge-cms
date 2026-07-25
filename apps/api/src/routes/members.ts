@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { getDb } from '../db/client'
 import { type MemberRow, members } from '../db/schema'
 import type { AppEnv } from '../env'
-import { requireRole } from '../lib/auth'
+import { requireSiteRole } from '../lib/auth'
 import { hashPassword, randomToken, verifyPassword } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
@@ -120,7 +120,7 @@ memberAuth.get('/me', async (c) => {
 
 const app = new Hono<AppEnv>()
 
-app.get('/', requireRole('editor'), async (c) => {
+app.get('/', requireSiteRole('editor'), async (c) => {
   const site = requireSite(c)
   const query = validateQuery(
     c,
@@ -151,7 +151,7 @@ app.get('/', requireRole('editor'), async (c) => {
   })
 })
 
-app.post('/', requireRole('admin'), async (c) => {
+app.post('/', requireSiteRole('admin'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, createMemberSchema)
   const db = getDb(c.env)
@@ -178,7 +178,7 @@ app.post('/', requireRole('admin'), async (c) => {
   return c.json({ data: toMember(row!) }, 201)
 })
 
-app.patch('/:id', requireRole('admin'), async (c) => {
+app.patch('/:id', requireSiteRole('admin'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, updateMemberSchema)
 
@@ -196,7 +196,7 @@ app.patch('/:id', requireRole('admin'), async (c) => {
   return c.json({ data: toMember(row) })
 })
 
-app.delete('/:id', requireRole('admin'), async (c) => {
+app.delete('/:id', requireSiteRole('admin'), async (c) => {
   const site = requireSite(c)
 
   // Sessions cascade with the member, so deleting one signs them out everywhere.

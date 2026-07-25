@@ -3,6 +3,7 @@ import {
   createEntrySchema,
   createSiteSchema,
   memberRegisterSchema,
+  setSiteRoleSchema,
   updateCollectionSchema,
   updateEntrySchema,
 } from './index'
@@ -57,6 +58,14 @@ describe('createSiteSchema', () => {
     expect(
       createSiteSchema.safeParse({ slug: 'docs', name: 'Docs', domain: 'https://x.com/a' }).success,
     ).toBe(false)
+  })
+})
+
+describe('setSiteRoleSchema', () => {
+  test('accepts site roles but not owner — owner is an instance role', () => {
+    expect(setSiteRoleSchema.safeParse({ role: 'admin' }).success).toBe(true)
+    expect(setSiteRoleSchema.safeParse({ role: 'viewer' }).success).toBe(true)
+    expect(setSiteRoleSchema.safeParse({ role: 'owner' }).success).toBe(false)
   })
 })
 
