@@ -1,0 +1,45 @@
+{
+  "name": "hedge",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Headless + edge CMS built for Cloudflare Workers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bihaviour/hedge-cms.git"
+  },
+  "homepage": "https://github.com/bihaviour/hedge-cms",
+  "bugs": {
+    "url": "https://github.com/bihaviour/hedge-cms/issues"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:api": "bun run --cwd apps/api dev",
+    "dev:admin": "bun run --cwd apps/admin dev",
+    "build": "bun run --cwd packages/core build && bun run --cwd apps/admin build && bun run --cwd apps/api build",
+    "deploy": "bun run build && bun run --cwd apps/api deploy",
+    "db:generate": "bun run --cwd apps/api db:generate",
+    "db:migrate": "bun run --cwd apps/api db:migrate",
+    "db:migrate:remote": "bun run --cwd apps/api db:migrate:remote",
+    "db:seed": "bun run --cwd apps/api db:seed",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "bun test",
+    "cf-typegen": "bun run --cwd apps/api cf-typegen"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.5",
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.9.3"
+  }
+}

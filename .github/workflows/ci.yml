@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WRANGLER_SEND_METRICS: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: bun install --frozen-lockfile
+
+      - name: Generate Worker binding types
+        working-directory: apps/api
+        run: bunx wrangler types --env-interface CloudflareBindings
+
+      - run: bun run lint
+
+      - run: bun run typecheck
+
+      - run: bun test
+
+      - name: Build
+        run: bun run build

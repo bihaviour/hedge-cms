@@ -1,0 +1,247 @@
+import {
+  buildEntryValidator,
+  createEntrySchema,
+  type Entry,
+  fieldsSchema,
+  listEntriesQuerySchema,
+  slugify,
+  updateEntrySchema,
+} from '@hedge/core'
+import { and, asc, desc, eq, gt, like, lt, type SQL } from 'drizzle-orm'
+import { Hono } from 'hono'
+import { getDb } from '../db/client'
+import { type CollectionRow, type EntryRow, entries, entryRevisions } from '../db/schema'
+import type { AppEnv } from '../env'
+import { requireActor, requireRole, requireScope } from '../lib/auth'
+import { ApiError } from '../lib/errors'
+import { newId } from '../lib/id'
+import { validate, validateQuery } from '../lib/validate'
+import { findCollection } from './collections'
+
+const app = new Hono<AppEnv>()
+
+function toEntry(row: EntryRow, collection: CollectionRow): Entry {
+  return {
+    id: row.id,
+    collectionId: row.collectionId,
+    collectionSlug: collection.slug,
+    slug: row.slug,
+    status: row.status,
+    locale: row.locale,
+    data: row.data,
+    publishedAt: row.publishedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+/** Validates `data` against the collection's field definitions. */
+function validateData(collection: CollectionRow, data: Record<string, unknown>) {
+  const fields = fieldsSchema.parse(collection.fields)
+  const result = buildEntryValidator(fields).safeParse(data)
+  if (!result.success) throw ApiError.fromZod(result.error)
+  return result.data
+}
+
+app.get('/', requireScope('content:read'), async (c) => {
+  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const query = validateQuery(c, listEntriesQuerySchema)
+  const db = getDb(c.env)
+
+  const column = entries[query.sort]
+  const filters: SQL[] = [eq(entries.collectionId, collection.id)]
+  if (query.status) filters.push(eq(entries.status, query.status))
+  if (query.locale) filters.push(eq(entries.locale, query.locale))
+  if (query.q) filters.push(like(entries.slug, `%${query.q}%`))
+  // Keyset pagination: the cursor is the last row's sort value, which keeps deep pages cheap.
+  if (query.cursor) {
+    filters.push(query.order === 'desc' ? lt(column, query.cursor) : gt(column, query.cursor))
+  }
+
+  const rows = await db
+    .select()
+    .from(entries)
+    .where(and(...filters))
+    .orderBy(query.order === 'desc' ? desc(column) : asc(column))
+    .limit(query.limit + 1)
+
+  const hasMore = rows.length > query.limit
+  const page = hasMore ? rows.slice(0, query.limit) : rows
+  const last = page.at(-1)
+
+  return c.json({
+    data: page.map((row) => toEntry(row, collection)),
+    nextCursor: hasMore && last ? String(last[query.sort] ?? '') : null,
+  })
+})
+
+app.get('/:slug', requireScope('content:read'), async (c) => {
+  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const db = getDb(c.env)
+  const locale = c.req.query('locale') ?? 'en'
+
+  const [row] = await db
+    .select()
+    .from(entries)
+    .where(
+      and(
+        eq(entries.collectionId, collection.id),
+        eq(entries.slug, c.req.param('slug')),
+        eq(entries.locale, locale),
+      ),
+    )
+    .limit(1)
+
+  if (!row) throw ApiError.notFound('Entry')
+  return c.json({ data: toEntry(row, collection) })
+})
+
+app.post('/', requireRole('editor'), requireScope('content:write'), async (c) => {
+  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const input = await validate(c, createEntrySchema)
+  const actor = requireActor(c)
+  const db = getDb(c.env)
+
+  const data = validateData(collection, input.data)
+  const slug = input.slug ?? (slugify(String(data.title ?? '')) || newId())
+
+  if (collection.kind === 'single') {
+    const [existing] = await db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(eq(entries.collectionId, collection.id))
+      .limit(1)
+    if (existing) throw ApiError.conflict('Single-entry collections can only hold one entry')
+  }
+
+  const now = new Date().toISOString()
+  const [row] = await db
+    .insert(entries)
+    .values({
+      id: newId('ent'),
+      collectionId: collection.id,
+      slug,
+      status: input.status,
+      locale: input.locale,
+      data,
+      publishedAt: input.status === 'published' ? now : null,
+      createdBy: actor.kind === 'user' ? actor.id : null,
+      updatedBy: actor.kind === 'user' ? actor.id : null,
+    })
+    .returning()
+    .catch((err: Error) => {
+      if (err.message.includes('UNIQUE')) {
+        throw ApiError.conflict(`An entry with slug "${slug}" already exists in this locale`)
+      }
+      throw err
+    })
+
+  return c.json({ data: toEntry(row!, collection) }, 201)
+})
+
+app.patch('/:slug', requireRole('editor'), requireScope('content:write'), async (c) => {
+  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const input = await validate(c, updateEntrySchema)
+  const actor = requireActor(c)
+  const db = getDb(c.env)
+  const locale = c.req.query('locale') ?? 'en'
+
+  const [existing] = await db
+    .select()
+    .from(entries)
+    .where(
+      and(
+        eq(entries.collectionId, collection.id),
+        eq(entries.slug, c.req.param('slug')),
+        eq(entries.locale, locale),
+      ),
+    )
+    .limit(1)
+
+  if (!existing) throw ApiError.notFound('Entry')
+
+  const data = input.data ? validateData(collection, input.data) : existing.data
+  const status = input.status ?? existing.status
+  const now = new Date().toISOString()
+
+  // Snapshot the pre-update state so edits are always recoverable.
+  await db.insert(entryRevisions).values({
+    id: newId('rev'),
+    entryId: existing.id,
+    data: existing.data,
+    status: existing.status,
+    createdBy: actor.kind === 'user' ? actor.id : null,
+  })
+
+  const [row] = await db
+    .update(entries)
+    .set({
+      ...(input.slug ? { slug: input.slug } : {}),
+      ...(input.locale ? { locale: input.locale } : {}),
+      status,
+      data,
+      publishedAt:
+        status === 'published'
+          ? (existing.publishedAt ?? now)
+          : status === 'draft'
+            ? null
+            : existing.publishedAt,
+      updatedBy: actor.kind === 'user' ? actor.id : null,
+      updatedAt: now,
+    })
+    .where(eq(entries.id, existing.id))
+    .returning()
+
+  return c.json({ data: toEntry(row!, collection) })
+})
+
+app.delete('/:slug', requireRole('editor'), requireScope('content:write'), async (c) => {
+  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const db = getDb(c.env)
+  const locale = c.req.query('locale') ?? 'en'
+
+  const result = await db
+    .delete(entries)
+    .where(
+      and(
+        eq(entries.collectionId, collection.id),
+        eq(entries.slug, c.req.param('slug')),
+        eq(entries.locale, locale),
+      ),
+    )
+    .returning({ id: entries.id })
+
+  if (result.length === 0) throw ApiError.notFound('Entry')
+  return c.body(null, 204)
+})
+
+app.get('/:slug/revisions', requireRole('editor'), async (c) => {
+  const collection = await findCollection(c.env, c.req.param('collection')!)
+  const db = getDb(c.env)
+  const locale = c.req.query('locale') ?? 'en'
+
+  const [entry] = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .where(
+      and(
+        eq(entries.collectionId, collection.id),
+        eq(entries.slug, c.req.param('slug')),
+        eq(entries.locale, locale),
+      ),
+    )
+    .limit(1)
+
+  if (!entry) throw ApiError.notFound('Entry')
+
+  const rows = await db
+    .select()
+    .from(entryRevisions)
+    .where(eq(entryRevisions.entryId, entry.id))
+    .orderBy(desc(entryRevisions.createdAt))
+    .limit(50)
+
+  return c.json({ data: rows })
+})
+
+export default app

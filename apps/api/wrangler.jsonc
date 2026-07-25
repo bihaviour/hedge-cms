@@ -1,0 +1,99 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hedge-cms",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  // The admin SPA is served straight from the edge. The Worker runs first for API and media
+  // routes so a 404 there returns JSON instead of being rewritten to index.html.
+  "assets": {
+    "directory": "../admin/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/media/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hedge-db",
+      // Replace with the id printed by `wrangler d1 create hedge-db`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "hedge-media",
+      "preview_bucket_name": "hedge-media-preview"
+    }
+  ],
+
+  // Cloudflare Email Sending. The `from` domain must be onboarded first:
+  //   bunx wrangler email sending enable yourdomain.com
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "development",
+    "APP_NAME": "Hedge",
+    "PUBLIC_URL": "http://localhost:8787",
+    "EMAIL_FROM": "noreply@example.com",
+    "EMAIL_FROM_NAME": "Hedge CMS"
+  },
+
+  // Secrets — set with `wrangler secret put <NAME>`, or in .dev.vars locally:
+  //   AUTH_SECRET  — HMAC key for session and invite tokens
+
+  "env": {
+    "production": {
+      "name": "hedge-cms",
+      "vars": {
+        "ENVIRONMENT": "production",
+        "APP_NAME": "Hedge",
+        "PUBLIC_URL": "https://cms.example.com",
+        "EMAIL_FROM": "noreply@example.com",
+        "EMAIL_FROM_NAME": "Hedge CMS"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "hedge-db",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "hedge-media"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
+      "assets": {
+        "directory": "../admin/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*", "/media/*"]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
+  }
+}

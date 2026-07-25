@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    // Runtime types come from the wrangler-generated `worker-configuration.d.ts`.
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "paths": {
+      "@hedge/core": ["../../packages/core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "worker-configuration.d.ts", "drizzle.config.ts"]
+}
