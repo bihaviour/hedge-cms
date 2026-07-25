@@ -3,7 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2022"],
     // Runtime types come from the wrangler-generated `worker-configuration.d.ts`.
-    "types": ["node"],
+    "types": ["node", "bun"],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "paths": {

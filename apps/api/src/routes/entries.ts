@@ -13,11 +13,11 @@ import { getDb } from '../db/client'
 import { type CollectionRow, type EntryRow, entries, entryRevisions } from '../db/schema'
 import type { AppEnv } from '../env'
 import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
+import { findCollection } from '../lib/collections'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
-import { findCollection } from './collections'
 
 const app = new Hono<AppEnv>()
 

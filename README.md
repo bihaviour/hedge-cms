@@ -114,6 +114,52 @@ Query parameters: `locale`, `limit`, `cursor`, `sort`, `order`.
 A key belongs to the site it was created on and can only read that site's content, so nothing
 extra is needed to pick a tenant.
 
+## Managing collections over MCP
+
+Hedge exposes a [Model Context Protocol](https://modelcontextprotocol.io) server so an AI assistant
+can manage a site's collections directly. It is a single Streamable-HTTP endpoint on the Worker —
+no separate process — that speaks JSON-RPC 2.0 and offers five tools:
+
+| Tool                | Does                                              | Needs                |
+| ------------------- | ------------------------------------------------- | -------------------- |
+| `list_collections`  | List every collection on the site                 | `content:read`       |
+| `get_collection`    | One collection with its full field definitions    | `content:read`       |
+| `create_collection` | Create a collection                               | `collections:write`  |
+| `update_collection` | Edit a collection's name, kind or fields          | `collections:write`  |
+| `delete_collection` | Delete a collection (its entries go with it)      | `collections:write`  |
+
+Authentication is the same per-site API key used elsewhere. Managing schemas is an admin power, so
+issue the key under **Settings → API keys** with the `collections:write` scope (add `content:read`
+too so the assistant can read before it writes). The key is bound to its site, so nothing else is
+needed to pick a tenant.
+
+```jsonc
+// Point an MCP client at the endpoint. In Claude Code:
+// claude mcp add hedge --transport http https://your-worker.workers.dev/api/v1/mcp \
+//   --header "Authorization: Bearer hdg_..."
+{
+  "mcpServers": {
+    "hedge": {
+      "type": "http",
+      "url": "https://your-worker.workers.dev/api/v1/mcp",
+      "headers": { "Authorization": "Bearer hdg_..." }
+    }
+  }
+}
+```
+
+A quick check with plain curl:
+
+```bash
+curl https://your-worker.workers.dev/api/v1/mcp \
+  -H "Authorization: Bearer hdg_..." -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"list_collections","arguments":{}}}'
+```
+
+A signed-in user can call the endpoint too (send the site with the `X-Hedge-Site` header); their
+site role governs access exactly as it does in the admin — admins write, everyone with access reads.
+
 ## Roles
 
 Two levels, deliberately separate — a site admin runs their site, not your instance.
