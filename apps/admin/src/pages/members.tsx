@@ -26,13 +26,15 @@ import {
 } from '@/components/ui/table'
 import { useActiveSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters, useT } from '@/lib/i18n'
 
 /**
  * Members are the audience of the current site — people who sign in on the website itself to
  * unlock members-only entries. They have no access to this admin.
  */
 export function MembersPage() {
+  const t = useT()
+  const { formatDate } = useFormatters()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const queryClient = useQueryClient()
@@ -72,23 +74,19 @@ export function MembersPage() {
   return (
     <>
       <PageHeader
-        title="Members"
-        description={
-          site
-            ? `People who sign in on ${site.name} to read members-only content.`
-            : 'People who sign in on this site to read members-only content.'
-        }
+        title={t('members.title')}
+        description={t('members.subtitle')}
         actions={
           <Button onClick={() => setOpen(true)}>
             <UserPlus className="size-4" />
-            Invite member
+            {t('members.invite')}
           </Button>
         }
       />
 
       <div className="space-y-4 p-8">
         <Input
-          placeholder="Search by email…"
+          placeholder={t('members.searchPlaceholder')}
           value={search}
           className="max-w-xs"
           onChange={(event) => setSearch(event.target.value)}
@@ -98,13 +96,13 @@ export function MembersPage() {
 
         {members.data?.data.length === 0 && (
           <EmptyState
-            title="No members yet"
+            title={t('members.emptyTitle')}
             description={
               site?.allowMemberSignup
                 ? 'Visitors can register themselves at POST /api/v1/member/register, or you can invite one here.'
                 : 'Signup is off for this site, so members can only be invited from here.'
             }
-            action={<Button onClick={() => setOpen(true)}>Invite a member</Button>}
+            action={<Button onClick={() => setOpen(true)}>{t('members.inviteAction')}</Button>}
           />
         )}
 
@@ -113,10 +111,10 @@ export function MembersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="w-28">Status</TableHead>
-                  <TableHead className="w-32">Last sign-in</TableHead>
+                  <TableHead>{t('members.colName')}</TableHead>
+                  <TableHead>{t('members.colEmail')}</TableHead>
+                  <TableHead className="w-28">{t('members.colStatus')}</TableHead>
+                  <TableHead className="w-32">{t('members.colLastSignIn')}</TableHead>
                   <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>

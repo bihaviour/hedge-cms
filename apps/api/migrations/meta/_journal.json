@@ -29,6 +29,13 @@
       "when": 1784988740000,
       "tag": "0003_better_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784998036220,
+      "tag": "0004_site_i18n",
+      "breakpoints": true
     }
   ]
 }

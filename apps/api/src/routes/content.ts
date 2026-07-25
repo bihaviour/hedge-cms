@@ -1,4 +1,9 @@
-import { type EntryVisibility, fieldsSchema, MEMBER_TOKEN_HEADER } from '@hedge/core'
+import {
+  type EntryVisibility,
+  fieldsSchema,
+  localeCodeSchema,
+  MEMBER_TOKEN_HEADER,
+} from '@hedge/core'
 import { and, asc, desc, eq, gt, lt, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
@@ -25,7 +30,9 @@ const PUBLIC_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-reva
 const MEMBER_CACHE_CONTROL = 'private, no-store'
 
 const listQuery = z.object({
-  locale: z.string().min(2).max(12).default('en'),
+  // Optional, not defaulted: when omitted the site's own `defaultLocale` is used, so an
+  // Indonesian-first site serves Indonesian to a caller that names no locale.
+  locale: localeCodeSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
   sort: z.enum(['publishedAt', 'updatedAt', 'slug']).default('publishedAt'),
@@ -94,7 +101,7 @@ app.get('/:collection', async (c) => {
   const filters: SQL[] = [
     eq(entries.collectionId, collection.id),
     eq(entries.status, 'published'),
-    eq(entries.locale, query.locale),
+    eq(entries.locale, query.locale ?? site.defaultLocale),
   ]
   if (query.cursor) {
     filters.push(query.order === 'desc' ? lt(column, query.cursor) : gt(column, query.cursor))
@@ -140,7 +147,7 @@ app.get('/:collection/_schema', async (c) => {
 
 app.get('/:collection/:slug', async (c) => {
   const site = requireSite(c)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
   const isMember = c.get('member') !== null
 
   const [row] = await getDb(c.env)
