@@ -1,4 +1,4 @@
-import type { User } from '@hedge/core'
+import { roleAtLeast, type User } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronsUpDown, Layers, LogOut, Plus } from 'lucide-react'
 import type * as React from 'react'
@@ -30,7 +30,14 @@ import { useLogout } from '@/hooks/use-session'
 import { useActiveSite, useActiveSiteSlug, useSwitchSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 
-/** Static nav. Collections fills its sub-items from the API; everything else is fixed. */
+/**
+ * Static nav. Collections fills its sub-items from the API; everything else is fixed.
+ *
+ * `instanceOnly` items are managing the deployment rather than a site, so they are hidden from
+ * editors and viewers — the API would refuse them anyway, and offering a door that does not open
+ * is worse than not showing it. API keys stays: it is gated by the *site* role, which a
+ * per-site admin can hold without being an instance admin.
+ */
 const NAV = [
   {
     title: 'Content',
@@ -46,8 +53,8 @@ const NAV = [
   {
     title: 'Settings',
     items: [
-      { title: 'Sites', url: '/settings/sites' },
-      { title: 'Users', url: '/settings/users' },
+      { title: 'Sites', url: '/settings/sites', instanceOnly: true },
+      { title: 'Users', url: '/settings/users', instanceOnly: true },
       { title: 'API keys', url: '/settings/api-keys' },
     ],
   },
@@ -66,14 +73,20 @@ export function AppSidebar({
     enabled: Boolean(siteSlug),
   })
 
+  const isInstanceAdmin = roleAtLeast(user.role, 'admin')
+  const groups = NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => isInstanceAdmin || !('instanceOnly' in item)),
+  })).filter((group) => group.items.length > 0)
+
   return (
     <Sidebar {...props}>
       <SidebarHeader>
-        <SiteSwitcher />
+        <SiteSwitcher canManage={isInstanceAdmin} />
       </SidebarHeader>
 
       <SidebarContent>
-        {NAV.map((group) => (
+        {groups.map((group) => (
           <SidebarGroup key={group.title}>
             <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
             <SidebarMenu>
@@ -135,7 +148,7 @@ export function AppSidebar({
 }
 
 /** One deployment, many sites — this is how you move between them. */
-function SiteSwitcher() {
+function SiteSwitcher({ canManage }: { canManage: boolean }) {
   const { site, sites } = useActiveSite()
   const switchSite = useSwitchSite()
   const navigate = useNavigate()
@@ -167,11 +180,15 @@ function SiteSwitcher() {
                 {option.slug === site?.slug && <Check className="ml-auto size-4" />}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => navigate('/settings/sites')}>
-              <Plus className="size-4" />
-              Manage sites
-            </DropdownMenuItem>
+            {canManage && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => navigate('/settings/sites')}>
+                  <Plus className="size-4" />
+                  Manage sites
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
