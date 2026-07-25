@@ -74,6 +74,7 @@ const NAV: {
   {
     title: 'nav.settings',
     items: [
+      { title: 'nav.siteSettings', url: '/settings/site' },
       { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
       { title: 'nav.users', url: '/settings/users', instanceOnly: true },
       { title: 'nav.apiKeys', url: '/settings/api-keys' },

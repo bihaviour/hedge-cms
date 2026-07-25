@@ -9,6 +9,23 @@ export type EntryStatus = (typeof ENTRY_STATUSES)[number]
 export const ENTRY_VISIBILITIES = ['public', 'members'] as const
 export type EntryVisibility = (typeof ENTRY_VISIBILITIES)[number]
 
+/**
+ * Per-entry metadata. The named fields are SEO/social overrides for the site defaults; `custom`
+ * holds this entry's values for the site's custom fields, validated at the route against the
+ * site's `customFields` definitions.
+ */
+export const entryMetadataSchema = z.object({
+  metaTitle: z.string().max(200).optional(),
+  description: z.string().max(500).optional(),
+  canonicalUrl: z.string().max(2000).optional(),
+  ogImage: z.string().max(2000).optional(),
+  /** Keep this entry out of search indexes even though it is published. */
+  noIndex: z.boolean().default(false),
+  custom: z.record(z.string(), z.unknown()).default({}),
+})
+
+export type EntryMetadata = z.infer<typeof entryMetadataSchema>
+
 export const entrySchema = z.object({
   id: z.string(),
   collectionId: z.string(),
@@ -18,6 +35,7 @@ export const entrySchema = z.object({
   visibility: z.enum(ENTRY_VISIBILITIES),
   locale: localeCodeSchema,
   data: z.record(z.string(), z.unknown()),
+  metadata: entryMetadataSchema,
   publishedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -36,6 +54,7 @@ export const createEntrySchema = z.object({
    */
   locale: localeCodeSchema.optional(),
   data: z.record(z.string(), z.unknown()),
+  metadata: entryMetadataSchema.optional(),
 })
 
 export type CreateEntryInput = z.infer<typeof createEntrySchema>
@@ -51,6 +70,7 @@ export const updateEntrySchema = z.object({
   visibility: z.enum(ENTRY_VISIBILITIES).optional(),
   locale: localeCodeSchema.optional(),
   data: z.record(z.string(), z.unknown()).optional(),
+  metadata: entryMetadataSchema.optional(),
 })
 
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>

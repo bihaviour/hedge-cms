@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { slugSchema } from './collection'
+import { fieldsSchema } from './fields'
 import {
   DEFAULT_LOCALE,
   DEFAULT_TIMEZONE,
@@ -39,6 +40,39 @@ export const setSiteRoleSchema = z.object({ role: z.enum(SITE_ROLES) })
 
 export type SetSiteRoleInput = z.infer<typeof setSiteRoleSchema>
 
+/**
+ * A single arbitrary metadata pair. The key is emitted verbatim into a `<meta>` tag or a
+ * frontend's head, so it is constrained to what is safe there.
+ */
+export const metaEntrySchema = z.object({
+  key: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z][\w:.-]*$/, 'must start with a letter and use word characters, : . or -'),
+  value: z.string().max(2000),
+})
+
+export type MetaEntry = z.infer<typeof metaEntrySchema>
+
+/**
+ * A site's default metadata — the SEO and social defaults every entry inherits unless it sets its
+ * own. `titleTemplate` is applied to an entry's title with `%s` standing in for it, e.g. a template
+ * of `"%s · Docs"` turns a page titled `"Routing"` into `"Routing · Docs"`.
+ */
+export const siteMetadataSchema = z.object({
+  metaTitle: z.string().max(200).optional(),
+  titleTemplate: z.string().max(200).optional(),
+  description: z.string().max(500).optional(),
+  keywords: z.array(z.string().max(80)).max(50).default([]),
+  ogImage: z.string().max(2000).optional(),
+  twitterHandle: z.string().max(80).optional(),
+  /** Free-form pairs — an escape hatch for whatever a frontend wants that has no dedicated field. */
+  custom: z.array(metaEntrySchema).max(50).default([]),
+})
+
+export type SiteMetadata = z.infer<typeof siteMetadataSchema>
+
 export const siteSchema = z.object({
   id: z.string(),
   slug: slugSchema,
@@ -54,6 +88,13 @@ export const siteSchema = z.object({
   defaultLocale: localeCodeSchema,
   /** IANA timezone the admin renders this site's timestamps in. */
   timezone: timezoneSchema,
+  /** Per-site metadata defaults — see `siteMetadataSchema`. Unique to this site. */
+  metadata: siteMetadataSchema,
+  /**
+   * Reusable custom field definitions scoped to this site. Every entry on the site carries values
+   * for these under its `metadata.custom`, on top of whatever fields its own collection defines.
+   */
+  customFields: fieldsSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -101,3 +142,15 @@ export const updateSiteSchema = z.object({
 })
 
 export type UpdateSiteInput = z.infer<typeof updateSiteSchema>
+
+/**
+ * A site's metadata defaults and custom fields, edited from Site Settings. Kept apart from
+ * `updateSiteSchema` because it is authorised at the *site* level — a per-site admin owns their
+ * site's content configuration — where name, domain and member signup are instance-admin concerns.
+ */
+export const updateSiteConfigSchema = z.object({
+  metadata: siteMetadataSchema.optional(),
+  customFields: fieldsSchema.optional(),
+})
+
+export type UpdateSiteConfigInput = z.infer<typeof updateSiteConfigSchema>

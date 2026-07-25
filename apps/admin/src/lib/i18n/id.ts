@@ -32,6 +32,7 @@ export const id: Catalog = {
   'nav.collections': 'Koleksi',
   'nav.media': 'Media',
   'nav.members': 'Anggota',
+  'nav.siteSettings': 'Pengaturan situs',
   'nav.sites': 'Situs',
   'nav.users': 'Pengguna',
   'nav.apiKeys': 'Kunci API',

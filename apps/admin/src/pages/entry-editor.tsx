@@ -1,4 +1,4 @@
-import type { EntryStatus, EntryVisibility } from '@hedge/core'
+import type { EntryMetadata, EntryStatus, EntryVisibility } from '@hedge/core'
 import { localeLabel, slugify } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Trash2 } from 'lucide-react'
@@ -18,9 +18,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { useActiveSite, useActiveSiteSlug } from '@/hooks/use-site'
 import { ApiClientError, api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
+
+const EMPTY_METADATA: EntryMetadata = { noIndex: false, custom: {} }
 
 export function EntryEditorPage() {
   const { collection: collectionSlug = '', slug } = useParams()
@@ -34,6 +38,7 @@ export function EntryEditorPage() {
   const siteSlug = useActiveSiteSlug()
   const { site } = useActiveSite()
   const locales = site?.locales ?? []
+  const customFields = site?.customFields ?? []
   // The locale being edited: the URL wins, then the site's default, then a safe fallback.
   const locale = params.get('locale') ?? site?.defaultLocale ?? 'en'
 
@@ -56,6 +61,7 @@ export function EntryEditorPage() {
   const creating = isNew || translationMissing
 
   const [data, setData] = useState<Record<string, unknown>>({})
+  const [metadata, setMetadata] = useState<EntryMetadata>(EMPTY_METADATA)
   const [entrySlug, setEntrySlug] = useState('')
   const [status, setStatus] = useState<EntryStatus>('draft')
   const [visibility, setVisibility] = useState<EntryVisibility>('public')
@@ -64,21 +70,33 @@ export function EntryEditorPage() {
   useEffect(() => {
     if (entry.data) {
       setData(entry.data.data)
+      setMetadata({ ...EMPTY_METADATA, ...entry.data.metadata })
       setEntrySlug(entry.data.slug)
       setStatus(entry.data.status)
       setVisibility(entry.data.visibility)
     } else if (translationMissing) {
       // Seed a blank translation that keeps the slug, so the new locale sits beside the others.
       setData({})
+      setMetadata(EMPTY_METADATA)
       setEntrySlug(slug ?? '')
       setStatus('draft')
       setVisibility('public')
     }
   }, [entry.data, translationMissing, slug])
 
+  function patchMetadata(patch: Partial<EntryMetadata>) {
+    setMetadata((current) => ({ ...current, ...patch }))
+  }
+
   const save = useMutation({
     mutationFn: () => {
-      const payload = { data, status, visibility, ...(entrySlug ? { slug: entrySlug } : {}) }
+      const payload = {
+        data,
+        metadata,
+        status,
+        visibility,
+        ...(entrySlug ? { slug: entrySlug } : {}),
+      }
       return creating
         ? api.entries.create(collectionSlug, { ...payload, locale })
         : api.entries.update(collectionSlug, slug!, payload, locale)
@@ -185,6 +203,89 @@ export function EntryEditorPage() {
               .
             </p>
           )}
+
+          <section className="space-y-5 border-t pt-6">
+            <div>
+              <h2 className="font-medium">Metadata &amp; SEO</h2>
+              <p className="text-muted-foreground text-sm">
+                Overrides this site's defaults for this entry. Blank fields fall back to the site
+                settings.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="meta-title">Meta title</Label>
+              <Input
+                id="meta-title"
+                value={metadata.metaTitle ?? ''}
+                onChange={(event) => patchMetadata({ metaTitle: event.target.value || undefined })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="meta-description">Meta description</Label>
+              <Textarea
+                id="meta-description"
+                rows={2}
+                value={metadata.description ?? ''}
+                onChange={(event) =>
+                  patchMetadata({ description: event.target.value || undefined })
+                }
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="meta-canonical">Canonical URL</Label>
+                <Input
+                  id="meta-canonical"
+                  type="url"
+                  placeholder="https://example.com/page"
+                  value={metadata.canonicalUrl ?? ''}
+                  onChange={(event) =>
+                    patchMetadata({ canonicalUrl: event.target.value || undefined })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="meta-og">Social image</Label>
+                <Input
+                  id="meta-og"
+                  placeholder="Media key or URL"
+                  value={metadata.ogImage ?? ''}
+                  onChange={(event) => patchMetadata({ ogImage: event.target.value || undefined })}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                id="meta-noindex"
+                checked={metadata.noIndex}
+                onCheckedChange={(checked) => patchMetadata({ noIndex: checked })}
+              />
+              <Label htmlFor="meta-noindex" className="font-normal text-sm">
+                Ask search engines not to index this entry
+              </Label>
+            </div>
+
+            {customFields.length > 0 && (
+              <div className="space-y-5 border-t pt-5">
+                <p className="text-muted-foreground text-sm">Custom fields for this site</p>
+                {customFields.map((field) => (
+                  <FieldInput
+                    key={field.name}
+                    field={field}
+                    value={metadata.custom[field.name]}
+                    error={fieldErrors[`metadata.${field.name}`]?.join(', ')}
+                    onChange={(value) =>
+                      patchMetadata({ custom: { ...metadata.custom, [field.name]: value } })
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </form>
 
         <aside className="space-y-5">

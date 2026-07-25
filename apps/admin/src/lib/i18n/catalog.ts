@@ -41,6 +41,7 @@ export const en = {
   'nav.collections': 'Collections',
   'nav.media': 'Media',
   'nav.members': 'Members',
+  'nav.siteSettings': 'Site settings',
   'nav.sites': 'Sites',
   'nav.users': 'Users',
   'nav.apiKeys': 'API keys',
