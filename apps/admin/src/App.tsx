@@ -1,8 +1,10 @@
-import { Navigate, Route, Routes } from 'react-router'
+import { OAUTH_CONSENT_PATH } from '@hedge/core'
+import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { AppLayout } from '@/components/app-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession, useSetupRequired } from '@/hooks/use-session'
 import { AcceptInvitePage } from '@/pages/accept-invite'
+import { AccountPage } from '@/pages/account'
 import { ApiKeysPage } from '@/pages/api-keys'
 import { CollectionSettingsPage } from '@/pages/collection-settings'
 import { CollectionsPage } from '@/pages/collections'
@@ -11,6 +13,7 @@ import { EntryEditorPage } from '@/pages/entry-editor'
 import { LoginPage } from '@/pages/login'
 import { MediaPage } from '@/pages/media'
 import { MembersPage } from '@/pages/members'
+import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { SetupPage } from '@/pages/setup'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
@@ -18,6 +21,7 @@ import { UsersPage } from '@/pages/users'
 export function App() {
   const session = useSession()
   const setup = useSetupRequired()
+  const location = useLocation()
 
   if (session.isLoading || setup.isLoading) {
     return (
@@ -51,7 +55,9 @@ export function App() {
       <Routes>
         {publicRoutes}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Keep the query: an MCP client's authorization request is carried in it, and dropping
+            it here would leave the client waiting on a callback that never arrives. */}
+        <Route path="*" element={<Navigate to={`/login${location.search}`} replace />} />
       </Routes>
     )
   }
@@ -71,7 +77,10 @@ export function App() {
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />
+        <Route path="/settings/account" element={<AccountPage />} />
       </Route>
+      {/* Outside the app shell: it is a decision to make, not a place to browse. */}
+      <Route path={OAUTH_CONSENT_PATH} element={<OAuthConsentPage />} />
       <Route path="*" element={<Navigate to="/collections" replace />} />
     </Routes>
   )

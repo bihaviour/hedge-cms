@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   ApiKey,
+  AuthorizedClient,
   Collection,
   CreateApiKeyInput,
   CreateCollectionInput,
@@ -19,6 +20,7 @@ import type {
   UpdateMemberInput,
   UpdateSiteInput,
   User,
+  UserSession,
 } from '@hedge/core'
 import { siteHeaders } from './active-site'
 
@@ -84,6 +86,22 @@ export const api = {
       request<{ ok: true }>('/auth/forgot-password', { method: 'POST', ...json(input) }),
     resetPassword: (input: { token: string; password: string }) =>
       request<{ ok: true }>('/auth/reset-password', { method: 'POST', ...json(input) }),
+    changePassword: (input: { currentPassword: string; newPassword: string }) =>
+      request<{ ok: true }>('/auth/change-password', { method: 'POST', ...json(input) }),
+
+    /** Where this account is signed in. Revoking is by id — the token never leaves the server. */
+    sessions: () => request<UserSession[]>('/auth/sessions'),
+    revokeSession: (id: string) => request<void>(`/auth/sessions/${id}`, { method: 'DELETE' }),
+    revokeAllSessions: () => request<{ ok: true }>('/auth/sessions/revoke-all', { method: 'POST' }),
+
+    /** The MCP client behind an in-flight authorization request, for the consent screen. */
+    oauthPending: (clientId: string) =>
+      request<{ clientId: string; name: string; icon: string | null }>(
+        `/auth/oauth/pending?client_id=${encodeURIComponent(clientId)}`,
+      ),
+    oauthClients: () => request<AuthorizedClient[]>('/auth/oauth/clients'),
+    revokeOauthClient: (clientId: string) =>
+      request<void>(`/auth/oauth/clients/${encodeURIComponent(clientId)}`, { method: 'DELETE' }),
   },
 
   sites: {

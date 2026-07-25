@@ -49,6 +49,45 @@ export function inviteEmail(
   }
 }
 
+/**
+ * Members read these on the website, not in the admin, so both links are handed in by the caller:
+ * one points at the site's own reset page, the other at the Worker route that marks the address
+ * verified.
+ */
+export function memberResetEmail(
+  env: Bindings,
+  args: { to: string; name: string; token: string; resetUrl: string },
+): EmailMessage {
+  return {
+    to: args.to,
+    subject: `Reset your password`,
+    html: layout(
+      env.APP_NAME,
+      'Reset your password',
+      `<p style="margin:0">We received a request to reset the password for ${args.to}. This link expires in 1 hour. If you didn't ask for this, you can ignore this email.</p>`,
+      { url: args.resetUrl, label: 'Reset password' },
+    ),
+    text: `Hi ${args.name},\n\nReset your password here (expires in 1 hour):\n${args.resetUrl}\n\nIf you didn't request this, ignore this email.\n`,
+  }
+}
+
+export function memberVerifyEmail(
+  env: Bindings,
+  args: { to: string; name: string; verifyUrl: string },
+): EmailMessage {
+  return {
+    to: args.to,
+    subject: `Confirm your email address`,
+    html: layout(
+      env.APP_NAME,
+      'Confirm your email address',
+      `<p style="margin:0">Confirm ${args.to} so we know we can reach you. This link expires in 24 hours.</p>`,
+      { url: args.verifyUrl, label: 'Confirm email' },
+    ),
+    text: `Hi ${args.name},\n\nConfirm your email address (expires in 24 hours):\n${args.verifyUrl}\n`,
+  }
+}
+
 export function passwordResetEmail(
   env: Bindings,
   args: { to: string; name: string; token: string },

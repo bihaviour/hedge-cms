@@ -56,6 +56,7 @@ const NAV = [
       { title: 'Sites', url: '/settings/sites', instanceOnly: true },
       { title: 'Users', url: '/settings/users', instanceOnly: true },
       { title: 'API keys', url: '/settings/api-keys' },
+      { title: 'Account', url: '/settings/account' },
     ],
   },
 ]

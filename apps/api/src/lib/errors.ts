@@ -47,6 +47,10 @@ export class ApiError extends Error {
     return new ApiError('conflict', message)
   }
 
+  static rateLimited(message = 'Too many requests — try again shortly') {
+    return new ApiError('rate_limited', message)
+  }
+
   static fromZod(error: ZodError): ApiError {
     const details: Record<string, string[]> = {}
     for (const issue of error.issues) {

@@ -7,6 +7,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input'
 import { useLogin } from '@/hooks/use-session'
 import { api } from '@/lib/api'
+import { pendingAuthorization, resumeAuthorization } from '@/lib/oauth'
 import { cn } from '@/lib/utils'
 
 /**
@@ -29,6 +30,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
 
   const error = forgot ? forgotPassword.error : login.error
   const pending = forgot ? forgotPassword.isPending : login.isPending
+  const authorizing = Boolean(pendingAuthorization())
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
@@ -40,7 +42,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
           <CardDescription>
             {forgot
               ? 'We will email you a link to choose a new one.'
-              : 'Sign in to your Hedge workspace'}
+              : authorizing
+                ? 'An application is waiting for you to sign in before it can ask for access.'
+                : 'Sign in to your Hedge workspace'}
           </CardDescription>
         </CardHeader>
 
@@ -49,7 +53,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
             onSubmit={(event) => {
               event.preventDefault()
               if (forgot) forgotPassword.mutate({ email })
-              else login.mutate({ email, password })
+              // An MCP client may have sent the operator here mid-authorization; if so, signing in
+              // hands them straight back to it rather than dropping them in the admin.
+              else login.mutate({ email, password }, { onSuccess: () => resumeAuthorization() })
             }}
           >
             <FieldGroup>

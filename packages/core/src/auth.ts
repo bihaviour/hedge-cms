@@ -49,6 +49,47 @@ export const acceptInviteSchema = z.object({
 
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>
 
+/**
+ * One place a user is signed in. The session token is the credential, so it is never part of this —
+ * the admin revokes by id.
+ */
+export const userSessionSchema = z.object({
+  id: z.string(),
+  /** True for the session making the request, which the UI marks rather than offers to revoke. */
+  current: z.boolean(),
+  ipAddress: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+})
+
+export type UserSession = z.infer<typeof userSessionSchema>
+
+/**
+ * OAuth scopes an MCP client may request. They bound what a *delegated* client can do; the user's
+ * own site role still applies on top, so granting `collections:write` to an editor's client does
+ * not let it rewrite schemas.
+ */
+export const MCP_SCOPES = {
+  collectionsRead: 'collections:read',
+  collectionsWrite: 'collections:write',
+} as const
+
+export type McpScope = (typeof MCP_SCOPES)[keyof typeof MCP_SCOPES]
+
+/** Admin route that asks the operator to approve an MCP client's authorization request. */
+export const OAUTH_CONSENT_PATH = '/oauth/consent'
+
+/** An MCP client a user has approved. Ending it revokes both its tokens and the consent. */
+export const authorizedClientSchema = z.object({
+  clientId: z.string(),
+  name: z.string(),
+  icon: z.string().nullable(),
+  authorizedAt: z.string(),
+})
+
+export type AuthorizedClient = z.infer<typeof authorizedClientSchema>
+
 export const API_KEY_SCOPES = [
   'content:read',
   'content:write',
