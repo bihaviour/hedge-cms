@@ -22,7 +22,7 @@ import type {
   User,
   UserSession,
 } from '@hedge/core'
-import { siteHeaders } from './active-site'
+import { getActiveSite, setActiveSite, siteHeaders } from './active-site'
 
 const BASE = '/api/v1'
 
@@ -38,33 +38,61 @@ export class ApiClientError extends Error {
   }
 }
 
+/**
+ * One request, with the remembered site attached — and dropped again if the API says it is gone.
+ *
+ * A site can be deleted while someone has it selected, and the slug outlives it in `localStorage`.
+ * Every request carries that header, so without this the *session* check itself would fail and the
+ * admin would show its login screen to someone who is perfectly well signed in, with no way out but
+ * clearing site data. Forgetting the site and asking again is the whole recovery: the switcher
+ * falls back to the first site the account can reach as soon as the app renders.
+ */
+async function send(path: string, init?: RequestInit): Promise<Response> {
+  const call = () =>
+    fetch(`${BASE}${path}`, {
+      credentials: 'same-origin',
+      ...init,
+      headers: {
+        ...(init?.body instanceof FormData ? {} : { 'content-type': 'application/json' }),
+        // Every content route is scoped to the site the admin is currently in.
+        ...siteHeaders(),
+        ...init?.headers,
+      },
+    })
+
+  const response = await call()
+  if (response.status !== 404 || !getActiveSite()) return response
+
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as ApiErrorBody | null
+  if (body?.error.code !== 'unknown_site') return response
+
+  setActiveSite(null)
+  return call()
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
-    credentials: 'same-origin',
-    ...init,
-    headers: {
-      ...(init?.body instanceof FormData ? {} : { 'content-type': 'application/json' }),
-      // Every content route is scoped to the site the admin is currently in.
-      ...siteHeaders(),
-      ...init?.headers,
-    },
-  })
+  const response = await send(path, init)
 
   if (response.status === 204) return undefined as T
 
   const payload = await response.json().catch(() => null)
 
-  if (!response.ok) {
-    const body = payload as ApiErrorBody | null
-    throw new ApiClientError(
-      response.status,
-      body?.error.code ?? 'internal_error',
-      body?.error.message ?? response.statusText,
-      body?.error.details,
-    )
-  }
+  if (!response.ok) throw errorFrom(response, payload)
 
   return (payload as { data: T }).data
+}
+
+function errorFrom(response: Response, payload: unknown): ApiClientError {
+  const body = payload as ApiErrorBody | null
+  return new ApiClientError(
+    response.status,
+    body?.error.code ?? 'internal_error',
+    body?.error.message ?? response.statusText,
+    body?.error.details,
+  )
 }
 
 const json = (body: unknown) => ({ body: JSON.stringify(body) })
@@ -214,21 +242,10 @@ export const api = {
 
 /** Same as `request`, but preserves the `nextCursor` alongside the rows. */
 async function requestPage<T>(path: string): Promise<{ data: T[]; nextCursor: string | null }> {
-  const response = await fetch(`${BASE}${path}`, {
-    credentials: 'same-origin',
-    headers: siteHeaders(),
-  })
+  const response = await send(path)
   const payload = await response.json().catch(() => null)
 
-  if (!response.ok) {
-    const body = payload as ApiErrorBody | null
-    throw new ApiClientError(
-      response.status,
-      body?.error.code ?? 'internal_error',
-      body?.error.message ?? response.statusText,
-      body?.error.details,
-    )
-  }
+  if (!response.ok) throw errorFrom(response, payload)
 
   return payload as { data: T[]; nextCursor: string | null }
 }

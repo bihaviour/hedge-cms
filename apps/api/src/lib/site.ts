@@ -30,7 +30,7 @@ async function lookupSite(c: Context<AppEnv>): Promise<SiteRow | null> {
       .from(sites)
       .where(or(eq(sites.slug, selector), eq(sites.id, selector)))
       .limit(1)
-    if (!row) throw ApiError.notFound('Site')
+    if (!row) throw ApiError.unknownSite(selector)
 
     // An API key is bound to one site and cannot be pointed at another by header.
     if (actor?.kind === 'api_key' && actor.siteId !== row.id) {
