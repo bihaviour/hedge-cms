@@ -3,6 +3,7 @@ import {
   createEntrySchema,
   type Entry,
   type EntryMetadata,
+  type EntryRevision,
   entryMetadataSchema,
   fieldsSchema,
   listEntriesQuerySchema,
@@ -18,8 +19,9 @@ import {
   entries,
   entryRevisions,
   type SiteRow,
+  users,
 } from '../db/schema'
-import type { AppEnv } from '../env'
+import type { Actor, AppEnv } from '../env'
 import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { findCollection } from '../lib/collections'
 import { ApiError } from '../lib/errors'
@@ -44,6 +46,39 @@ function toEntry(row: EntryRow, collection: CollectionRow): Entry {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
+}
+
+function toEntryRevision(
+  row: typeof entryRevisions.$inferSelect,
+  authorName: string | null,
+): EntryRevision {
+  return {
+    id: row.id,
+    entryId: row.entryId,
+    data: row.data,
+    // Older rows have no metadata snapshot; surface that as null rather than empty defaults, so a
+    // restore leaves the live entry's metadata alone instead of overwriting it with blanks.
+    metadata: row.metadata ? entryMetadataSchema.parse(row.metadata) : null,
+    status: row.status as EntryRevision['status'],
+    createdBy: row.createdBy,
+    createdByName: authorName,
+    createdAt: row.createdAt,
+  }
+}
+
+/**
+ * Snapshot an entry's current state into `entry_revisions` before it is overwritten — the one place
+ * that decides what a revision captures, so an update and a restore record the same thing.
+ */
+async function snapshotRevision(db: ReturnType<typeof getDb>, entry: EntryRow, actor: Actor) {
+  await db.insert(entryRevisions).values({
+    id: newId('rev'),
+    entryId: entry.id,
+    data: entry.data,
+    metadata: entry.metadata,
+    status: entry.status,
+    createdBy: actor.kind === 'user' ? actor.id : null,
+  })
 }
 
 /** Validates `data` against the collection's field definitions. */
@@ -222,13 +257,7 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
   const now = new Date().toISOString()
 
   // Snapshot the pre-update state so edits are always recoverable.
-  await db.insert(entryRevisions).values({
-    id: newId('rev'),
-    entryId: existing.id,
-    data: existing.data,
-    status: existing.status,
-    createdBy: actor.kind === 'user' ? actor.id : null,
-  })
+  await snapshotRevision(db, existing, actor)
 
   const [row] = await db
     .update(entries)
@@ -295,14 +324,86 @@ app.get('/:slug/revisions', requireSiteRole('editor'), async (c) => {
 
   if (!entry) throw ApiError.notFound('Entry')
 
+  // Left join the author in — a bare `created_by` id would mean nothing in the revisions list, and
+  // the join is on the users primary key, so it stays an indexed lookup rather than a scan.
   const rows = await db
-    .select()
+    .select({ revision: entryRevisions, authorName: users.name })
     .from(entryRevisions)
+    .leftJoin(users, eq(entryRevisions.createdBy, users.id))
     .where(eq(entryRevisions.entryId, entry.id))
     .orderBy(desc(entryRevisions.createdAt))
     .limit(50)
 
-  return c.json({ data: rows })
+  return c.json({ data: rows.map((row) => toEntryRevision(row.revision, row.authorName)) })
 })
+
+app.post(
+  '/:slug/revisions/:revisionId/restore',
+  requireSiteRole('editor'),
+  requireScope('content:write'),
+  async (c) => {
+    const site = requireSite(c)
+    const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
+    const actor = requireActor(c)
+    const db = getDb(c.env)
+    const locale = c.req.query('locale') ?? site.defaultLocale
+
+    const [existing] = await db
+      .select()
+      .from(entries)
+      .where(
+        and(
+          eq(entries.collectionId, collection.id),
+          eq(entries.slug, c.req.param('slug')),
+          eq(entries.locale, locale),
+        ),
+      )
+      .limit(1)
+
+    if (!existing) throw ApiError.notFound('Entry')
+
+    // Scope the revision lookup to this entry, so a revision id from another entry can't be
+    // restored onto this one even if the caller can reach both.
+    const [revision] = await db
+      .select()
+      .from(entryRevisions)
+      .where(
+        and(
+          eq(entryRevisions.id, c.req.param('revisionId')!),
+          eq(entryRevisions.entryId, existing.id),
+        ),
+      )
+      .limit(1)
+
+    if (!revision) throw ApiError.notFound('Revision')
+
+    // Restoring is itself an edit: snapshot the current state first, so the restore is undoable too.
+    await snapshotRevision(db, existing, actor)
+
+    const status = revision.status as EntryRow['status']
+    const now = new Date().toISOString()
+
+    const [row] = await db
+      .update(entries)
+      .set({
+        data: revision.data,
+        // A revision predating metadata capture leaves the live metadata as it is.
+        metadata: revision.metadata ?? existing.metadata,
+        status,
+        publishedAt:
+          status === 'published'
+            ? (existing.publishedAt ?? now)
+            : status === 'draft'
+              ? null
+              : existing.publishedAt,
+        updatedBy: actor.kind === 'user' ? actor.id : null,
+        updatedAt: now,
+      })
+      .where(eq(entries.id, existing.id))
+      .returning()
+
+    return c.json({ data: toEntry(row!, collection) })
+  },
+)
 
 export default app

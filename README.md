@@ -84,6 +84,17 @@ Two things are worth doing next, when you need them:
 
 R2 must be enabled on the account, since media lives there.
 
+## Keeping a deployment up to date
+
+Your deployment is a fork, and every push to it redeploys, so updating is a **Sync fork** on GitHub
+or GitLab: pull this repository's new commits into your fork and Workers Builds rebuilds and applies
+any new database migrations on the way. Nothing else to run.
+
+The admin knows when there is something to sync. **Settings → About & updates** shows the version the
+deployment runs and, when this project has cut a newer release, a banner and the steps to take it.
+Set the `REPO_URL` variable to your fork's URL and that page links straight to its sync button —
+otherwise it links to the release notes.
+
 ## Getting started locally
 
 Requires [Bun](https://bun.sh) 1.3+. No Cloudflare account: `wrangler dev` emulates D1, R2 and the

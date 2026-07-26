@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/app-layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession, useSetupRequired } from '@/hooks/use-session'
 import { useSites } from '@/hooks/use-site'
+import { AboutPage } from '@/pages/about'
 import { AcceptInvitePage } from '@/pages/accept-invite'
 import { AccountPage } from '@/pages/account'
 import { ApiKeysPage } from '@/pages/api-keys'
@@ -109,6 +110,7 @@ export function App() {
         <Route path="/settings/email/templates" element={<EmailTemplatesPage />} />
         <Route path="/settings/email/log" element={<EmailLogPage />} />
         <Route path="/settings/account" element={<AccountPage />} />
+        <Route path="/settings/about" element={<AboutPage />} />
       </Route>
       {/* Outside the app shell: it is a decision to make, not a place to browse. */}
       <Route path={OAUTH_CONSENT_PATH} element={<OAuthConsentPage />} />

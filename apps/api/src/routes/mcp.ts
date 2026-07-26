@@ -1,6 +1,7 @@
 import {
   type CreateCollectionInput,
   createCollectionSchema,
+  HEDGE_VERSION,
   MCP_SCOPES,
   roleAtLeast,
   slugSchema,
@@ -213,7 +214,7 @@ app.post('/', async (c) => {
 
   const server: McpServer = {
     name: 'hedge-collections',
-    version: '0.0.1',
+    version: HEDGE_VERSION,
     instructions:
       'Manage the content collections of the current Hedge site. A collection is a content type ' +
       'with a slug, a name and a list of typed fields.',

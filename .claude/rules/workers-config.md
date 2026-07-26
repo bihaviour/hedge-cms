@@ -52,6 +52,28 @@ That fallback is safe only because Cloudflare routes to a Worker by hostname, so
 always one the deployment answers on — it is not a Host header a caller chose. Don't carry the
 pattern to a runtime where that isn't true, and don't widen it to trust a forwarded-host header.
 
+`REPO_URL` is also deliberately empty. It is only ever a display value: when set to the fork a
+deployment was created from, the admin's "update available" notice (`/settings/about`) can deep-link
+that repo's *Sync fork* page. Nothing about how the Worker runs reads it, so leaving it blank costs
+only the direct link — the notice still points at the upstream release notes.
+
+## Versioning and releases
+
+The running version lives in **one** place, `HEDGE_VERSION` in `packages/core/src/version.ts`, which
+the API health route, the MCP `serverInfo` and the admin all import. `GET /api/v1/system/version`
+(admin-only) compares it against the latest GitHub Release of `HEDGE_REPO` — cached in the edge Cache
+API, because the unauthenticated GitHub API is rate-limited per shared egress IP — and the admin
+surfaces "an update is available" from that. A deployment updates by syncing its fork, which Workers
+Builds redeploys; the Worker never redeploys itself.
+
+Cutting a release (SemVer):
+
+1. Bump `HEDGE_VERSION` and the `version` in the root and workspace `package.json` files together.
+2. Commit, tag `vX.Y.Z`, and cut a **GitHub Release** on that tag — the update check reads the
+   latest non-draft, non-prerelease release, so a plain tag with no release is invisible to it.
+
+The check ignores drafts and prereleases, so work-in-progress tags don't nudge self-hosters.
+
 ## Assets and routing
 
 `not_found_handling: "single-page-application"` serves the admin, with

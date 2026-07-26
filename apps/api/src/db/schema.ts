@@ -489,6 +489,9 @@ export const entryRevisions = sqliteTable(
       .notNull()
       .references(() => entries.id, { onDelete: 'cascade' }),
     data: text('data', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
+    // Nullable: rows written before revisions captured metadata have none, and a restore reads it
+    // back as "no override" rather than inventing empty defaults that would clobber the entry's.
+    metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
     status: text('status').notNull(),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: text('created_at')
