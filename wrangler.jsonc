@@ -60,6 +60,9 @@
     // one-click deploy gets a generated workers.dev subdomain — so the Worker falls back to the
     // origin of the request it is answering. Set this once the deployment has a custom domain,
     // and invite links, media URLs and the OAuth resource identifier follow it.
+    // It must be a full origin with the scheme, `https://cms.example.com` and no trailing slash.
+    // Better Auth is constructed from it and rejects anything that isn't a URL, which takes down
+    // every authenticated route while /api/health carries on answering ok.
     "PUBLIC_URL": "",
     // The system sender, for the whole deployment rather than per site: invites, password resets,
     // member sign-in links and every site's newsletters all leave from this address. Overridable

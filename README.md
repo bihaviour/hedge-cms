@@ -82,6 +82,11 @@ Two things are worth doing next, when you need them:
   is right for the generated workers.dev URL and for local development but not for a Worker reached
   by two hostnames.
 
+  `PUBLIC_URL` must be a **full origin, scheme included** — `https://cms.example.com`, not
+  `cms.example.com`, and no trailing slash. Authentication is built from this value, so a bare
+  hostname is not a near miss: it is rejected outright and every sign-in and admin request answers
+  500, while `/api/health` keeps returning `ok` because it never touches auth.
+
 R2 must be enabled on the account, since media lives there.
 
 ## Keeping a deployment up to date
