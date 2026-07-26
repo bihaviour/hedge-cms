@@ -1,32 +1,17 @@
-import { isAllowedUploadType, MAX_UPLOAD_BYTES, type Media, updateMediaSchema } from '@hedge/core'
-import { and, desc, eq, lt, type SQL } from 'drizzle-orm'
+import { isAllowedUploadType, MAX_UPLOAD_BYTES, updateMediaSchema } from '@hedge/core'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
-import { type MediaRow, media } from '../db/schema'
-import type { AppEnv, Bindings } from '../env'
+import { media } from '../db/schema'
+import type { AppEnv } from '../env'
 import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { deleteMedia, listMedia, toMedia, updateMedia } from '../lib/media'
 import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
-
-function toMedia(row: MediaRow, env: Bindings): Media {
-  return {
-    id: row.id,
-    key: row.key,
-    filename: row.filename,
-    contentType: row.contentType,
-    size: row.size,
-    width: row.width,
-    height: row.height,
-    alt: row.alt,
-    url: `${env.PUBLIC_URL}/media/${row.key}`,
-    createdAt: row.createdAt,
-  }
-}
 
 /** `blog/2026/07/k1a2b3-photo.jpg` — site- and date-prefixed so the bucket stays browsable. */
 function buildKey(siteSlug: string, filename: string): string {
@@ -48,26 +33,7 @@ app.get('/', requireSiteRole('viewer'), requireScope('media:read'), async (c) =>
       cursor: z.string().optional(),
     }),
   )
-  const site = requireSite(c)
-  const db = getDb(c.env)
-
-  const filters: SQL[] = [eq(media.siteId, site.id)]
-  if (query.cursor) filters.push(lt(media.id, query.cursor))
-
-  const rows = await db
-    .select()
-    .from(media)
-    .where(and(...filters))
-    .orderBy(desc(media.id))
-    .limit(query.limit + 1)
-
-  const hasMore = rows.length > query.limit
-  const page = hasMore ? rows.slice(0, query.limit) : rows
-
-  return c.json({
-    data: page.map((row) => toMedia(row, c.env)),
-    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
-  })
+  return c.json(await listMedia(c.env, requireSite(c).id, query))
 })
 
 app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
@@ -119,33 +85,13 @@ app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) 
 })
 
 app.patch('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
-  const site = requireSite(c)
   const input = await validate(c, updateMediaSchema)
-  const db = getDb(c.env)
-
-  const [row] = await db
-    .update(media)
-    .set({
-      ...(input.alt !== undefined ? { alt: input.alt } : {}),
-      ...(input.filename !== undefined ? { filename: input.filename } : {}),
-    })
-    .where(and(eq(media.id, c.req.param('id')), eq(media.siteId, site.id)))
-    .returning()
-
-  if (!row) throw ApiError.notFound('Media')
-  return c.json({ data: toMedia(row, c.env) })
+  const data = await updateMedia(c.env, requireSite(c).id, c.req.param('id'), input)
+  return c.json({ data })
 })
 
 app.delete('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
-  const site = requireSite(c)
-  const db = getDb(c.env)
-  const [row] = await db
-    .delete(media)
-    .where(and(eq(media.id, c.req.param('id')), eq(media.siteId, site.id)))
-    .returning()
-  if (!row) throw ApiError.notFound('Media')
-
-  await c.env.MEDIA.delete(row.key)
+  await deleteMedia(c.env, requireSite(c).id, c.req.param('id'))
   return c.body(null, 204)
 })
 

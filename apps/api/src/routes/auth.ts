@@ -20,7 +20,6 @@ import {
   oauthApplications,
   oauthConsents,
   sessions,
-  siteUsers,
   users,
 } from '../db/schema'
 import type { AppEnv } from '../env'
@@ -30,6 +29,7 @@ import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { hasCredential, sendUserInvite } from '../lib/invites'
 import { requireSite } from '../lib/site'
+import { inviteUser } from '../lib/users'
 import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
@@ -226,27 +226,7 @@ app.get('/setup-required', async (c) => {
 
 app.post('/invite', requireRole('admin'), async (c) => {
   const input = await validate(c, inviteUserSchema)
-  const db = getDb(c.env)
-  const email = input.email.toLowerCase()
-
-  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email))
-  if (existing) throw ApiError.conflict('A user with that email already exists')
-
-  const [user] = await db
-    .insert(users)
-    .values({ id: newId('usr'), email, name: input.name, role: input.role })
-    .returning()
-
-  // Owners and admins reach every site. Everyone else needs a grant or they would sign in to
-  // nothing at all, so start them on the site the invite was sent from.
-  if (input.role === 'editor' || input.role === 'viewer') {
-    await db
-      .insert(siteUsers)
-      .values({ siteId: requireSite(c).id, userId: user!.id, role: input.role })
-  }
-
-  await sendUserInvite(c.env, user!)
-  return c.json({ data: toUser(user!) }, 201)
+  return c.json({ data: await inviteUser(c.env, input, requireSite(c).id) }, 201)
 })
 
 /** Sends the invite again — the first one bounced, went to spam, or simply expired. */
