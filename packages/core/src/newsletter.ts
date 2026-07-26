@@ -96,6 +96,53 @@ export const testSendSchema = z.object({
 
 export type TestSendInput = z.infer<typeof testSendSchema>
 
+/* ------------------------------------------------------------------ *
+ * Templates — a per-site library of reusable newsletter blueprints. A new campaign can be started
+ * from one, and a draft can be saved back as one, so recurring issues don't start from a blank page.
+ * ------------------------------------------------------------------ */
+
+export const newsletterTemplateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  subject: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+export type NewsletterTemplate = z.infer<typeof newsletterTemplateSchema>
+
+export const createNewsletterTemplateSchema = z.object({
+  name: z.string().min(1).max(120),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(50_000),
+})
+
+export type CreateNewsletterTemplateInput = z.infer<typeof createNewsletterTemplateSchema>
+
+export const updateNewsletterTemplateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  subject: z.string().min(1).max(200).optional(),
+  body: z.string().min(1).max(50_000).optional(),
+})
+
+export type UpdateNewsletterTemplateInput = z.infer<typeof updateNewsletterTemplateSchema>
+
+/** What a preview request renders — a subject line and the wrapped HTML, sample data filled in. */
+export const newsletterPreviewInputSchema = z.object({
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(50_000),
+})
+
+export type NewsletterPreviewInput = z.infer<typeof newsletterPreviewInputSchema>
+
+export const newsletterPreviewSchema = z.object({
+  subject: z.string(),
+  html: z.string(),
+})
+
+export type NewsletterPreview = z.infer<typeof newsletterPreviewSchema>
+
 /** The result of a send: how many recipients it reached, and how many the provider rejected. */
 export interface SendResult {
   recipientCount: number

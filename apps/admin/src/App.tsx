@@ -18,6 +18,7 @@ import { LoginPage } from '@/pages/login'
 import { MediaPage } from '@/pages/media'
 import { MembersPage } from '@/pages/members'
 import { NewsletterSubscribersPage } from '@/pages/newsletter-subscribers'
+import { NewsletterTemplatesPage } from '@/pages/newsletter-templates'
 import { NewslettersPage } from '@/pages/newsletters'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { OnboardingPage } from '@/pages/onboarding'
@@ -97,6 +98,7 @@ export function App() {
         <Route path="/media" element={<MediaPage />} />
         <Route path="/members" element={<MembersPage />} />
         <Route path="/newsletters" element={<NewslettersPage />} />
+        <Route path="/newsletters/templates" element={<NewsletterTemplatesPage />} />
         <Route path="/subscribers" element={<NewsletterSubscribersPage />} />
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />

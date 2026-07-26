@@ -1,4 +1,9 @@
-import { NEWSLETTER_AUDIENCES, type Newsletter, type NewsletterAudience } from '@hedge/core'
+import {
+  NEWSLETTER_AUDIENCES,
+  type Newsletter,
+  type NewsletterAudience,
+  type NewsletterTemplate,
+} from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, Plus, Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -44,6 +49,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { NewsletterPreview } from './newsletter-templates'
 
 const AUDIENCE_LABEL: Record<NewsletterAudience, string> = {
   subscribers: 'Subscribers',
@@ -215,6 +221,14 @@ function NewsletterEditor({
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-5 px-4 py-2">
+          {!readOnly && (
+            <TemplatePicker
+              onPick={(template) =>
+                setDraft((d) => ({ ...d, subject: template.subject, body: template.body }))
+              }
+            />
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="nl-subject">Subject</Label>
             <Input
@@ -258,6 +272,10 @@ function NewsletterEditor({
             />
           </div>
 
+          {draft.subject && draft.body && (
+            <NewsletterPreview subject={draft.subject} body={draft.body} />
+          )}
+
           {existing && <TestSend id={existing.id} disabled={save.isPending} />}
         </div>
 
@@ -276,17 +294,122 @@ function NewsletterEditor({
             ) : (
               <span />
             )}
-            <Button
-              type="button"
-              disabled={save.isPending || !draft.subject || !draft.body}
-              onClick={() => save.mutate()}
-            >
-              {isNew ? 'Create draft' : 'Save draft'}
-            </Button>
+            <div className="flex gap-2">
+              <SaveAsTemplate subject={draft.subject} body={draft.body} />
+              <Button
+                type="button"
+                disabled={save.isPending || !draft.subject || !draft.body}
+                onClick={() => save.mutate()}
+              >
+                {isNew ? 'Create draft' : 'Save draft'}
+              </Button>
+            </div>
           </SheetFooter>
         )}
       </SheetContent>
     </Sheet>
+  )
+}
+
+/** Prefills the compose form from a saved template. */
+function TemplatePicker({ onPick }: { onPick: (template: NewsletterTemplate) => void }) {
+  const siteSlug = useActiveSiteSlug()
+  const templates = useQuery({
+    queryKey: ['newsletter-templates', siteSlug],
+    queryFn: api.newsletterTemplates.list,
+    enabled: Boolean(siteSlug),
+  })
+
+  if (!templates.data || templates.data.length === 0) return null
+
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed p-4">
+      <Label>Start from a template</Label>
+      <Select
+        onValueChange={(id) => {
+          const template = templates.data?.find((t) => t.id === id)
+          if (template) onPick(template)
+        }}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Choose a template…" />
+        </SelectTrigger>
+        <SelectContent>
+          {templates.data.map((template) => (
+            <SelectItem key={template.id} value={template.id}>
+              {template.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-muted-foreground text-xs">Replaces the current subject and body.</p>
+    </div>
+  )
+}
+
+/** Saves the current subject and body as a reusable template. */
+function SaveAsTemplate({ subject, body }: { subject: string; body: string }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+
+  const create = useMutation({
+    mutationFn: () => api.newsletterTemplates.create({ name, subject, body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['newsletter-templates'] })
+      toast.success('Saved as template')
+      setOpen(false)
+      setName('')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={!subject || !body}
+        onClick={() => setOpen(true)}
+      >
+        Save as template
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              create.mutate()
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Save as template</DialogTitle>
+              <DialogDescription>
+                Reuse this subject and body as the starting point for future newsletters.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-4">
+              <Label htmlFor="save-template-name">Template name</Label>
+              <Input
+                id="save-template-name"
+                required
+                placeholder="Monthly digest"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={create.isPending || !name}>
+                Save template
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

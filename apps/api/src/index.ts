@@ -23,6 +23,7 @@ import mcp from './routes/mcp'
 import media from './routes/media'
 import members, { memberAuth } from './routes/members'
 import newsletterPublic from './routes/newsletter-public'
+import newsletterTemplates from './routes/newsletter-templates'
 import newsletters, { subscribers } from './routes/newsletters'
 import sites from './routes/sites'
 import users from './routes/users'
@@ -40,6 +41,7 @@ const ADMIN_PREFIXES = [
   '/api/v1/members',
   '/api/v1/email',
   '/api/v1/newsletters',
+  '/api/v1/newsletter-templates',
   '/api/v1/subscribers',
 ]
 
@@ -197,6 +199,7 @@ app.route('/api/v1/collections/:collection/entries', entries)
 app.route('/api/v1/media', media)
 app.route('/api/v1/email', email)
 app.route('/api/v1/newsletters', newsletters)
+app.route('/api/v1/newsletter-templates', newsletterTemplates)
 app.route('/api/v1/subscribers', subscribers)
 // Public newsletter signup and unsubscribe — resolves no actor, like the member auth facade.
 app.route('/api/v1/newsletter', newsletterPublic)

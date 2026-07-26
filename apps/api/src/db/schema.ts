@@ -617,6 +617,23 @@ export const newsletters = sqliteTable(
   (t) => [index('newsletters_site_idx').on(t.siteId, t.createdAt)],
 )
 
+/** A reusable newsletter blueprint — a named subject and body a new campaign can be started from. */
+export const newsletterTemplates = sqliteTable(
+  'newsletter_templates',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    subject: text('subject').notNull(),
+    body: text('body').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [index('newsletter_templates_site_idx').on(t.siteId, t.createdAt)],
+)
+
 export type SiteRow = typeof sites.$inferSelect
 export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
@@ -633,3 +650,4 @@ export type EmailLogRow = typeof emailLog.$inferSelect
 export type EmailConfigRow = typeof emailConfig.$inferSelect
 export type NewsletterSubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type NewsletterRow = typeof newsletters.$inferSelect
+export type NewsletterTemplateRow = typeof newsletterTemplates.$inferSelect

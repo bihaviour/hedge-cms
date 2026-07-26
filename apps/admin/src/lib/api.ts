@@ -8,6 +8,7 @@ import type {
   CreateEntryInput,
   CreateMemberInput,
   CreateNewsletterInput,
+  CreateNewsletterTemplateInput,
   CreateSiteInput,
   CreateSubscriberInput,
   EmailConfig,
@@ -21,6 +22,8 @@ import type {
   Member,
   Newsletter,
   NewsletterAudience,
+  NewsletterPreview,
+  NewsletterTemplate,
   SendResult,
   Site,
   SiteAccess,
@@ -32,6 +35,7 @@ import type {
   UpdateEntryInput,
   UpdateMemberInput,
   UpdateNewsletterInput,
+  UpdateNewsletterTemplateInput,
   UpdateSiteInput,
   UpdateSubscriberInput,
   User,
@@ -311,6 +315,24 @@ export const api = {
     test: (id: string, email: string) =>
       request<{ ok: true }>(`/newsletters/${id}/test`, { method: 'POST', ...json({ email }) }),
     send: (id: string) => request<SendResult>(`/newsletters/${id}/send`, { method: 'POST' }),
+  },
+
+  /** Reusable newsletter blueprints for this site. */
+  newsletterTemplates: {
+    list: () => request<NewsletterTemplate[]>('/newsletter-templates'),
+    create: (input: CreateNewsletterTemplateInput) =>
+      request<NewsletterTemplate>('/newsletter-templates', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateNewsletterTemplateInput) =>
+      request<NewsletterTemplate>(`/newsletter-templates/${id}`, {
+        method: 'PATCH',
+        ...json(input),
+      }),
+    remove: (id: string) => request<void>(`/newsletter-templates/${id}`, { method: 'DELETE' }),
+    preview: (input: { subject: string; body: string }) =>
+      request<NewsletterPreview>('/newsletter-templates/preview', {
+        method: 'POST',
+        ...json(input),
+      }),
   },
 }
 
