@@ -37,6 +37,12 @@ export const sites = sqliteTable(
     /** Public hostname of the website this site feeds — used to resolve the tenant from `Host`. */
     domain: text('domain'),
     allowMemberSignup: integer('allow_member_signup', { mode: 'boolean' }).notNull().default(true),
+    /** Content locales this site publishes, e.g. `["en","id"]`. Entries live once per locale. */
+    locales: text('locales', { mode: 'json' }).notNull().$type<string[]>().default(['en']),
+    /** Which enabled locale the delivery API serves when a request names none. */
+    defaultLocale: text('default_locale').notNull().default('en'),
+    /** IANA timezone the admin renders this site's timestamps in. */
+    timezone: text('timezone').notNull().default('UTC'),
     /**
      * Per-site metadata defaults and reusable custom field definitions — see `@hedge/core`'s
      * `siteMetadataSchema` and `fieldsSchema`. Null on older rows and freshly created sites; the

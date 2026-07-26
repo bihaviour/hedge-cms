@@ -109,9 +109,10 @@ app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) 
 })
 
 app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const [row] = await db
     .select()
@@ -136,6 +137,15 @@ app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c
   const actor = requireActor(c)
   const db = getDb(c.env)
 
+  // A new entry lands in the site's default locale unless one is named — and it can only land in a
+  // locale the site actually publishes, so a typo does not create an orphan no delivery call finds.
+  const locale = input.locale ?? site.defaultLocale
+  if (!site.locales.includes(locale)) {
+    throw ApiError.badRequest(`This site does not publish the "${locale}" locale`, {
+      locale: [`enable "${locale}" in the site's localization settings first`],
+    })
+  }
+
   const data = validateData(collection, input.data)
   const metadata = resolveMetadata(site, input.metadata)
   const slug = input.slug ?? (slugify(String(data.title ?? '')) || newId())
@@ -158,7 +168,7 @@ app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c
       slug,
       status: input.status,
       visibility: input.visibility,
-      locale: input.locale,
+      locale,
       data,
       metadata,
       publishedAt: input.status === 'published' ? now : null,
@@ -182,7 +192,7 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
   const input = await validate(c, updateEntrySchema)
   const actor = requireActor(c)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const [existing] = await db
     .select()
@@ -197,6 +207,13 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
     .limit(1)
 
   if (!existing) throw ApiError.notFound('Entry')
+
+  // Moving an entry to another locale is allowed, but only into one the site publishes.
+  if (input.locale && !site.locales.includes(input.locale)) {
+    throw ApiError.badRequest(`This site does not publish the "${input.locale}" locale`, {
+      locale: [`enable "${input.locale}" in the site's localization settings first`],
+    })
+  }
 
   const data = input.data ? validateData(collection, input.data) : existing.data
   const metadata =
@@ -238,9 +255,10 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
 })
 
 app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const result = await db
     .delete(entries)
@@ -258,9 +276,10 @@ app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), a
 })
 
 app.get('/:slug/revisions', requireSiteRole('editor'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const [entry] = await db
     .select({ id: entries.id })

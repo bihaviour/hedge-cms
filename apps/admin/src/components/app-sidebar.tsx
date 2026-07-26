@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronsUpDown, Layers, LogOut, Plus } from 'lucide-react'
 import type * as React from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
+import { LanguageSwitcher } from '@/components/language-switcher'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -31,6 +32,8 @@ import {
 import { useLogout } from '@/hooks/use-session'
 import { useActiveSite, useActiveSiteSlug, useSwitchSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
+import { useT } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/i18n/catalog'
 
 /** Your own profile and credentials. Reached from the footer, not from the nav. */
 const ACCOUNT_PATH = '/settings/account'
@@ -53,25 +56,28 @@ function initials(name: string): string {
  * is worse than not showing it. API keys stays: it is gated by the *site* role, which a
  * per-site admin can hold without being an instance admin.
  */
-const NAV = [
+const NAV: {
+  title: MessageKey
+  items: { title: MessageKey; url: string; instanceOnly?: boolean }[]
+}[] = [
   {
-    title: 'Content',
+    title: 'nav.content',
     items: [
-      { title: 'Collections', url: '/collections' },
-      { title: 'Media', url: '/media' },
+      { title: 'nav.collections', url: '/collections' },
+      { title: 'nav.media', url: '/media' },
     ],
   },
   {
-    title: 'Audience',
-    items: [{ title: 'Members', url: '/members' }],
+    title: 'nav.audience',
+    items: [{ title: 'nav.members', url: '/members' }],
   },
   {
-    title: 'Settings',
+    title: 'nav.settings',
     items: [
-      { title: 'Site settings', url: '/settings/site' },
-      { title: 'Sites', url: '/settings/sites', instanceOnly: true },
-      { title: 'Users', url: '/settings/users', instanceOnly: true },
-      { title: 'API keys', url: '/settings/api-keys' },
+      { title: 'nav.siteSettings', url: '/settings/site' },
+      { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
+      { title: 'nav.users', url: '/settings/users', instanceOnly: true },
+      { title: 'nav.apiKeys', url: '/settings/api-keys' },
     ],
   },
 ]
@@ -81,6 +87,7 @@ export function AppSidebar({
   ...props
 }: { user: User } & React.ComponentProps<typeof Sidebar>) {
   const { pathname } = useLocation()
+  const t = useT()
   const logout = useLogout()
   const siteSlug = useActiveSiteSlug()
   const collections = useQuery({
@@ -104,13 +111,13 @@ export function AppSidebar({
       <SidebarContent>
         {groups.map((group) => (
           <SidebarGroup key={group.title}>
-            <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
+            <SidebarGroupLabel>{t(group.title)}</SidebarGroupLabel>
             <SidebarMenu>
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={pathname === item.url}>
                     <NavLink to={item.url} className="font-medium">
-                      {item.title}
+                      {t(item.title)}
                     </NavLink>
                   </SidebarMenuButton>
 
@@ -141,6 +148,7 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter>
+        <LanguageSwitcher />
         <SidebarMenu>
           {/*
             The profile bar is a link to your own account, not a menu: the one thing it does
@@ -162,8 +170,8 @@ export function AppSidebar({
 
             <SidebarMenuAction
               className="top-1/2 -translate-y-1/2"
-              aria-label="Sign out"
-              title="Sign out"
+              aria-label={t('nav.signOut')}
+              title={t('nav.signOut')}
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
             >
@@ -180,6 +188,7 @@ export function AppSidebar({
 
 /** One deployment, many sites — this is how you move between them. */
 function SiteSwitcher({ canManage }: { canManage: boolean }) {
+  const t = useT()
   const { site, sites } = useActiveSite()
   const switchSite = useSwitchSite()
   const navigate = useNavigate()
@@ -196,7 +205,9 @@ function SiteSwitcher({ canManage }: { canManage: boolean }) {
               <div className="grid flex-1 text-left leading-tight">
                 <span className="truncate font-medium">{site?.name ?? 'Hedge'}</span>
                 <span className="truncate text-xs opacity-70">
-                  {sites.length === 1 ? 'headless + edge CMS' : `${sites.length} sites`}
+                  {sites.length === 1
+                    ? t('nav.sitesTagline')
+                    : t('nav.siteCount', { count: sites.length })}
                 </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4 opacity-70" />
@@ -204,7 +215,9 @@ function SiteSwitcher({ canManage }: { canManage: boolean }) {
           </DropdownMenuTrigger>
 
           <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
-            <DropdownMenuLabel className="text-muted-foreground text-xs">Sites</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-muted-foreground text-xs">
+              {t('nav.sites')}
+            </DropdownMenuLabel>
             {sites.map((option) => (
               <DropdownMenuItem key={option.id} onSelect={() => switchSite(option.slug)}>
                 <span className="truncate">{option.name}</span>
@@ -216,7 +229,7 @@ function SiteSwitcher({ canManage }: { canManage: boolean }) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => navigate('/settings/sites')}>
                   <Plus className="size-4" />
-                  Manage sites
+                  {t('nav.manageSites')}
                 </DropdownMenuItem>
               </>
             )}

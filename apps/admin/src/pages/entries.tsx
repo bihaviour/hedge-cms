@@ -1,4 +1,4 @@
-import type { EntryStatus } from '@hedge/core'
+import { type EntryStatus, localeLabel } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { Lock, Plus, Settings2 } from 'lucide-react'
 import { useState } from 'react'
@@ -23,9 +23,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useActiveSiteSlug } from '@/hooks/use-site'
+import { useActiveSite, useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters, useT } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/i18n/catalog'
 
 const STATUS_VARIANT: Record<EntryStatus, 'default' | 'secondary' | 'outline'> = {
   published: 'default',
@@ -33,12 +34,23 @@ const STATUS_VARIANT: Record<EntryStatus, 'default' | 'secondary' | 'outline'> =
   archived: 'outline',
 }
 
+const STATUS_LABEL: Record<EntryStatus, MessageKey> = {
+  draft: 'entries.statusDraft',
+  published: 'entries.statusPublished',
+  archived: 'entries.statusArchived',
+}
+
 export function EntriesPage() {
   const { collection: slug = '' } = useParams()
+  const t = useT()
+  const { formatDate } = useFormatters()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<EntryStatus | 'all'>('all')
+  const [locale, setLocale] = useState<string>('all')
 
   const siteSlug = useActiveSiteSlug()
+  const { site } = useActiveSite()
+  const locales = site?.locales ?? []
 
   const collection = useQuery({
     queryKey: ['collection', siteSlug, slug],
@@ -47,10 +59,11 @@ export function EntriesPage() {
   })
 
   const entries = useQuery({
-    queryKey: ['entries', siteSlug, slug, status, search],
+    queryKey: ['entries', siteSlug, slug, status, locale, search],
     queryFn: () =>
       api.entries.list(slug, {
         ...(status === 'all' ? {} : { status }),
+        ...(locale === 'all' ? {} : { locale }),
         ...(search ? { q: search } : {}),
       }),
     enabled: Boolean(siteSlug),
@@ -59,20 +72,20 @@ export function EntriesPage() {
   return (
     <>
       <PageHeader
-        title={collection.data?.name ?? 'Entries'}
+        title={collection.data?.name ?? t('entries.fallbackTitle')}
         description={collection.data?.description ?? undefined}
         actions={
           <>
             <Button variant="outline" asChild>
               <Link to={`/collections/${slug}/settings`}>
                 <Settings2 className="size-4" />
-                Fields
+                {t('entries.fields')}
               </Link>
             </Button>
             <Button asChild>
               <Link to={`/collections/${slug}/entries/new`}>
                 <Plus className="size-4" />
-                New entry
+                {t('entries.newEntry')}
               </Link>
             </Button>
           </>
@@ -80,9 +93,9 @@ export function EntriesPage() {
       />
 
       <div className="space-y-4 p-8">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input
-            placeholder="Search by slug…"
+            placeholder={t('entries.searchPlaceholder')}
             value={search}
             className="max-w-xs"
             onChange={(event) => setSearch(event.target.value)}
@@ -92,23 +105,39 @@ export function EntriesPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="published">Published</SelectItem>
-              <SelectItem value="archived">Archived</SelectItem>
+              <SelectItem value="all">{t('entries.allStatuses')}</SelectItem>
+              <SelectItem value="draft">{t('entries.statusDraft')}</SelectItem>
+              <SelectItem value="published">{t('entries.statusPublished')}</SelectItem>
+              <SelectItem value="archived">{t('entries.statusArchived')}</SelectItem>
             </SelectContent>
           </Select>
+          {/* Only worth showing on a multilingual site; a single-locale site has nothing to filter. */}
+          {locales.length > 1 && (
+            <Select value={locale} onValueChange={setLocale}>
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('entries.allLocales')}</SelectItem>
+                {locales.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {localeLabel(code)} · {code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {entries.isLoading && <Skeleton className="h-64 w-full" />}
 
         {entries.data?.data.length === 0 && (
           <EmptyState
-            title="No entries"
-            description="Nothing here yet — create the first entry for this collection."
+            title={t('entries.emptyTitle')}
+            description={t('entries.emptyDescription')}
             action={
               <Button asChild>
-                <Link to={`/collections/${slug}/entries/new`}>New entry</Link>
+                <Link to={`/collections/${slug}/entries/new`}>{t('entries.newEntry')}</Link>
               </Button>
             }
           />
@@ -119,11 +148,11 @@ export function EntriesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="w-32">Status</TableHead>
-                  <TableHead className="w-32">Visibility</TableHead>
-                  <TableHead className="w-20">Locale</TableHead>
-                  <TableHead className="w-36">Updated</TableHead>
+                  <TableHead>{t('entries.colTitle')}</TableHead>
+                  <TableHead className="w-32">{t('entries.colStatus')}</TableHead>
+                  <TableHead className="w-32">{t('entries.colVisibility')}</TableHead>
+                  <TableHead className="w-20">{t('entries.colLocale')}</TableHead>
+                  <TableHead className="w-36">{t('entries.colUpdated')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -139,18 +168,20 @@ export function EntriesPage() {
                       <p className="text-muted-foreground text-xs">/{entry.slug}</p>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[entry.status]} className="capitalize">
-                        {entry.status}
+                      <Badge variant={STATUS_VARIANT[entry.status]}>
+                        {t(STATUS_LABEL[entry.status])}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       {entry.visibility === 'members' ? (
                         <Badge variant="outline">
                           <Lock className="size-3" />
-                          Members
+                          {t('entries.visMembers')}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground text-sm">Public</span>
+                        <span className="text-muted-foreground text-sm">
+                          {t('entries.visPublic')}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{entry.locale}</TableCell>

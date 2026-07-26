@@ -3,8 +3,11 @@ import {
   createEntrySchema,
   createSiteSchema,
   entryMetadataSchema,
+  isValidTimeZone,
+  localeCodeSchema,
   memberRegisterSchema,
   setSiteRoleSchema,
+  siteI18nSchema,
   siteMetadataSchema,
   updateCollectionSchema,
   updateEntrySchema,
@@ -28,10 +31,11 @@ describe('updateEntrySchema', () => {
 })
 
 describe('createEntrySchema', () => {
-  test('applies defaults on create', () => {
+  test('applies defaults on create, but leaves locale for the route to fill from site config', () => {
     const parsed = createEntrySchema.parse({ data: {} })
     expect(parsed.status).toBe('draft')
-    expect(parsed.locale).toBe('en')
+    // Not defaulted to 'en': the route substitutes the site's own default locale.
+    expect(parsed.locale).toBeUndefined()
   })
 
   test('entries are public unless asked otherwise', () => {
@@ -61,6 +65,75 @@ describe('createSiteSchema', () => {
     expect(
       createSiteSchema.safeParse({ slug: 'docs', name: 'Docs', domain: 'https://x.com/a' }).success,
     ).toBe(false)
+  })
+
+  test('seeds English-only, UTC i18n defaults', () => {
+    const parsed = createSiteSchema.parse({ slug: 'docs', name: 'Docs' })
+    expect(parsed.locales).toEqual(['en'])
+    expect(parsed.defaultLocale).toBe('en')
+    expect(parsed.timezone).toBe('UTC')
+  })
+
+  test('rejects a default locale the site does not publish', () => {
+    const result = createSiteSchema.safeParse({
+      slug: 'docs',
+      name: 'Docs',
+      locales: ['en', 'id'],
+      defaultLocale: 'fr',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  test('accepts a bilingual site with a matching default and a real timezone', () => {
+    const parsed = createSiteSchema.parse({
+      slug: 'docs',
+      name: 'Docs',
+      locales: ['en', 'id'],
+      defaultLocale: 'id',
+      timezone: 'Asia/Jakarta',
+    })
+    expect(parsed.locales).toEqual(['en', 'id'])
+    expect(parsed.defaultLocale).toBe('id')
+    expect(parsed.timezone).toBe('Asia/Jakarta')
+  })
+})
+
+describe('siteI18nSchema', () => {
+  test('rejects duplicate locales', () => {
+    const result = siteI18nSchema.safeParse({
+      locales: ['en', 'en'],
+      defaultLocale: 'en',
+      timezone: 'UTC',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  test('rejects an unknown timezone', () => {
+    const result = siteI18nSchema.safeParse({
+      locales: ['en'],
+      defaultLocale: 'en',
+      timezone: 'Mars/Olympus_Mons',
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('localeCodeSchema', () => {
+  test('accepts language and region tags but not free text', () => {
+    expect(localeCodeSchema.safeParse('en').success).toBe(true)
+    expect(localeCodeSchema.safeParse('pt-BR').success).toBe(true)
+    expect(localeCodeSchema.safeParse('zh-Hant').success).toBe(true)
+    expect(localeCodeSchema.safeParse('English').success).toBe(false)
+    expect(localeCodeSchema.safeParse('e').success).toBe(false)
+  })
+})
+
+describe('isValidTimeZone', () => {
+  test('knows real IANA zones from made-up ones', () => {
+    expect(isValidTimeZone('Asia/Jakarta')).toBe(true)
+    expect(isValidTimeZone('UTC')).toBe(true)
+    expect(isValidTimeZone('Nowhere/Fake')).toBe(false)
+    expect(isValidTimeZone('')).toBe(false)
   })
 })
 

@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { slugSchema } from './collection'
 import { fieldsSchema } from './fields'
+import {
+  DEFAULT_LOCALE,
+  DEFAULT_TIMEZONE,
+  localeCodeSchema,
+  localesSchema,
+  timezoneSchema,
+} from './i18n'
 
 /**
  * A site is the tenant boundary. One deployment holds many sites — a blog, a docs site, a
@@ -75,6 +82,12 @@ export const siteSchema = z.object({
   domain: z.string().max(253).nullable(),
   /** When false, members can only be added from the admin. */
   allowMemberSignup: z.boolean(),
+  /** Content locales this site publishes — entries live once per locale (see `entry.ts`). */
+  locales: localesSchema,
+  /** Which enabled locale the delivery API serves when a request names none. */
+  defaultLocale: localeCodeSchema,
+  /** IANA timezone the admin renders this site's timestamps in. */
+  timezone: timezoneSchema,
   /** Per-site metadata defaults — see `siteMetadataSchema`. Unique to this site. */
   metadata: siteMetadataSchema,
   /**
@@ -94,21 +107,38 @@ const domainSchema = z
   .max(253)
   .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, 'must be a hostname')
 
-export const createSiteSchema = z.object({
-  slug: slugSchema,
-  name: z.string().min(1).max(120),
-  description: z.string().max(500).optional(),
-  domain: domainSchema.nullable().optional(),
-  allowMemberSignup: z.boolean().default(true),
-})
+export const createSiteSchema = z
+  .object({
+    slug: slugSchema,
+    name: z.string().min(1).max(120),
+    description: z.string().max(500).optional(),
+    domain: domainSchema.nullable().optional(),
+    allowMemberSignup: z.boolean().default(true),
+    locales: localesSchema.default([DEFAULT_LOCALE]),
+    defaultLocale: localeCodeSchema.default(DEFAULT_LOCALE),
+    timezone: timezoneSchema.default(DEFAULT_TIMEZONE),
+  })
+  .refine((value) => value.locales.includes(value.defaultLocale), {
+    message: 'the default locale must be one of the enabled locales',
+    path: ['defaultLocale'],
+  })
 
 export type CreateSiteInput = z.infer<typeof createSiteSchema>
 
+/**
+ * Locale and timezone are all optional here, like everything else — but `defaultLocale` and
+ * `locales` can drift out of agreement across two partial updates, so the route re-checks their
+ * consistency against the site's current state (a schema `.refine` only sees the fields present in
+ * one request). See `routes/sites.ts`.
+ */
 export const updateSiteSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   domain: domainSchema.nullable().optional(),
   allowMemberSignup: z.boolean().optional(),
+  locales: localesSchema.optional(),
+  defaultLocale: localeCodeSchema.optional(),
+  timezone: timezoneSchema.optional(),
 })
 
 export type UpdateSiteInput = z.infer<typeof updateSiteSchema>
