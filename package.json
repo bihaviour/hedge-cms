@@ -37,6 +37,21 @@
       },
       "EMAIL": {
         "description": "Cloudflare Email Sending, used for invites, password resets and newsletters. Deploying works without it — run `wrangler email sending enable <your domain>` when you are ready to send."
+      },
+      "ENVIRONMENT": {
+        "description": "Leave as `production`. Anything else is treated as local development: email is composed and logged but never handed to the provider, and invite and reset links are printed to the Worker log instead."
+      },
+      "APP_NAME": {
+        "description": "The name this deployment calls itself in the admin and in every email it sends — subject lines, greetings and footers. Set it to your own product or organisation name."
+      },
+      "PUBLIC_URL": {
+        "description": "Leave empty unless you already have a custom domain. Empty means Hedge uses the origin of whatever request it is answering, which is correct for the generated `workers.dev` subdomain. With a domain, set the full origin (`https://cms.example.com`) — invite links, media URLs and the MCP OAuth identifier all follow it."
+      },
+      "EMAIL_FROM": {
+        "description": "**System sender for the whole deployment**, not per site: invites, password resets, member sign-in links, and every newsletter from every site are sent from this address. It must be on a domain onboarded with `wrangler email sending enable <your domain>`. Safe to leave empty and set later in the admin under Settings → Email — until one of the two is set, nothing sends."
+      },
+      "EMAIL_FROM_NAME": {
+        "description": "Display name shown next to the system sender address, e.g. `Acme Editorial`. Also deployment-wide, and also overridable later under Settings → Email."
       }
     }
   },
