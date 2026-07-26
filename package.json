@@ -16,6 +16,30 @@
     "apps/*",
     "packages/*"
   ],
+  "cloudflare": {
+    "label": "Hedge CMS",
+    "products": [
+      "Workers",
+      "D1",
+      "R2",
+      "Email"
+    ],
+    "docs_url": "https://github.com/bihaviour/hedge-cms#readme",
+    "bindings": {
+      "AUTH_SECRET": {
+        "description": "Signs sessions, invite links and delivery API keys. Generate one with `openssl rand -base64 32` — changing it later signs everyone out and invalidates every key."
+      },
+      "DB": {
+        "description": "D1 database holding sites, users, collections, entries and members. Created for you; migrations run on every deploy."
+      },
+      "MEDIA": {
+        "description": "R2 bucket for uploaded media. Requires R2 to be enabled on your account."
+      },
+      "EMAIL": {
+        "description": "Cloudflare Email Sending, used for invites, password resets and newsletters. Deploying works without it — run `wrangler email sending enable <your domain>` when you are ready to send."
+      }
+    }
+  },
   "packageManager": "bun@1.3.14",
   "engines": {
     "bun": ">=1.3.0"
@@ -25,7 +49,7 @@
     "dev:api": "bun run --cwd apps/api dev",
     "dev:admin": "bun run --cwd apps/admin dev",
     "build": "bun run --cwd packages/core build && bun run --cwd apps/admin build && bun run --cwd apps/api build",
-    "deploy": "bun run build && bun run --cwd apps/api deploy",
+    "deploy": "bun run build && bun run db:migrate:remote && bun run --cwd apps/api deploy",
     "db:generate": "bun run --cwd apps/api db:generate",
     "db:migrate": "bun run --cwd apps/api db:migrate",
     "db:migrate:remote": "bun run --cwd apps/api db:migrate:remote",

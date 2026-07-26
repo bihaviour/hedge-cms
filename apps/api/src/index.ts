@@ -51,6 +51,29 @@ const MEMBER_PREFIX = '/api/v1/member/'
 const startsWithPrefix = (path: string, prefix: string) =>
   path === prefix || path.startsWith(`${prefix}/`)
 
+/**
+ * A deployment does not always know its own URL: a one-click deploy lands on a generated
+ * workers.dev subdomain, and locally the port is whatever `wrangler dev` picked. Where `PUBLIC_URL`
+ * is unset, the origin of the request being answered is the truthful value, so it is filled in
+ * before anything reads it — auth base URLs, invite and reset links, media URLs and the OAuth
+ * resource identifier all come from it. Setting the var, as a deployment with a custom domain
+ * should, always wins.
+ *
+ * This runs first, and mutates `env` rather than passing an origin around, because the two Better
+ * Auth instances are built once per isolate from `env` and never see a request.
+ *
+ * Deriving a base URL from the request is host header injection anywhere the Host is attacker
+ * controlled — a poisoned reset link is the classic result. It is not here: Cloudflare routes to a
+ * Worker *by hostname*, so the only origins that reach this code are ones the deployment itself
+ * answers on. The residual case is a deployment reachable at two of its own hostnames — a custom
+ * domain plus the workers.dev one — where a reset requested through the second emails a link on it.
+ * The token is still redeemed here and leaks nowhere, but that is the case `PUBLIC_URL` is for.
+ */
+app.use('*', async (c, next) => {
+  if (!c.env.PUBLIC_URL) c.env.PUBLIC_URL = new URL(c.req.url).origin
+  await next()
+})
+
 app.use('*', async (c, next) => {
   c.set('requestId', c.req.header('cf-ray') ?? newId('req'))
   await next()

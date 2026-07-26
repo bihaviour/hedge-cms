@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development, and generate a value:
+#   echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > .dev.vars
+#
+# This is also the file the Deploy to Cloudflare setup page reads to know which secrets to ask for.
+AUTH_SECRET=

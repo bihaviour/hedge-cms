@@ -1,6 +1,20 @@
-# Rule: Worker configuration and deploys (`apps/api/wrangler.jsonc`)
+# Rule: Worker configuration and deploys (`wrangler.jsonc`)
 
 Read before editing `wrangler.jsonc`, adding a binding, or deploying.
+
+## One config, at the repository root
+
+`wrangler.jsonc` sits at the root, not in `apps/api`, because that is where the Deploy to Cloudflare
+button and Workers Builds look for it — a monorepo subdirectory would have to be self-contained and
+this one is not (`apps/api` needs `@hedge/core` and `apps/admin/dist`). Paths in it are relative to
+the root: `apps/api/src/index.ts`, `apps/admin/dist`, `apps/api/migrations`.
+
+Every wrangler command therefore runs with `--config ../../wrangler.jsonc` from `apps/api`, where
+wrangler is installed. The root scripts (`dev:api`, `build`, `deploy`, `db:migrate*`, `cf-typegen`)
+already do that; don't invoke wrangler from the root, it isn't installed there.
+
+There are **no wrangler environments**. The committed config is the deployed one; local development
+overrides the single value that differs, with `wrangler dev --var ENVIRONMENT:development`.
 
 ## After any edit here
 
@@ -16,11 +30,27 @@ A new binding also needs its field on `Bindings` in `apps/api/src/env.ts`.
 | `DB` | D1 (`hedge-db`), migrations in `apps/api/migrations` |
 | `MEDIA` | R2 (`hedge-media`) |
 | `EMAIL` | Cloudflare Email Sending — the `from` domain must be onboarded with `wrangler email sending enable <domain>` before anything sends |
-| `ASSETS` | the built admin SPA at `../admin/dist` |
+| `ASSETS` | the built admin SPA at `apps/admin/dist` |
+
+**`DB` and `MEDIA` carry no ids on purpose.** Wrangler provisions whatever is missing on the first
+`wrangler deploy`, and locally on the first `wrangler dev`, then keeps the Worker bound to it. That
+is what lets someone deploy this repository into their own account without editing anything. Adding
+an account-specific id back into the committed config breaks the deploy button — don't.
 
 `AUTH_SECRET` is the only secret: Better Auth's signing key *and* the HMAC key for delivery API keys
 and invite tokens. Rotating it invalidates every session, every invite link and every API key.
-Local: `apps/api/.dev.vars`. Production: `wrangler secret put AUTH_SECRET --env production`.
+Local: `.dev.vars` at the root (wrangler resolves it next to the config file). Production:
+`wrangler secret put AUTH_SECRET`. `.dev.vars.example` is also what the Deploy to Cloudflare setup
+page reads to know which secrets to prompt for, so anything added there becomes a prompt.
+
+`PUBLIC_URL` is deliberately empty. A deployment does not know its own URL until it has one, so
+`apps/api/src/index.ts` fills it from the origin of the request being answered, in the first
+middleware — before the Better Auth instances, which are built from `env` and never see a request.
+A deployment with a custom domain sets the var and that wins.
+
+That fallback is safe only because Cloudflare routes to a Worker by hostname, so the origin is
+always one the deployment answers on — it is not a Host header a caller chose. Don't carry the
+pattern to a runtime where that isn't true, and don't widen it to trust a forwarded-host header.
 
 ## Assets and routing
 
@@ -32,19 +62,24 @@ Local: `apps/api/.dev.vars`. Production: `wrangler secret put AUTH_SECRET --env 
 - `/.well-known/*` — OAuth discovery; without it a metadata request gets `index.html` and MCP client
   bootstrapping breaks
 
-Every config block is duplicated under `env.production`. **Change both**, or production silently
-runs different settings.
-
 ## Deploying
 
 ```bash
-bunx wrangler secret put AUTH_SECRET --env production
+bunx wrangler secret put AUTH_SECRET
 bunx wrangler email sending enable yourdomain.com
-bun run db:migrate:remote
-bun run deploy                    # build, then wrangler deploy --env production
+bun run deploy                    # build → migrate the remote D1 → wrangler deploy
 ```
 
-Set `PUBLIC_URL`, `EMAIL_FROM` and `EMAIL_FROM_NAME` under `env.production.vars` first — `PUBLIC_URL`
-is what invite links, media links and the OAuth resource identifier point at.
+Migrations run *before* the deploy, which is also what Workers Builds does when it runs the `deploy`
+script for a button deployment. `d1 migrations apply` references the binding (`DB`), not the
+database name, so it still finds the database when someone renames it at setup time.
 
 Deploying is the user's call. Don't run `deploy` or `db:migrate:remote` without being asked.
+
+## The deploy button
+
+`README.md` carries a Deploy to Cloudflare button pointing at the repository root. It reads
+`wrangler.jsonc` for the resources to provision, `.dev.vars.example` for the secrets to prompt for,
+and the root `package.json` for the `build` and `deploy` commands and the `cloudflare.bindings`
+descriptions shown on the setup page. Changing any of those four changes what someone clicking the
+button gets.

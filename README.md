@@ -4,6 +4,8 @@
 server, no container, no cold starts. One Worker serves the admin UI, the management API, and a
 cached read-only delivery API.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bihaviour/hedge-cms)
+
 > Status: early scaffold. The foundation below works end to end; features are being deepened.
 
 ## Stack
@@ -54,21 +56,42 @@ apps/
   admin/          React admin UI, built to dist/ and served by the Worker
 packages/
   core/           Zod schemas and types shared by both sides
+wrangler.jsonc    The Worker's only config — bindings, assets, vars, migrations
 ```
 
-## Getting started
+## Deploy your own
 
-Requires [Bun](https://bun.sh) 1.3+ and a Cloudflare account.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bihaviour/hedge-cms)
+
+The button forks this repository into your GitHub or GitLab account, creates the D1 database and R2
+bucket it needs, builds the Worker and deploys it. The only thing to type is `AUTH_SECRET` — a long
+random string, `openssl rand -base64 32` will do. Every later push to your fork redeploys.
+
+You land on `https://hedge-cms.<your-subdomain>.workers.dev`, in the onboarding wizard, where you
+create the owner account and the first site. Nothing else is required to start writing content.
+
+Two things are worth doing next, when you need them:
+
+- **Email.** Invites, password resets and newsletters send through Cloudflare Email Sending, which
+  needs a domain of yours onboarded first: `bunx wrangler email sending enable yourdomain.com`.
+  Until then those sends fail — the address they send from is set under **Settings → Email**.
+- **A custom domain.** Add the route in the Cloudflare dashboard, then set the `PUBLIC_URL` variable
+  to that URL. Left empty, the deployment answers with whatever origin the request arrived on, which
+  is right for the generated workers.dev URL and for local development but not for a Worker reached
+  by two hostnames.
+
+R2 must be enabled on the account, since media lives there.
+
+## Getting started locally
+
+Requires [Bun](https://bun.sh) 1.3+. No Cloudflare account: `wrangler dev` emulates D1, R2 and the
+assets binding on your machine.
 
 ```bash
 bun install
 
-# Create the remote resources (once), then paste the printed ids into apps/api/wrangler.jsonc
-bunx wrangler d1 create hedge-db
-bunx wrangler r2 bucket create hedge-media
-
 # Local secrets
-echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > apps/api/.dev.vars
+echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > .dev.vars
 
 bun run db:migrate          # apply migrations to the local D1
 bun run db:seed             # optional sample collection and entries
@@ -88,17 +111,20 @@ no site until you name one, and an interrupted setup picks up where it left off 
 In development, emails are not sent — invite and reset links are printed to the `dev:api`
 console so you can follow them locally.
 
-## Deploying
+## Deploying from your machine
+
+The button above is the short path; this is the same deployment done by hand.
 
 ```bash
-bunx wrangler secret put AUTH_SECRET --env production
+bunx wrangler secret put AUTH_SECRET
 bunx wrangler email sending enable yourdomain.com   # required before any email is sent
-bun run db:migrate:remote
-bun run deploy
+bun run deploy                                      # build, migrate the remote D1, deploy
 ```
 
-Set `PUBLIC_URL`, `EMAIL_FROM`, and `EMAIL_FROM_NAME` under `env.production.vars` in
-`apps/api/wrangler.jsonc` before deploying — `PUBLIC_URL` is what invite and media links point at.
+The D1 database and R2 bucket are created on the first deploy — `wrangler.jsonc` names them but
+carries no ids, which is what lets anyone deploy this repository into their own account unedited.
+`PUBLIC_URL` and `EMAIL_FROM` are the two variables worth setting there once the deployment has a
+domain; `PUBLIC_URL` is what invite, reset and media links point at.
 
 ## Using the delivery API
 
@@ -266,7 +292,7 @@ joins it when that site takes signups, and is refused when it is invite-only.
 | Command                   | Does                                              |
 | ------------------------- | ------------------------------------------------- |
 | `bun run build`           | Build core, admin, and the Worker bundle           |
-| `bun run deploy`          | Build, then deploy to the production environment   |
+| `bun run deploy`          | Build, migrate the remote D1, then deploy          |
 | `bun run test`            | Run the test suite                                 |
 | `bun run typecheck`       | Typecheck every workspace                          |
 | `bun run lint` / `lint:fix` | Biome check, optionally with fixes               |

@@ -16,7 +16,7 @@ this document short and the detail close to the code it governs.
 | `.claude/rules/auth.md` | Sessions, invites, members, or the MCP OAuth server: the two Better Auth instances and the policy that must not drift |
 | `.claude/rules/database.md` | Touching `schema.ts` or writing a query: the migration workflow, SQLite limits, tenancy, timestamp formats |
 | `.claude/rules/admin-ui.md` | Changing the React admin: the API client, active-site handling, shadcn, adding a field kind |
-| `.claude/rules/workers-config.md` | Editing `wrangler.jsonc`, adding a binding, or deploying |
+| `.claude/rules/workers-config.md` | Editing `wrangler.jsonc`, adding a binding, deploying, or the deploy button |
 
 When something in a rule file turns out to be wrong or incomplete, fix that file — don't move the
 correction into this one.
@@ -51,8 +51,8 @@ bun run db:seed          # apps/api/seeds/dev.sql
 bun run cf-typegen       # regenerate worker-configuration.d.ts after wrangler.jsonc edits
 ```
 
-First-time setup also needs `echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > apps/api/.dev.vars`
-and real D1/R2 ids pasted into `apps/api/wrangler.jsonc`.
+First-time setup also needs `echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > .dev.vars` at the
+repository root. Nothing else: the local D1 and R2 are created on the first `dev:api`.
 
 A `PostToolUse` hook (`.claude/hooks/check.sh`) runs `biome check --write` on every file you edit and
 typechecks the owning workspace, blocking on failures. Don't reformat by hand.
@@ -64,6 +64,7 @@ typechecks the owning workspace, blocking on failures. Don't reformat by hand.
 | `apps/api/` | The Worker: Hono routes, Better Auth, Drizzle/D1, R2, email, MCP |
 | `apps/admin/` | React 19 + Vite + Tailwind v4 SPA, built to `dist/` and served by the Worker |
 | `packages/core/` | Zod schemas, wire types, roles, field kinds — imported by both sides |
+| `wrangler.jsonc` | The Worker's only config, at the root so the deploy button and Workers Builds find it |
 
 `@hedge/core` is consumed as source (no build step; its `build` is just a typecheck). The admin
 aliases it to `packages/core/src/index.ts` in `vite.config.ts`; `@/` maps to `apps/admin/src`.
@@ -84,6 +85,10 @@ Details are in the rule files; these are the ones worth knowing before you read 
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
   (`site_users`) are checked independently in `lib/auth.ts`.
 - **`siteId` is the tenant boundary.** A content query that doesn't filter on it is a bug.
+- **`wrangler.jsonc` holds nothing account-specific.** The D1 and R2 bindings carry no ids —
+  wrangler provisions them on first deploy — which is what lets the README's Deploy to Cloudflare
+  button work on somebody else's account. Same reason `PUBLIC_URL` is empty and filled from the
+  request origin.
 - **Generated files are committed, never hand-edited**: `migrations/` + `migrations/meta/` from
   `db:generate`, `worker-configuration.d.ts` from `cf-typegen`, `apps/admin/src/components/ui/` from
   the shadcn CLI (also excluded from linting).
