@@ -194,14 +194,23 @@ app.post('/setup', async (c) => {
     })
     .returning()
 
-  await setPassword(c.env, user!.id, input.password)
+  // The row above is what makes setup a one-time route, so anything that fails after it has to
+  // take it away again. Otherwise a deployment lands in the one state it cannot leave: setup
+  // answers 409 because a user exists, and that user has no password to sign in with.
+  try {
+    await setPassword(c.env, user!.id, input.password)
 
-  const { cookies } = await forwardToAuth(c, getCmsAuth(c.env), '/sign-in/email', {
-    email: user!.email,
-    password: input.password,
-  })
+    const { cookies } = await forwardToAuth(c, getCmsAuth(c.env), '/sign-in/email', {
+      email: user!.email,
+      password: input.password,
+    })
 
-  applyCookies(c, cookies)
+    applyCookies(c, cookies)
+  } catch (error) {
+    await db.delete(users).where(eq(users.id, user!.id))
+    throw error
+  }
+
   return c.json({ data: toUser(user!) }, 201)
 })
 

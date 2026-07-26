@@ -66,8 +66,13 @@ export async function forwardToAuth<T>(
     const code = CODE_BY_STATUS[response.status] ?? 'internal_error'
     const message = payload?.message ?? 'Authentication failed'
     if (code === 'internal_error') {
-      console.error('better-auth error', response.status, payload)
-      throw new ApiError('internal_error', 'Something went wrong')
+      // Better Auth logs the cause itself, but not what was being attempted — without the path
+      // here, a 500 on sign-in and a 500 on a password change are the same line in `wrangler tail`.
+      console.error('better-auth error', path, response.status, payload)
+      throw new ApiError(
+        'internal_error',
+        'The authentication service failed. The cause is in this deployment’s Worker logs.',
+      )
     }
     throw new ApiError(code, message)
   }

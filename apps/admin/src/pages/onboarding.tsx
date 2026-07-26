@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
+import { FormError } from '@/components/form-error'
+import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -14,6 +16,7 @@ import {
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Wordmark } from '@/components/wordmark'
 import { setActiveSite } from '@/lib/active-site'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -34,6 +37,7 @@ export function OnboardingPage({ hasAccount }: { hasAccount: boolean }) {
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
       <div className="w-full max-w-md space-y-6">
+        <Wordmark />
         <Steps current={step} />
         {step === 0 ? <AccountStep /> : <SiteStep />}
       </div>
@@ -123,9 +127,8 @@ function AccountStep() {
             </Field>
             <Field>
               <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 minLength={12}
                 required
                 autoComplete="new-password"
@@ -135,9 +138,7 @@ function AccountStep() {
               <FieldDescription>At least 12 characters.</FieldDescription>
             </Field>
 
-            {setup.error && (
-              <p className="text-destructive text-sm">{(setup.error as Error).message}</p>
-            )}
+            <FormError error={setup.error} />
 
             <Field>
               <Button type="submit" className="w-full" disabled={setup.isPending}>
@@ -254,9 +255,7 @@ function SiteStep() {
               />
             </Field>
 
-            {create.error && (
-              <p className="text-destructive text-sm">{(create.error as Error).message}</p>
-            )}
+            <FormError error={create.error} />
 
             <Field>
               <Button
