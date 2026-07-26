@@ -16,15 +16,21 @@ const select = () => ({
   from: () => ({ where: () => ({ limit: async () => (keyRow ? [keyRow] : []) }) }),
 })
 
+// `mock.module` is process-wide and outlives this file, so the replacement has to keep every export
+// the real module has — anything dropped here becomes an import error in whichever test file runs
+// next. Spread the original rather than listing what this file happens to use.
+const realClient = await import('../db/client')
+
 mock.module('../db/client', () => ({
+  ...realClient,
   getDb: () => ({
     select,
     update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
   }),
 }))
 
-// `randomToken` is re-exported for lib/auth.ts, which the session path pulls in.
-mock.module('./crypto', () => ({ hmac: async () => 'hashed', randomToken: () => 'token' }))
+// `lib/crypto` is deliberately not mocked. Bun has real Web Crypto, the lookup below ignores the
+// `where` clause anyway, and stubbing it broke an unrelated suite that needs its other exports.
 
 mock.module('../auth/cms', () => ({
   getCmsAuth: () => ({ api: { getSession: async () => session } }),
