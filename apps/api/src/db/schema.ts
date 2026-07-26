@@ -38,6 +38,19 @@ export const sites = sqliteTable(
     /** Public hostname of the website this site feeds — used to resolve the tenant from `Host`. */
     domain: text('domain'),
     allowMemberSignup: integer('allow_member_signup', { mode: 'boolean' }).notNull().default(true),
+    /** Content locales this site publishes, e.g. `["en","id"]`. Entries live once per locale. */
+    locales: text('locales', { mode: 'json' }).notNull().$type<string[]>().default(['en']),
+    /** Which enabled locale the delivery API serves when a request names none. */
+    defaultLocale: text('default_locale').notNull().default('en'),
+    /** IANA timezone the admin renders this site's timestamps in. */
+    timezone: text('timezone').notNull().default('UTC'),
+    /**
+     * Per-site metadata defaults and reusable custom field definitions — see `@hedge/core`'s
+     * `siteMetadataSchema` and `fieldsSchema`. Null on older rows and freshly created sites; the
+     * route boundary parses them into empty defaults.
+     */
+    metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
+    customFields: text('custom_fields', { mode: 'json' }).$type<unknown[]>(),
     ...timestamps,
   },
   (t) => [uniqueIndex('sites_slug_idx').on(t.slug), uniqueIndex('sites_domain_idx').on(t.domain)],
@@ -443,6 +456,8 @@ export const entries = sqliteTable(
       .default('public'),
     locale: text('locale').notNull().default('en'),
     data: text('data', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
+    /** SEO/social overrides and this entry's values for the site's custom fields; see `entryMetadataSchema`. */
+    metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
     publishedAt: text('published_at'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),

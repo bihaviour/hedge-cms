@@ -15,6 +15,9 @@ export const FIELD_KINDS = [
   'select',
   'media',
   'reference',
+  'url',
+  'email',
+  'color',
   'json',
 ] as const
 
@@ -77,6 +80,19 @@ export const fieldSchema = z.discriminatedUnion('kind', [
     kind: z.literal('reference'),
     collection: z.string().min(1),
     multiple: z.boolean().default(false),
+  }),
+  baseField.extend({
+    kind: z.literal('url'),
+    default: z.string().optional(),
+  }),
+  baseField.extend({
+    kind: z.literal('email'),
+    default: z.string().optional(),
+  }),
+  baseField.extend({
+    // Stored as a `#rrggbb` hex string, so it round-trips through a native colour input.
+    kind: z.literal('color'),
+    default: z.string().optional(),
   }),
   baseField.extend({
     kind: z.literal('json'),
@@ -149,6 +165,13 @@ function validatorForField(field: Field): z.ZodTypeAny {
       const one = z.string().min(1)
       return field.multiple ? z.array(one) : one
     }
+    case 'url':
+      return z.url()
+    case 'email':
+      return z.email()
+    case 'color':
+      // A hex colour, as a native `<input type="color">` produces.
+      return z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be a #rrggbb hex colour')
     case 'json':
       return z.unknown()
   }

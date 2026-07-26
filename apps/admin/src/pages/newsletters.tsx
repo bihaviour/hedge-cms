@@ -48,7 +48,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters } from '@/lib/i18n'
 import { NewsletterPreview } from './newsletter-templates'
 
 const AUDIENCE_LABEL: Record<NewsletterAudience, string> = {
@@ -64,6 +64,7 @@ const STATUS_VARIANT: Record<Newsletter['status'], 'default' | 'secondary' | 'ou
 }
 
 export function NewslettersPage() {
+  const { formatDate } = useFormatters()
   const [editing, setEditing] = useState<Newsletter | 'new' | null>(null)
   const [sending, setSending] = useState<Newsletter | null>(null)
   const siteSlug = useActiveSiteSlug()

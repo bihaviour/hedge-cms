@@ -22,6 +22,7 @@ import { NewsletterTemplatesPage } from '@/pages/newsletter-templates'
 import { NewslettersPage } from '@/pages/newsletters'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { OnboardingPage } from '@/pages/onboarding'
+import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
 
@@ -100,6 +101,7 @@ export function App() {
         <Route path="/newsletters" element={<NewslettersPage />} />
         <Route path="/newsletters/templates" element={<NewsletterTemplatesPage />} />
         <Route path="/subscribers" element={<NewsletterSubscribersPage />} />
+        <Route path="/settings/site" element={<SiteSettingsPage />} />
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />

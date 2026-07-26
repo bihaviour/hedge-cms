@@ -34,9 +34,11 @@ import {
 } from '@/components/ui/table'
 import { useActiveSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters, useT } from '@/lib/i18n'
 
 export function UsersPage() {
+  const t = useT()
+  const { formatDate } = useFormatters()
   const [open, setOpen] = useState(false)
   const [accessFor, setAccessFor] = useState<User | null>(null)
   const queryClient = useQueryClient()
@@ -69,12 +71,12 @@ export function UsersPage() {
   return (
     <>
       <PageHeader
-        title="Users"
-        description="People who can sign in to the CMS. Owners and admins run the whole instance; editors and viewers only reach the sites they are granted."
+        title={t('users.title')}
+        description={t('users.subtitle')}
         actions={
           <Button onClick={() => setOpen(true)}>
             <UserPlus className="size-4" />
-            Invite user
+            {t('users.invite')}
           </Button>
         }
       />
@@ -87,11 +89,11 @@ export function UsersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="w-40">Role</TableHead>
-                  <TableHead className="w-44">Site access</TableHead>
-                  <TableHead className="w-32">Joined</TableHead>
+                  <TableHead>{t('users.colName')}</TableHead>
+                  <TableHead>{t('users.colEmail')}</TableHead>
+                  <TableHead className="w-40">{t('users.colRole')}</TableHead>
+                  <TableHead className="w-44">{t('users.colSiteAccess')}</TableHead>
+                  <TableHead className="w-32">{t('users.colAdded')}</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -102,7 +104,7 @@ export function UsersPage() {
                       {user.name}
                       {user.pending && (
                         <Badge variant="secondary" className="ml-2">
-                          Pending
+                          {t('users.pending')}
                         </Badge>
                       )}
                     </TableCell>
@@ -127,11 +129,11 @@ export function UsersPage() {
                     </TableCell>
                     <TableCell>
                       {roleAtLeast(user.role, 'admin') ? (
-                        <span className="text-muted-foreground text-sm">All sites</span>
+                        <span className="text-muted-foreground text-sm">{t('users.allSites')}</span>
                       ) : (
                         <Button variant="outline" size="sm" onClick={() => setAccessFor(user)}>
                           <KeySquare className="size-4" />
-                          Manage
+                          {t('users.manage')}
                         </Button>
                       )}
                     </TableCell>

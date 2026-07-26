@@ -27,9 +27,10 @@ import {
 } from '@/components/ui/table'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters } from '@/lib/i18n'
 
 export function NewsletterSubscribersPage() {
+  const { formatDate } = useFormatters()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const queryClient = useQueryClient()

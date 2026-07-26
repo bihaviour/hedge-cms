@@ -7,6 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -15,21 +22,50 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api } from '@/lib/api'
+import { UI_LANGUAGES, useFormatters, useLanguageSetting, useT } from '@/lib/i18n'
 
 /** Password, sessions, and the MCP clients allowed to act as this user. */
 export function AccountPage() {
+  const t = useT()
   return (
     <>
-      <PageHeader
-        title="Account"
-        description="Your password, your sessions, and what can act as you."
-      />
+      <PageHeader title={t('account.title')} description={t('account.subtitle')} />
       <div className="flex flex-col gap-6 p-4">
+        <LanguagePreference />
         <ChangePassword />
         <Sessions />
         <AuthorizedClients />
       </div>
     </>
+  )
+}
+
+/** The admin's display language — a per-browser preference, mirrored to the sidebar switcher. */
+function LanguagePreference() {
+  const t = useT()
+  const [language, setLanguage] = useLanguageSetting()
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('account.uiLanguage')}</CardTitle>
+        <CardDescription>{t('account.uiLanguageHint')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Select value={language} onValueChange={setLanguage}>
+          <SelectTrigger className="max-w-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {UI_LANGUAGES.map((option) => (
+              <SelectItem key={option.code} value={option.code}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -104,6 +140,7 @@ function ChangePassword() {
 }
 
 function Sessions() {
+  const { formatDateTime } = useFormatters()
   const queryClient = useQueryClient()
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.auth.sessions })
 
@@ -145,8 +182,8 @@ function Sessions() {
                     {session.userAgent ?? '—'}
                   </div>
                 </TableCell>
-                <TableCell>{new Date(session.createdAt).toLocaleString()}</TableCell>
-                <TableCell>{new Date(session.expiresAt).toLocaleString()}</TableCell>
+                <TableCell>{formatDateTime(session.createdAt)}</TableCell>
+                <TableCell>{formatDateTime(session.expiresAt)}</TableCell>
                 <TableCell className="text-right">
                   {!session.current && (
                     <Button
@@ -169,6 +206,7 @@ function Sessions() {
 }
 
 function AuthorizedClients() {
+  const { formatDateTime } = useFormatters()
   const queryClient = useQueryClient()
   const clients = useQuery({ queryKey: ['oauth-clients'], queryFn: api.auth.oauthClients })
 
@@ -204,7 +242,7 @@ function AuthorizedClients() {
               {clients.data?.map((client) => (
                 <TableRow key={client.clientId}>
                   <TableCell>{client.name}</TableCell>
-                  <TableCell>{new Date(client.authorizedAt).toLocaleString()}</TableCell>
+                  <TableCell>{formatDateTime(client.authorizedAt)}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"

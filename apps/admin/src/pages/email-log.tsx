@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters } from '@/lib/i18n'
 
 const STATUS_VARIANT: Record<EmailStatus, 'default' | 'secondary' | 'destructive'> = {
   sent: 'default',
@@ -26,6 +26,7 @@ function templateLabel(key: EmailLog['templateKey']): string {
 }
 
 export function EmailLogPage() {
+  const { formatDate } = useFormatters()
   const log = useInfiniteQuery({
     queryKey: ['email-log'],
     queryFn: ({ pageParam }) => api.email.log(pageParam),

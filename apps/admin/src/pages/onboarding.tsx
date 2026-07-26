@@ -190,6 +190,16 @@ function SiteStep() {
               slug,
               domain: form.domain || null,
               allowMemberSignup: form.allowMemberSignup,
+              // English on the browser's timezone to start; refine it under Sites → Localization.
+              locales: ['en'],
+              defaultLocale: 'en',
+              timezone: (() => {
+                try {
+                  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+                } catch {
+                  return 'UTC'
+                }
+              })(),
             })
           }}
         >

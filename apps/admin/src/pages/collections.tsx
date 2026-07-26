@@ -27,8 +27,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 
 export function CollectionsPage() {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const siteSlug = useActiveSiteSlug()
   const collections = useQuery({
@@ -40,12 +42,12 @@ export function CollectionsPage() {
   return (
     <>
       <PageHeader
-        title="Collections"
-        description="Content types on this site."
+        title={t('collections.title')}
+        description={t('collections.subtitle')}
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" />
-            New collection
+            {t('collections.new')}
           </Button>
         }
       />
@@ -61,9 +63,9 @@ export function CollectionsPage() {
 
         {collections.data?.length === 0 && (
           <EmptyState
-            title="No collections yet"
-            description="A collection defines the shape of a content type — posts, pages, authors, anything."
-            action={<Button onClick={() => setOpen(true)}>Create your first collection</Button>}
+            title={t('collections.emptyTitle')}
+            description={t('collections.emptyDescription')}
+            action={<Button onClick={() => setOpen(true)}>{t('collections.emptyAction')}</Button>}
           />
         )}
 
@@ -79,8 +81,12 @@ export function CollectionsPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="text-muted-foreground text-sm">
-                    {collection.fields.length} field{collection.fields.length === 1 ? '' : 's'} ·{' '}
-                    {collection.kind === 'single' ? 'single entry' : 'multiple entries'}
+                    {t(
+                      collection.kind === 'single'
+                        ? 'collections.metaSingle'
+                        : 'collections.metaMultiple',
+                      { count: collection.fields.length },
+                    )}
                   </CardContent>
                 </Card>
               </Link>
@@ -101,6 +107,7 @@ function NewCollectionDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -110,7 +117,7 @@ function NewCollectionDialog({
     mutationFn: api.collections.create,
     onSuccess: (collection) => {
       queryClient.invalidateQueries({ queryKey: ['collections'] })
-      toast.success(`Created "${collection.name}"`)
+      toast.success(t('common.created', { name: collection.name }))
       onOpenChange(false)
       setName('')
       setSlug('')
@@ -127,15 +134,13 @@ function NewCollectionDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>New collection</DialogTitle>
-            <DialogDescription>
-              You can add and edit fields once the collection exists.
-            </DialogDescription>
+            <DialogTitle>{t('collections.newTitle')}</DialogTitle>
+            <DialogDescription>{t('collections.newDescription')}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">{t('collections.name')}</Label>
               <Input
                 id="name"
                 required
@@ -145,7 +150,7 @@ function NewCollectionDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="slug">API slug</Label>
+              <Label htmlFor="slug">{t('collections.apiSlug')}</Label>
               <Input
                 id="slug"
                 value={slug}
@@ -153,18 +158,18 @@ function NewCollectionDialog({
                 onChange={(event) => setSlug(slugify(event.target.value))}
               />
               <p className="text-muted-foreground text-xs">
-                Used in URLs: <code>/api/v1/content/{slug || slugify(name) || 'blog-posts'}</code>
+                <code>/api/v1/content/{slug || slugify(name) || 'blog-posts'}</code>
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="kind">Type</Label>
+              <Label htmlFor="kind">{t('collections.type')}</Label>
               <Select value={kind} onValueChange={(value) => setKind(value as typeof kind)}>
                 <SelectTrigger id="kind">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="multiple">Multiple entries</SelectItem>
-                  <SelectItem value="single">Single entry (settings, landing page)</SelectItem>
+                  <SelectItem value="multiple">{t('collections.typeMultiple')}</SelectItem>
+                  <SelectItem value="single">{t('collections.typeSingle')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -176,10 +181,10 @@ function NewCollectionDialog({
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={create.isPending || !name}>
-              Create
+              {t('common.create')}
             </Button>
           </DialogFooter>
         </form>

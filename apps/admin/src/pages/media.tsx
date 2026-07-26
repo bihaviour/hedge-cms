@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 import { formatBytes } from '@/lib/utils'
 
 export function MediaPage() {
+  const t = useT()
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -25,7 +27,7 @@ export function MediaPage() {
     mutationFn: (file: File) => api.media.upload(file),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] })
-      toast.success('Uploaded')
+      toast.success(t('media.uploaded'))
     },
     onError: (error) => toast.error(error.message),
   })
@@ -34,19 +36,19 @@ export function MediaPage() {
     mutationFn: api.media.remove,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] })
-      toast.success('Deleted')
+      toast.success(t('media.deleted'))
     },
   })
 
   return (
     <>
       <PageHeader
-        title="Media"
-        description={`Files stored in R2. Up to ${formatBytes(MAX_UPLOAD_BYTES)} each.`}
+        title={t('media.title')}
+        description={t('media.subtitle', { size: formatBytes(MAX_UPLOAD_BYTES) })}
         actions={
           <Button onClick={() => fileInput.current?.click()} disabled={upload.isPending}>
             <Upload className="size-4" />
-            Upload
+            {t('media.upload')}
           </Button>
         }
       />
@@ -73,9 +75,11 @@ export function MediaPage() {
 
         {media.data?.data.length === 0 && (
           <EmptyState
-            title="No files yet"
-            description="Upload images and documents to reference them from your entries."
-            action={<Button onClick={() => fileInput.current?.click()}>Upload a file</Button>}
+            title={t('media.emptyTitle')}
+            description={t('media.emptyDescription')}
+            action={
+              <Button onClick={() => fileInput.current?.click()}>{t('media.uploadFile')}</Button>
+            }
           />
         )}
 
@@ -105,7 +109,7 @@ export function MediaPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Delete ${item.filename}`}
+                    aria-label={t('media.deleteAria', { filename: item.filename })}
                     className="opacity-0 transition-opacity group-hover:opacity-100"
                     onClick={() => remove.mutate(item.id)}
                   >

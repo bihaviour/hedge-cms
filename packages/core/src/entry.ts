@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { slugSchema } from './collection'
+import { localeCodeSchema } from './i18n'
 
 export const ENTRY_STATUSES = ['draft', 'published', 'archived'] as const
 export type EntryStatus = (typeof ENTRY_STATUSES)[number]
@@ -8,6 +9,23 @@ export type EntryStatus = (typeof ENTRY_STATUSES)[number]
 export const ENTRY_VISIBILITIES = ['public', 'members'] as const
 export type EntryVisibility = (typeof ENTRY_VISIBILITIES)[number]
 
+/**
+ * Per-entry metadata. The named fields are SEO/social overrides for the site defaults; `custom`
+ * holds this entry's values for the site's custom fields, validated at the route against the
+ * site's `customFields` definitions.
+ */
+export const entryMetadataSchema = z.object({
+  metaTitle: z.string().max(200).optional(),
+  description: z.string().max(500).optional(),
+  canonicalUrl: z.string().max(2000).optional(),
+  ogImage: z.string().max(2000).optional(),
+  /** Keep this entry out of search indexes even though it is published. */
+  noIndex: z.boolean().default(false),
+  custom: z.record(z.string(), z.unknown()).default({}),
+})
+
+export type EntryMetadata = z.infer<typeof entryMetadataSchema>
+
 export const entrySchema = z.object({
   id: z.string(),
   collectionId: z.string(),
@@ -15,8 +33,9 @@ export const entrySchema = z.object({
   slug: slugSchema,
   status: z.enum(ENTRY_STATUSES),
   visibility: z.enum(ENTRY_VISIBILITIES),
-  locale: z.string().min(2).max(12),
+  locale: localeCodeSchema,
   data: z.record(z.string(), z.unknown()),
+  metadata: entryMetadataSchema,
   publishedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -28,8 +47,14 @@ export const createEntrySchema = z.object({
   slug: slugSchema.optional(),
   status: z.enum(ENTRY_STATUSES).default('draft'),
   visibility: z.enum(ENTRY_VISIBILITIES).default('public'),
-  locale: z.string().min(2).max(12).default('en'),
+  /**
+   * Optional, not defaulted to `'en'`: which locale a new entry lands in depends on the *site*, and
+   * the site's `defaultLocale` isn't known at schema-parse time. The route fills it in when omitted
+   * and rejects a locale the site doesn't publish.
+   */
+  locale: localeCodeSchema.optional(),
   data: z.record(z.string(), z.unknown()),
+  metadata: entryMetadataSchema.optional(),
 })
 
 export type CreateEntryInput = z.infer<typeof createEntrySchema>
@@ -43,8 +68,9 @@ export const updateEntrySchema = z.object({
   slug: slugSchema.optional(),
   status: z.enum(ENTRY_STATUSES).optional(),
   visibility: z.enum(ENTRY_VISIBILITIES).optional(),
-  locale: z.string().min(2).max(12).optional(),
+  locale: localeCodeSchema.optional(),
   data: z.record(z.string(), z.unknown()).optional(),
+  metadata: entryMetadataSchema.optional(),
 })
 
 export type UpdateEntryInput = z.infer<typeof updateEntrySchema>
@@ -52,7 +78,7 @@ export type UpdateEntryInput = z.infer<typeof updateEntrySchema>
 export const listEntriesQuerySchema = z.object({
   status: z.enum(ENTRY_STATUSES).optional(),
   visibility: z.enum(ENTRY_VISIBILITIES).optional(),
-  locale: z.string().min(2).max(12).optional(),
+  locale: localeCodeSchema.optional(),
   q: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),

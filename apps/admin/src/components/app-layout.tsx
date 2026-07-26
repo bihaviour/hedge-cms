@@ -15,36 +15,42 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { useActiveSite } from '@/hooks/use-site'
+import { useT } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/i18n/catalog'
 
-const LABELS: Record<string, string> = {
-  collections: 'Collections',
-  media: 'Media',
-  members: 'Members',
-  newsletters: 'Newsletters',
-  subscribers: 'Subscribers',
-  settings: 'Settings',
-  sites: 'Sites',
-  users: 'Users',
-  'api-keys': 'API keys',
-  email: 'Email',
-  templates: 'Templates',
-  log: 'Log',
-  entries: 'Entries',
-  new: 'New',
+const LABELS: Record<string, MessageKey> = {
+  collections: 'label.collections',
+  media: 'label.media',
+  members: 'label.members',
+  newsletters: 'label.newsletters',
+  subscribers: 'label.subscribers',
+  settings: 'label.settings',
+  sites: 'label.sites',
+  users: 'label.users',
+  'api-keys': 'label.apiKeys',
+  email: 'label.email',
+  templates: 'label.templates',
+  log: 'label.log',
+  entries: 'label.entries',
+  new: 'label.new',
+  account: 'label.account',
 }
-
-const titleCase = (segment: string) =>
-  LABELS[segment] ??
-  segment.replace(/-/g, ' ').replace(/^./, (character) => character.toUpperCase())
 
 export function AppLayout({ user }: { user: User }) {
   const { pathname } = useLocation()
+  const t = useT()
   const { site, sites, isLoading } = useActiveSite()
+
+  // Known route segments read from the catalog; an unknown one (a slug) is title-cased as-is.
+  const label = (segment: string) =>
+    LABELS[segment]
+      ? t(LABELS[segment])
+      : segment.replace(/-/g, ' ').replace(/^./, (character) => character.toUpperCase())
 
   // The trail always starts at the site, so it is obvious which tenant you are editing.
   const segments = pathname.split('/').filter(Boolean)
   const crumbs = segments.map((segment, index) => ({
-    label: titleCase(segment),
+    label: label(segment),
     href: `/${segments.slice(0, index + 1).join('/')}`,
     isLast: index === segments.length - 1,
   }))
@@ -86,16 +92,14 @@ export function AppLayout({ user }: { user: User }) {
           {!isLoading && sites.length === 0 ? (
             <div className="p-8">
               <EmptyState
-                title="No sites yet"
+                title={t('sites.emptyTitle')}
                 description={
-                  roleAtLeast(user.role, 'admin')
-                    ? 'Create a site to start adding content.'
-                    : 'You have not been given access to a site yet. Ask an admin to grant it.'
+                  roleAtLeast(user.role, 'admin') ? t('sites.emptyAdmin') : t('sites.emptyGuest')
                 }
                 action={
                   roleAtLeast(user.role, 'admin') ? (
                     <Button asChild>
-                      <Link to="/settings/sites">Go to Sites</Link>
+                      <Link to="/settings/sites">{t('sites.goToSites')}</Link>
                     </Button>
                   ) : undefined
                 }

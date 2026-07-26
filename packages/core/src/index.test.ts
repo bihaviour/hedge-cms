@@ -54,6 +54,35 @@ describe('buildEntryValidator', () => {
   })
 })
 
+describe('buildEntryValidator — url, email and color kinds', () => {
+  const fields = fieldsSchema.parse([
+    { kind: 'url', name: 'homepage', label: 'Homepage' },
+    { kind: 'email', name: 'contact', label: 'Contact' },
+    { kind: 'color', name: 'brand', label: 'Brand' },
+  ])
+
+  test('accepts a well-formed url, email and hex colour', () => {
+    const result = buildEntryValidator(fields).parse({
+      homepage: 'https://example.com',
+      contact: 'name@example.com',
+      brand: '#ff8800',
+    })
+    expect(result).toEqual({
+      homepage: 'https://example.com',
+      contact: 'name@example.com',
+      brand: '#ff8800',
+    })
+  })
+
+  test('rejects a malformed url, email or colour', () => {
+    const validator = buildEntryValidator(fields)
+    expect(() => validator.parse({ homepage: 'not a url' })).toThrow()
+    expect(() => validator.parse({ contact: 'nope' })).toThrow()
+    expect(() => validator.parse({ brand: 'red' })).toThrow()
+    expect(() => validator.parse({ brand: '#fff' })).toThrow()
+  })
+})
+
 describe('fieldsSchema', () => {
   test('rejects duplicate field names', () => {
     expect(() =>

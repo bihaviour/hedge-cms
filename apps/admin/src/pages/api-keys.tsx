@@ -28,9 +28,11 @@ import {
 } from '@/components/ui/table'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { useFormatters, useT } from '@/lib/i18n'
 
 export function ApiKeysPage() {
+  const t = useT()
+  const { formatDate } = useFormatters()
   const [open, setOpen] = useState(false)
   const [issued, setIssued] = useState<string | null>(null)
   const queryClient = useQueryClient()
@@ -46,19 +48,19 @@ export function ApiKeysPage() {
     mutationFn: api.apiKeys.remove,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys'] })
-      toast.success('Key revoked')
+      toast.success(t('apiKeys.revoked'))
     },
   })
 
   return (
     <>
       <PageHeader
-        title="API keys"
-        description="Bearer tokens for this site's delivery API and programmatic writes."
+        title={t('apiKeys.title')}
+        description={t('apiKeys.subtitle')}
         actions={
           <Button onClick={() => setOpen(true)}>
             <KeyRound className="size-4" />
-            New key
+            {t('apiKeys.new')}
           </Button>
         }
       />
@@ -68,9 +70,9 @@ export function ApiKeysPage() {
 
         {keys.data?.length === 0 && (
           <EmptyState
-            title="No API keys"
-            description="Create a key to fetch published content from your site or app."
-            action={<Button onClick={() => setOpen(true)}>Create a key</Button>}
+            title={t('apiKeys.emptyTitle')}
+            description={t('apiKeys.emptyDescription')}
+            action={<Button onClick={() => setOpen(true)}>{t('apiKeys.new')}</Button>}
           />
         )}
 
@@ -79,10 +81,10 @@ export function ApiKeysPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="w-40">Prefix</TableHead>
-                  <TableHead>Scopes</TableHead>
-                  <TableHead className="w-32">Last used</TableHead>
+                  <TableHead>{t('apiKeys.colName')}</TableHead>
+                  <TableHead className="w-40">{t('apiKeys.colPrefix')}</TableHead>
+                  <TableHead>{t('apiKeys.colScopes')}</TableHead>
+                  <TableHead className="w-32">{t('apiKeys.colLastUsed')}</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -109,7 +111,7 @@ export function ApiKeysPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Revoke ${key.name}`}
+                        aria-label={t('apiKeys.revokeAria', { name: key.name })}
                         onClick={() => remove.mutate(key.id)}
                       >
                         <Trash2 className="size-4" />

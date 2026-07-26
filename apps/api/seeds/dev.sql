@@ -2,15 +2,19 @@
 -- Creates two sites — a blog and a docs site — so multi-tenancy is visible from the first run,
 -- each with a collection and a few entries. The first user is created through the
 -- /api/v1/auth/setup endpoint (or the admin UI's setup screen), not here.
+--
+-- The two sites also carry different i18n config, so per-site internationalization is visible from
+-- the first run: the blog is English-only on UTC, the docs site is bilingual (en + id) on Jakarta
+-- time with Indonesian as its default locale.
 
 DELETE FROM entries WHERE collection_id IN ('col_seed_posts', 'col_seed_guides');
 DELETE FROM collections WHERE id IN ('col_seed_posts', 'col_seed_guides');
 DELETE FROM sites WHERE id IN ('sit_seed_blog', 'sit_seed_docs');
 
-INSERT INTO sites (id, slug, name, description, domain, allow_member_signup, created_at, updated_at)
+INSERT INTO sites (id, slug, name, description, domain, allow_member_signup, locales, default_locale, timezone, created_at, updated_at)
 VALUES
-  ('sit_seed_blog', 'blog', 'Blog', 'Articles and release notes', NULL, 1, datetime('now'), datetime('now')),
-  ('sit_seed_docs', 'docs', 'Documentation', 'Product documentation', NULL, 0, datetime('now'), datetime('now'));
+  ('sit_seed_blog', 'blog', 'Blog', 'Articles and release notes', NULL, 1, json('["en"]'), 'en', 'UTC', datetime('now'), datetime('now')),
+  ('sit_seed_docs', 'docs', 'Documentation', 'Product documentation', NULL, 0, json('["en","id"]'), 'id', 'Asia/Jakarta', datetime('now'), datetime('now'));
 
 INSERT INTO collections (id, site_id, slug, name, description, kind, fields, created_at, updated_at)
 VALUES (
@@ -97,6 +101,20 @@ VALUES
     'public',
     'en',
     json('{"title":"Getting started","body":"This entry lives on the docs site, not the blog."}'),
+    datetime('now'),
+    datetime('now'),
+    datetime('now')
+  ),
+  -- The Indonesian translation of the same guide: same slug, different locale. The delivery API
+  -- serves this one by default because `id` is the docs site's default locale.
+  (
+    'ent_seed_guide_id',
+    'col_seed_guides',
+    'getting-started',
+    'published',
+    'public',
+    'id',
+    json('{"title":"Memulai","body":"Entri ini hidup di situs dokumentasi, bukan di blog."}'),
     datetime('now'),
     datetime('now'),
     datetime('now')

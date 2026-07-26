@@ -2,6 +2,8 @@ import {
   buildEntryValidator,
   createEntrySchema,
   type Entry,
+  type EntryMetadata,
+  entryMetadataSchema,
   fieldsSchema,
   listEntriesQuerySchema,
   slugify,
@@ -10,7 +12,13 @@ import {
 import { and, asc, desc, eq, gt, like, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { getDb } from '../db/client'
-import { type CollectionRow, type EntryRow, entries, entryRevisions } from '../db/schema'
+import {
+  type CollectionRow,
+  type EntryRow,
+  entries,
+  entryRevisions,
+  type SiteRow,
+} from '../db/schema'
 import type { AppEnv } from '../env'
 import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { findCollection } from '../lib/collections'
@@ -31,6 +39,7 @@ function toEntry(row: EntryRow, collection: CollectionRow): Entry {
     visibility: row.visibility,
     locale: row.locale,
     data: row.data,
+    metadata: entryMetadataSchema.parse(row.metadata ?? {}),
     publishedAt: row.publishedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -43,6 +52,27 @@ function validateData(collection: CollectionRow, data: Record<string, unknown>) 
   const result = buildEntryValidator(fields).safeParse(data)
   if (!result.success) throw ApiError.fromZod(result.error)
   return result.data
+}
+
+/**
+ * Validates an entry's metadata: the SEO/social fields on their own, and its `custom` values
+ * against the *site's* custom field definitions. Custom-field errors are keyed under
+ * `metadata.<field>` so the admin can attach them to the right input without clashing with a
+ * collection data field of the same name.
+ */
+function resolveMetadata(site: SiteRow, input: EntryMetadata | undefined): EntryMetadata {
+  const meta = entryMetadataSchema.parse(input ?? {})
+  const customFields = fieldsSchema.parse(site.customFields ?? [])
+  const result = buildEntryValidator(customFields).safeParse(meta.custom)
+  if (!result.success) {
+    const details: Record<string, string[]> = {}
+    for (const issue of result.error.issues) {
+      const key = `metadata.${issue.path.join('.') || '_'}`
+      details[key] = [...(details[key] ?? []), issue.message]
+    }
+    throw ApiError.badRequest('Metadata validation failed', details)
+  }
+  return { ...meta, custom: result.data }
 }
 
 app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
@@ -79,9 +109,10 @@ app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) 
 })
 
 app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const [row] = await db
     .select()
@@ -100,12 +131,23 @@ app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async
 })
 
 app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const input = await validate(c, createEntrySchema)
   const actor = requireActor(c)
   const db = getDb(c.env)
 
+  // A new entry lands in the site's default locale unless one is named — and it can only land in a
+  // locale the site actually publishes, so a typo does not create an orphan no delivery call finds.
+  const locale = input.locale ?? site.defaultLocale
+  if (!site.locales.includes(locale)) {
+    throw ApiError.badRequest(`This site does not publish the "${locale}" locale`, {
+      locale: [`enable "${locale}" in the site's localization settings first`],
+    })
+  }
+
   const data = validateData(collection, input.data)
+  const metadata = resolveMetadata(site, input.metadata)
   const slug = input.slug ?? (slugify(String(data.title ?? '')) || newId())
 
   if (collection.kind === 'single') {
@@ -126,8 +168,9 @@ app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c
       slug,
       status: input.status,
       visibility: input.visibility,
-      locale: input.locale,
+      locale,
       data,
+      metadata,
       publishedAt: input.status === 'published' ? now : null,
       createdBy: actor.kind === 'user' ? actor.id : null,
       updatedBy: actor.kind === 'user' ? actor.id : null,
@@ -144,11 +187,12 @@ app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c
 })
 
 app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const input = await validate(c, updateEntrySchema)
   const actor = requireActor(c)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const [existing] = await db
     .select()
@@ -164,7 +208,16 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
 
   if (!existing) throw ApiError.notFound('Entry')
 
+  // Moving an entry to another locale is allowed, but only into one the site publishes.
+  if (input.locale && !site.locales.includes(input.locale)) {
+    throw ApiError.badRequest(`This site does not publish the "${input.locale}" locale`, {
+      locale: [`enable "${input.locale}" in the site's localization settings first`],
+    })
+  }
+
   const data = input.data ? validateData(collection, input.data) : existing.data
+  const metadata =
+    input.metadata !== undefined ? resolveMetadata(site, input.metadata) : existing.metadata
   const status = input.status ?? existing.status
   const now = new Date().toISOString()
 
@@ -185,6 +238,7 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
       ...(input.visibility ? { visibility: input.visibility } : {}),
       status,
       data,
+      metadata,
       publishedAt:
         status === 'published'
           ? (existing.publishedAt ?? now)
@@ -201,9 +255,10 @@ app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), as
 })
 
 app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const result = await db
     .delete(entries)
@@ -221,9 +276,10 @@ app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), a
 })
 
 app.get('/:slug/revisions', requireSiteRole('editor'), async (c) => {
-  const collection = await findCollection(c.env, requireSite(c).id, c.req.param('collection')!)
+  const site = requireSite(c)
+  const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)
-  const locale = c.req.query('locale') ?? 'en'
+  const locale = c.req.query('locale') ?? site.defaultLocale
 
   const [entry] = await db
     .select({ id: entries.id })
