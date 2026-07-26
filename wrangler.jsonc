@@ -65,7 +65,11 @@
     // member sign-in links and every site's newsletters all leave from this address. Overridable
     // in the admin under Settings → Email, which is the easier place to change it after the fact.
     "EMAIL_FROM": "",
-    "EMAIL_FROM_NAME": "Hedge CMS"
+    "EMAIL_FROM_NAME": "Hedge CMS",
+    // The fork this deployment was created from. Left empty: the update notice works without it
+    // (it links to the upstream release notes), and with it the admin can deep-link the fork's
+    // "Sync fork" page. It changes nothing about how the Worker runs.
+    "REPO_URL": ""
   }
 
   // AUTH_SECRET is the only secret. Locally it goes in `.dev.vars`; in a deployment it is set

@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { UpdateBanner } from '@/components/update-banner'
 import { useActiveSite } from '@/hooks/use-site'
 import { useT } from '@/lib/i18n'
 import type { MessageKey } from '@/lib/i18n/catalog'
@@ -34,6 +35,7 @@ const LABELS: Record<string, MessageKey> = {
   entries: 'label.entries',
   new: 'label.new',
   account: 'label.account',
+  about: 'label.about',
 }
 
 export function AppLayout({ user }: { user: User }) {
@@ -86,6 +88,8 @@ export function AppLayout({ user }: { user: User }) {
             </BreadcrumbList>
           </Breadcrumb>
         </header>
+
+        <UpdateBanner user={user} />
 
         <div className="min-w-0 flex-1">
           {/* An editor or viewer with no grants would otherwise stare at empty pages. */}

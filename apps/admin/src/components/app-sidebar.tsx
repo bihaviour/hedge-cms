@@ -91,6 +91,8 @@ const NAV: {
       { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
       { title: 'nav.users', url: '/settings/users', instanceOnly: true },
       { title: 'nav.apiKeys', url: '/settings/api-keys' },
+      // Deployment version and update awareness — a manage-the-deployment concern, like Sites.
+      { title: 'nav.about', url: '/settings/about', instanceOnly: true },
     ],
   },
 ]

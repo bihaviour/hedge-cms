@@ -1,4 +1,4 @@
-import { MEMBER_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
+import { HEDGE_VERSION, MEMBER_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from 'better-auth/plugins'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -26,6 +26,7 @@ import newsletterPublic from './routes/newsletter-public'
 import newsletterTemplates from './routes/newsletter-templates'
 import newsletters, { subscribers } from './routes/newsletters'
 import sites from './routes/sites'
+import system from './routes/system'
 import users from './routes/users'
 
 const app = new Hono<AppEnv>()
@@ -43,6 +44,7 @@ const ADMIN_PREFIXES = [
   '/api/v1/newsletters',
   '/api/v1/newsletter-templates',
   '/api/v1/subscribers',
+  '/api/v1/system',
 ]
 
 const DELIVERY_PREFIX = '/api/v1/content'
@@ -166,7 +168,7 @@ app.use('/api/*', async (c, next) => {
 })
 
 app.get('/api/health', (c) =>
-  c.json({ status: 'ok', environment: c.env.ENVIRONMENT, version: '0.0.1' }),
+  c.json({ status: 'ok', environment: c.env.ENVIRONMENT, version: HEDGE_VERSION }),
 )
 
 /* ------------------------------------------------------------------ *
@@ -224,6 +226,8 @@ app.route('/api/v1/email', email)
 app.route('/api/v1/newsletters', newsletters)
 app.route('/api/v1/newsletter-templates', newsletterTemplates)
 app.route('/api/v1/subscribers', subscribers)
+// Deployment-level version and update awareness — admin-only, like everything under /system.
+app.route('/api/v1/system', system)
 // Public newsletter signup and unsubscribe — resolves no actor, like the member auth facade.
 app.route('/api/v1/newsletter', newsletterPublic)
 app.route('/api/v1/content', content)

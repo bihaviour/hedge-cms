@@ -43,6 +43,25 @@ export const entrySchema = z.object({
 
 export type Entry = z.infer<typeof entrySchema>
 
+/**
+ * A point-in-time snapshot of an entry, written before every update. `metadata` is nullable: rows
+ * captured before revisions recorded it have none, and restoring one then leaves the entry's
+ * metadata untouched rather than wiping it. `createdByName` is resolved for display — the id alone
+ * would mean nothing in a revisions list.
+ */
+export const entryRevisionSchema = z.object({
+  id: z.string(),
+  entryId: z.string(),
+  data: z.record(z.string(), z.unknown()),
+  metadata: entryMetadataSchema.nullable(),
+  status: z.enum(ENTRY_STATUSES),
+  createdBy: z.string().nullable(),
+  createdByName: z.string().nullable(),
+  createdAt: z.string(),
+})
+
+export type EntryRevision = z.infer<typeof entryRevisionSchema>
+
 export const createEntrySchema = z.object({
   slug: slugSchema.optional(),
   status: z.enum(ENTRY_STATUSES).default('draft'),

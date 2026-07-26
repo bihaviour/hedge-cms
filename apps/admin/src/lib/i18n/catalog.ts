@@ -45,6 +45,7 @@ export const en = {
   'nav.sites': 'Sites',
   'nav.users': 'Users',
   'nav.apiKeys': 'API keys',
+  'nav.about': 'About & updates',
   'nav.account': 'Account',
   'nav.signOut': 'Sign out',
   'nav.manageSites': 'Manage sites',
@@ -62,6 +63,7 @@ export const en = {
   'label.entries': 'Entries',
   'label.new': 'New',
   'label.account': 'Account',
+  'label.about': 'About',
 
   // Newsletter and email-management navigation and breadcrumbs (added alongside those features).
   'nav.newsletters': 'Newsletters',

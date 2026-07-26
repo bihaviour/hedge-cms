@@ -5,6 +5,7 @@ import { ArrowLeft, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
+import { EntryRevisions } from '@/components/entry-revisions'
 import { FieldInput } from '@/components/field-input'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
@@ -376,6 +377,17 @@ export function EntryEditorPage() {
                 </div>
               )}
             </dl>
+          )}
+
+          {/* An entry that exists has a history; a new one has none yet. `data` is the live form
+              state, so the diff compares each revision against unsaved edits too. */}
+          {entry.data && !creating && (
+            <EntryRevisions
+              collection={collectionSlug}
+              slug={entry.data.slug}
+              locale={locale}
+              currentData={data}
+            />
           )}
         </aside>
       </div>

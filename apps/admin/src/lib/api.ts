@@ -17,6 +17,7 @@ import type {
   EmailTemplateKey,
   EmailTemplatePreview,
   Entry,
+  EntryRevision,
   ListEntriesQuery,
   Media,
   Member,
@@ -29,6 +30,7 @@ import type {
   SiteAccess,
   SiteRole,
   Subscriber,
+  SystemVersion,
   UpdateCollectionInput,
   UpdateEmailConfigInput,
   UpdateEmailTemplateInput,
@@ -239,6 +241,16 @@ export const api = {
       request<void>(`/collections/${collection}/entries/${slug}?locale=${locale}`, {
         method: 'DELETE',
       }),
+    /** Point-in-time snapshots, newest first — one is written before every edit. */
+    revisions: (collection: string, slug: string, locale = 'en') =>
+      request<EntryRevision[]>(
+        `/collections/${collection}/entries/${slug}/revisions?locale=${locale}`,
+      ),
+    restore: (collection: string, slug: string, revisionId: string, locale = 'en') =>
+      request<Entry>(
+        `/collections/${collection}/entries/${slug}/revisions/${revisionId}/restore?locale=${locale}`,
+        { method: 'POST' },
+      ),
   },
 
   media: {
@@ -337,6 +349,11 @@ export const api = {
         method: 'POST',
         ...json(input),
       }),
+  },
+
+  /** Deployment-level version and update awareness. Admin-only on the server. */
+  system: {
+    version: () => request<SystemVersion>('/system/version'),
   },
 }
 

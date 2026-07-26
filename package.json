@@ -47,6 +47,9 @@
       "PUBLIC_URL": {
         "description": "Leave empty unless you already have a custom domain. Empty means Hedge uses the origin of whatever request it is answering, which is correct for the generated `workers.dev` subdomain. With a domain, set the full origin (`https://cms.example.com`) — invite links, media URLs and the MCP OAuth identifier all follow it."
       },
+      "REPO_URL": {
+        "description": "Optional. The GitHub or GitLab URL of the fork this deployment was created from, e.g. `https://github.com/you/hedge-cms`. When set, the admin's 'update available' notice links straight to your fork's Sync page. Safe to leave empty — the notice still links to the upstream release notes."
+      },
       "EMAIL_FROM": {
         "description": "**System sender for the whole deployment**, not per site: invites, password resets, member sign-in links, and every newsletter from every site are sent from this address. It must be on a domain onboarded with `wrangler email sending enable <your domain>`. Safe to leave empty and set later in the admin under Settings → Email — until one of the two is set, nothing sends."
       },

@@ -10,6 +10,12 @@ export interface Bindings {
   ENVIRONMENT: 'development' | 'production'
   APP_NAME: string
   PUBLIC_URL: string
+  /**
+   * The deployment's own GitHub/GitLab repository — the fork the deploy button created. Empty by
+   * default; when set, the admin's update notice can deep-link its "Sync fork" page. It changes
+   * nothing about how the Worker runs, only where the "how do I update" link points.
+   */
+  REPO_URL: string
   EMAIL_FROM: string
   EMAIL_FROM_NAME: string
 
