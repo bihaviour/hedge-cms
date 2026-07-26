@@ -1,8 +1,8 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { accounts, authTokens, type UserRow } from '../db/schema'
+import { renderEmail } from '../email/render'
 import { sendEmail } from '../email/send'
-import { inviteEmail } from '../email/templates'
 import type { Bindings } from '../env'
 import { hmac, randomToken } from './crypto'
 import { newId } from './id'
@@ -40,7 +40,10 @@ export async function sendUserInvite(env: Bindings, user: UserRow): Promise<void
     expiresAt: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
   })
 
-  await sendEmail(env, inviteEmail(env, { to: user.email, name: user.name, token }))
+  const url = `${env.PUBLIC_URL}/accept-invite?token=${encodeURIComponent(token)}`
+  await sendEmail(env, await renderEmail(env, 'invite', { to: user.email, name: user.name, url }), {
+    templateKey: 'invite',
+  })
 }
 
 /**

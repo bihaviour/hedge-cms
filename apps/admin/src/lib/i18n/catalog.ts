@@ -63,6 +63,20 @@ export const en = {
   'label.new': 'New',
   'label.account': 'Account',
 
+  // Newsletter and email-management navigation and breadcrumbs (added alongside those features).
+  'nav.newsletters': 'Newsletters',
+  'nav.newsletterTemplates': 'Newsletter templates',
+  'nav.subscribers': 'Subscribers',
+  'nav.email': 'Email',
+  'nav.emailSettings': 'Settings',
+  'nav.emailTemplates': 'Templates',
+  'nav.emailLog': 'Log',
+  'label.newsletters': 'Newsletters',
+  'label.subscribers': 'Subscribers',
+  'label.email': 'Email',
+  'label.templates': 'Templates',
+  'label.log': 'Log',
+
   // Empty-state shown to someone with no site access.
   'sites.emptyTitle': 'No sites yet',
   'sites.emptyAdmin': 'Create a site to start adding content.',

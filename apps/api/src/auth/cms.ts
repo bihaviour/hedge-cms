@@ -13,8 +13,8 @@ import {
   users,
   verifications,
 } from '../db/schema'
+import { renderEmail } from '../email/render'
 import { sendEmail } from '../email/send'
-import { passwordResetEmail } from '../email/templates'
 import type { Bindings } from '../env'
 import { hashPassword, verifyPassword } from '../lib/crypto'
 import { newId } from '../lib/id'
@@ -123,7 +123,12 @@ function createCmsAuth(env: Bindings) {
       revokeSessionsOnPasswordReset: true,
       resetPasswordTokenExpiresIn: 60 * 60,
       sendResetPassword: async ({ user, token }) => {
-        await sendEmail(env, passwordResetEmail(env, { to: user.email, name: user.name, token }))
+        const url = `${env.PUBLIC_URL}/reset-password?token=${encodeURIComponent(token)}`
+        await sendEmail(
+          env,
+          await renderEmail(env, 'password_reset', { to: user.email, name: user.name, url }),
+          { templateKey: 'password_reset' },
+        )
       },
       /**
        * PBKDF2-SHA256 via Web Crypto, the same primitive the pre-Better-Auth code used and in the

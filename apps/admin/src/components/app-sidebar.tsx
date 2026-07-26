@@ -69,7 +69,20 @@ const NAV: {
   },
   {
     title: 'nav.audience',
-    items: [{ title: 'nav.members', url: '/members' }],
+    items: [
+      { title: 'nav.members', url: '/members' },
+      { title: 'nav.newsletters', url: '/newsletters' },
+      { title: 'nav.newsletterTemplates', url: '/newsletters/templates' },
+      { title: 'nav.subscribers', url: '/subscribers' },
+    ],
+  },
+  {
+    title: 'nav.email',
+    items: [
+      { title: 'nav.emailSettings', url: '/settings/email', instanceOnly: true },
+      { title: 'nav.emailTemplates', url: '/settings/email/templates', instanceOnly: true },
+      { title: 'nav.emailLog', url: '/settings/email/log', instanceOnly: true },
+    ],
   },
   {
     title: 'nav.settings',

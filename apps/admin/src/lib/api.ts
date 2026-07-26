@@ -7,19 +7,38 @@ import type {
   CreateCollectionInput,
   CreateEntryInput,
   CreateMemberInput,
+  CreateNewsletterInput,
+  CreateNewsletterTemplateInput,
   CreateSiteInput,
+  CreateSubscriberInput,
+  EmailConfig,
+  EmailLog,
+  EmailTemplate,
+  EmailTemplateKey,
+  EmailTemplatePreview,
   Entry,
   ListEntriesQuery,
   Media,
   Member,
+  Newsletter,
+  NewsletterAudience,
+  NewsletterPreview,
+  NewsletterTemplate,
+  SendResult,
   Site,
   SiteAccess,
   SiteRole,
+  Subscriber,
   UpdateCollectionInput,
+  UpdateEmailConfigInput,
+  UpdateEmailTemplateInput,
   UpdateEntryInput,
   UpdateMemberInput,
+  UpdateNewsletterInput,
+  UpdateNewsletterTemplateInput,
   UpdateSiteConfigInput,
   UpdateSiteInput,
+  UpdateSubscriberInput,
   User,
   UserSession,
 } from '@hedge/core'
@@ -241,6 +260,83 @@ export const api = {
     create: (input: CreateApiKeyInput) =>
       request<ApiKey & { key: string }>('/api-keys', { method: 'POST', ...json(input) }),
     remove: (id: string) => request<void>(`/api-keys/${id}`, { method: 'DELETE' }),
+  },
+
+  /** Deployment-wide email management: system templates, the send log, and sender config. */
+  email: {
+    templates: () => request<EmailTemplate[]>('/email/templates'),
+    template: (key: EmailTemplateKey) => request<EmailTemplate>(`/email/templates/${key}`),
+    updateTemplate: (key: EmailTemplateKey, input: UpdateEmailTemplateInput) =>
+      request<EmailTemplate>(`/email/templates/${key}`, { method: 'PUT', ...json(input) }),
+    /** Removes the override, restoring the built-in default. */
+    resetTemplate: (key: EmailTemplateKey) =>
+      request<EmailTemplate>(`/email/templates/${key}`, { method: 'DELETE' }),
+    /** Renders an unsaved draft with sample data for the editor's preview. */
+    previewTemplate: (key: EmailTemplateKey, input: UpdateEmailTemplateInput) =>
+      request<EmailTemplatePreview>(`/email/templates/${key}/preview`, {
+        method: 'POST',
+        ...json(input),
+      }),
+
+    log: (cursor?: string) =>
+      requestPage<EmailLog>(`/email/log${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+
+    config: () => request<EmailConfig>('/email/config'),
+    updateConfig: (input: UpdateEmailConfigInput) =>
+      request<EmailConfig>('/email/config', { method: 'PATCH', ...json(input) }),
+  },
+
+  /** Per-site newsletter subscriber list. `pending` has no meaning here — everyone is just an email. */
+  subscribers: {
+    list: (query: { q?: string; cursor?: string } = {}) => {
+      const params = new URLSearchParams(
+        Object.entries(query).filter(([, value]) => value) as [string, string][],
+      )
+      return requestPage<Subscriber>(`/subscribers?${params}`)
+    },
+    create: (input: CreateSubscriberInput) =>
+      request<Subscriber>('/subscribers', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateSubscriberInput) =>
+      request<Subscriber>(`/subscribers/${id}`, { method: 'PATCH', ...json(input) }),
+    remove: (id: string) => request<void>(`/subscribers/${id}`, { method: 'DELETE' }),
+  },
+
+  /** Per-site newsletter campaigns. */
+  newsletters: {
+    list: (cursor?: string) =>
+      requestPage<Newsletter>(
+        `/newsletters${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+      ),
+    get: (id: string) => request<Newsletter>(`/newsletters/${id}`),
+    create: (input: CreateNewsletterInput) =>
+      request<Newsletter>('/newsletters', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateNewsletterInput) =>
+      request<Newsletter>(`/newsletters/${id}`, { method: 'PATCH', ...json(input) }),
+    remove: (id: string) => request<void>(`/newsletters/${id}`, { method: 'DELETE' }),
+    /** How many recipients the given audience would reach right now. */
+    recipientCount: (audience: NewsletterAudience) =>
+      request<{ count: number }>(`/newsletters/recipients/count?audience=${audience}`),
+    test: (id: string, email: string) =>
+      request<{ ok: true }>(`/newsletters/${id}/test`, { method: 'POST', ...json({ email }) }),
+    send: (id: string) => request<SendResult>(`/newsletters/${id}/send`, { method: 'POST' }),
+  },
+
+  /** Reusable newsletter blueprints for this site. */
+  newsletterTemplates: {
+    list: () => request<NewsletterTemplate[]>('/newsletter-templates'),
+    create: (input: CreateNewsletterTemplateInput) =>
+      request<NewsletterTemplate>('/newsletter-templates', { method: 'POST', ...json(input) }),
+    update: (id: string, input: UpdateNewsletterTemplateInput) =>
+      request<NewsletterTemplate>(`/newsletter-templates/${id}`, {
+        method: 'PATCH',
+        ...json(input),
+      }),
+    remove: (id: string) => request<void>(`/newsletter-templates/${id}`, { method: 'DELETE' }),
+    preview: (input: { subject: string; body: string }) =>
+      request<NewsletterPreview>('/newsletter-templates/preview', {
+        method: 'POST',
+        ...json(input),
+      }),
   },
 }
 

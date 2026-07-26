@@ -10,8 +10,8 @@ import {
   memberVerifications,
   rateLimits,
 } from '../db/schema'
+import { renderEmail } from '../email/render'
 import { sendEmail } from '../email/send'
-import { memberInviteEmail, memberResetEmail, memberVerifyEmail } from '../email/templates'
 import type { Bindings } from '../env'
 import { hashPassword, verifyPassword } from '../lib/crypto'
 import { newId } from '../lib/id'
@@ -92,12 +92,12 @@ function createMemberAuth(env: Bindings) {
       sendResetPassword: async ({ user, url, token }) => {
         const setUrl = withToken(callbackFrom(url) ?? `${env.PUBLIC_URL}/reset-password`, token)
         const invited = !(await hasCredential(env, user.id))
+        const key = invited ? 'member_invite' : 'member_reset'
 
         await sendEmail(
           env,
-          invited
-            ? memberInviteEmail(env, { to: user.email, name: user.name, setUrl })
-            : memberResetEmail(env, { to: user.email, name: user.name, token, resetUrl: setUrl }),
+          await renderEmail(env, key, { to: user.email, name: user.name, url: setUrl }),
+          { templateKey: key },
         )
       },
       password: {
@@ -116,13 +116,11 @@ function createMemberAuth(env: Bindings) {
       autoSignInAfterVerification: true,
       expiresIn: 60 * 60 * 24,
       sendVerificationEmail: async ({ user, token }) => {
+        const url = `${env.PUBLIC_URL}/api/v1/member/verify-email?token=${encodeURIComponent(token)}`
         await sendEmail(
           env,
-          memberVerifyEmail(env, {
-            to: user.email,
-            name: user.name,
-            verifyUrl: `${env.PUBLIC_URL}/api/v1/member/verify-email?token=${encodeURIComponent(token)}`,
-          }),
+          await renderEmail(env, 'member_verify', { to: user.email, name: user.name, url }),
+          { templateKey: 'member_verify' },
         )
       },
     },
