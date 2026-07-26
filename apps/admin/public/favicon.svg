@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hedge">
+  <!-- Placeholder mark: an H on a rounded square. Filled rather than outlined so it stays legible
+       at 16px, and dark-on-light in both browser themes rather than switching with them — a tab
+       icon that changes with the theme is harder to find than one that never moves. -->
+  <rect width="64" height="64" rx="14" fill="#18181b" />
+  <path d="M20 16h7v13h10V16h7v32h-7V35H27v13h-7z" fill="#fafafa" />
+</svg>

@@ -1,10 +1,13 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { FormError } from '@/components/form-error'
+import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Wordmark } from '@/components/wordmark'
 import { useLogin } from '@/hooks/use-session'
 import { api } from '@/lib/api'
 import { pendingAuthorization, resumeAuthorization } from '@/lib/oauth'
@@ -34,6 +37,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
+      <Wordmark />
       <Card>
         <CardHeader className="text-center">
           <CardTitle className="text-xl">
@@ -84,9 +88,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                       Forgot your password?
                     </button>
                   </div>
-                  <Input
+                  <PasswordInput
                     id="password"
-                    type="password"
                     autoComplete="current-password"
                     required
                     value={password}
@@ -95,7 +98,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                 </Field>
               )}
 
-              {error && <p className="text-destructive text-sm">{(error as Error).message}</p>}
+              <FormError error={error} />
 
               <Field>
                 <Button type="submit" disabled={pending}>

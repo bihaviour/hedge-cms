@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <meta name="robots" content="noindex, nofollow" />
+    <!-- Without this the browser asks for /favicon.ico, which the SPA fallback answers with
+         index.html — a 200 that is not an icon, so the tab falls back to a blank page glyph. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Hedge</title>
   </head>
   <body>

@@ -2,9 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
+import { FormError } from '@/components/form-error'
+import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 
@@ -62,9 +63,8 @@ export function AcceptInvitePage({ mode = 'invite' }: { mode?: 'invite' | 'reset
             >
               <div className="space-y-2">
                 <Label htmlFor="password">New password</Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   minLength={12}
                   required
                   autoComplete="new-password"
@@ -73,9 +73,7 @@ export function AcceptInvitePage({ mode = 'invite' }: { mode?: 'invite' | 'reset
                 />
               </div>
 
-              {submit.error && (
-                <p className="text-destructive text-sm">{(submit.error as Error).message}</p>
-              )}
+              <FormError error={submit.error} />
 
               <Button type="submit" className="w-full" disabled={submit.isPending}>
                 Save password

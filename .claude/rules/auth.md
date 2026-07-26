@@ -46,6 +46,10 @@ rejects keys and delegated clients even when the role would allow the action.
 - Password hashing is PBKDF2-SHA256 via Web Crypto in `pbkdf2$iterations$salt$hash` format
   (`lib/crypto.ts`), matching the pre-Better-Auth format so existing hashes keep working. Changing
   it forces every user through a reset.
+- **100,000 PBKDF2 iterations is workerd's ceiling, not a choice.** `deriveBits` throws
+  `NotSupportedError` above it rather than running slower, and both password paths — `/auth/setup`
+  writing one, `/auth/login` reading one — go through it, so a higher number is a deployment where
+  nobody can sign in and the only clue is a 500. `crypto.test.ts` pins it.
 - `telemetry: { enabled: false }` — nothing about a self-hosted CMS phones home.
 
 ## MCP OAuth

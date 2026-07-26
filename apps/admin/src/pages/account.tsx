@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { FormError } from '@/components/form-error'
 import { PageHeader } from '@/components/page-header'
+import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -101,9 +102,8 @@ function ChangePassword() {
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="current-password">Current password</FieldLabel>
-              <Input
+              <PasswordInput
                 id="current-password"
-                type="password"
                 autoComplete="current-password"
                 required
                 value={currentPassword}
@@ -112,9 +112,8 @@ function ChangePassword() {
             </Field>
             <Field>
               <FieldLabel htmlFor="new-password">New password</FieldLabel>
-              <Input
+              <PasswordInput
                 id="new-password"
-                type="password"
                 autoComplete="new-password"
                 required
                 minLength={12}
@@ -123,9 +122,7 @@ function ChangePassword() {
               />
             </Field>
 
-            {change.error && (
-              <p className="text-destructive text-sm">{(change.error as Error).message}</p>
-            )}
+            <FormError error={change.error} />
 
             <Field>
               <Button type="submit" disabled={change.isPending}>
