@@ -1,6 +1,6 @@
 # Hedge
 
-**Headless + edge CMS.** Content management that runs entirely on Cloudflare's edge — no origin
+**HEDGE (Headless + Edge) CMS.** Content management that runs entirely on Cloudflare's edge — no origin
 server, no container, no cold starts. One Worker serves the admin UI, the management API, and a
 cached read-only delivery API.
 
