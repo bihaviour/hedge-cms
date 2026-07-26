@@ -45,7 +45,7 @@
         "description": "The name this deployment calls itself in the admin and in every email it sends — subject lines, greetings and footers. Set it to your own product or organisation name."
       },
       "PUBLIC_URL": {
-        "description": "Leave empty unless you already have a custom domain. Empty means Hedge uses the origin of whatever request it is answering, which is correct for the generated `workers.dev` subdomain. With a domain, set the full origin (`https://cms.example.com`) — invite links, media URLs and the MCP OAuth identifier all follow it."
+        "description": "Leave empty unless you already have a custom domain. Empty means Hedge uses the origin of whatever request it is answering, which is correct for the generated `workers.dev` subdomain. With a domain, set the **full origin including the scheme** — `https://cms.example.com`, not `cms.example.com` — and no trailing slash. A value that is not a URL is rejected when the deployment builds its auth, and every sign-in and admin request fails with a 500. Invite links, media URLs and the MCP OAuth identifier all follow this value."
       },
       "REPO_URL": {
         "description": "Optional. The GitHub or GitLab URL of the fork this deployment was created from, e.g. `https://github.com/you/hedge-cms`. When set, the admin's 'update available' notice links straight to your fork's Sync page. Safe to leave empty — the notice still links to the upstream release notes."

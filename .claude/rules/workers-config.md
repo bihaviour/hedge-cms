@@ -52,6 +52,15 @@ That fallback is safe only because Cloudflare routes to a Worker by hostname, so
 always one the deployment answers on — it is not a Host header a caller chose. Don't carry the
 pattern to a runtime where that isn't true, and don't widen it to trust a forwarded-host header.
 
+**When it is set, it has to be a full origin — scheme included, no trailing slash.**
+`https://cms.example.com`, never `cms.example.com`. Better Auth is constructed from this value and
+throws `Invalid base URL` on anything that isn't one, which surfaces as a 500 on *every*
+authenticated route — the admin API and the login screen — while `/api/health` keeps answering `ok`
+because it never touches auth. A deploy therefore looks entirely healthy while the CMS is unusable.
+Both the deploy button's field description (root `package.json`) and the README say this, so keep
+the three in step. When adding a custom domain, move `PUBLIC_URL` in the same commit as the
+`routes` entry: they are one change.
+
 `REPO_URL` is also deliberately empty. It is only ever a display value: when set to the fork a
 deployment was created from, the admin's "update available" notice (`/settings/about`) can deep-link
 that repo's *Sync fork* page. Nothing about how the Worker runs reads it, so leaving it blank costs
