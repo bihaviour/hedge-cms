@@ -60,8 +60,9 @@ function ok(structured: unknown, text: string) {
  * Builds the collection tools for one request. The closures carry the resolved site and the
  * authorisation checks, so a tool call is always scoped to the caller's tenant and permissions.
  *
- * Reads need the `content:read` scope (a plain user always passes); writes are an admin power, so
- * they require the `collections:write` scope on an API key or an admin role for a signed-in user.
+ * Reads need the `collections:read` scope and writes the `collections:write` one, as granted to the
+ * client at the consent screen — a token is the only credential this endpoint accepts. Writes are
+ * an admin power on top, so the approving user's own site role has to allow them too.
  */
 function collectionTools(
   env: Bindings,

@@ -304,7 +304,7 @@ app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), a
   return c.body(null, 204)
 })
 
-app.get('/:slug/revisions', requireSiteRole('editor'), async (c) => {
+app.get('/:slug/revisions', requireSiteRole('editor'), requireScope('content:read'), async (c) => {
   const site = requireSite(c)
   const collection = await findCollection(c.env, site.id, c.req.param('collection')!)
   const db = getDb(c.env)

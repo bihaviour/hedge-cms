@@ -16,9 +16,10 @@ export const API_KEY_PREFIX = 'hdg_'
  * Resolves the caller of a management route from their admin session cookie. Never rejects — it
  * sets `actor` to null and leaves the decision to `requireActor` and the role middlewares.
  *
- * Delivery API keys are deliberately not consulted here. They are resolved by
- * `lib/delivery-auth.ts`, which is mounted on `/api/v1/content/*` only, so a key minted to serve a
- * public website has no path into the management API at all.
+ * API keys are deliberately not consulted here. A read-only key — the credential a public website
+ * holds — is resolved only on `/api/v1/content/*`, and a write-scoped one only on the content and
+ * media routes listed as `KEY_MANAGED_PREFIXES`. Both live in `lib/delivery-auth.ts`, so no key of
+ * any kind reaches users, sites, members, email or the key routes themselves.
  */
 export const resolveSessionActor: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = await getCmsAuth(c.env).api.getSession({ headers: c.req.raw.headers })
@@ -57,10 +58,18 @@ export function requireUserActor(c: Context<AppEnv>): Actor {
 /**
  * Instance-level authorisation: managing users and sites. Use `requireSiteRole` for anything
  * that belongs to one site — passing this alone would let a site admin invite users.
+ *
+ * An API key never satisfies this, whatever role its scopes imply. Instance level is about a person
+ * running the deployment, and a key's role is only ever a statement about one site. No route a key
+ * can reach uses this today; the check is here so that adding one later cannot quietly hand a key
+ * authority over the instance.
  */
 export function requireRole(minimum: Role): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const actor = requireActor(c)
+    if (actor.kind === 'api_key') {
+      throw ApiError.forbidden('This endpoint requires a signed-in user')
+    }
     if (!roleAtLeast(actor.role, minimum)) {
       throw ApiError.forbidden(`Requires ${minimum} role or higher`)
     }

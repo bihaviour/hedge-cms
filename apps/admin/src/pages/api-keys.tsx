@@ -1,4 +1,4 @@
-import { API_KEY_SCOPES, type ApiKeyScope } from '@hedge/core'
+import { API_KEY_SCOPE_LABELS, API_KEY_SCOPES, type ApiKeyScope } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
@@ -217,9 +217,12 @@ function CreateKeyDialog({
             <div className="space-y-3">
               <Label>Scopes</Label>
               {API_KEY_SCOPES.map((scope) => (
-                <div key={scope} className="flex items-center justify-between gap-3 text-sm">
-                  <Label htmlFor={`scope-${scope}`} className="font-mono text-xs font-normal">
-                    {scope}
+                <div key={scope} className="flex items-start justify-between gap-3 text-sm">
+                  <Label htmlFor={`scope-${scope}`} className="font-normal">
+                    <span className="font-mono text-xs">{scope}</span>
+                    <span className="block text-muted-foreground text-xs">
+                      {API_KEY_SCOPE_LABELS[scope]}
+                    </span>
                   </Label>
                   <Switch
                     id={`scope-${scope}`}

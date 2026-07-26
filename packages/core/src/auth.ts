@@ -95,16 +95,34 @@ export const authorizedClientSchema = z.object({
 
 export type AuthorizedClient = z.infer<typeof authorizedClientSchema>
 
+/**
+ * What a key may do, and — with the route prefixes in the Worker — where it may go.
+ *
+ * `content:read` alone is the *delivery* key a public website holds: it reaches the delivery API
+ * and nothing else, so it only ever sees published entries. Adding any `:write` scope makes it an
+ * authoring key, which also reaches the content and media management routes. Neither kind can
+ * touch users, sites, members, email or the key routes themselves.
+ */
 export const API_KEY_SCOPES = [
   'content:read',
   'content:write',
   'media:read',
   'media:write',
-  // Managing collection schemas — creating, editing and deleting collections. An admin power,
-  // so a key can only carry it if an admin issued it. Used by the MCP endpoint.
+  // Managing collection schemas — creating, editing and deleting collections, which takes their
+  // entries with them. A site-admin power, and issuing any key already requires being one.
   'collections:write',
 ] as const
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]
+
+/** Plain-language descriptions of each scope, shown beside the switches in the admin. */
+export const API_KEY_SCOPE_LABELS: Record<ApiKeyScope, string> = {
+  'content:read':
+    'Read published content through the delivery API, and drafts when paired with a write scope',
+  'content:write': 'Create, edit and delete entries',
+  'media:read': 'List uploaded media',
+  'media:write': 'Upload, rename and delete media',
+  'collections:write': 'Create, change and delete collections — and the entries inside them',
+}
 
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(120),

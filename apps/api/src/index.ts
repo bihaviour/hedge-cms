@@ -8,7 +8,7 @@ import { CMS_AUTH_BASE_PATH, getCmsAuth } from './auth/cms'
 import { getMemberAuth, MEMBER_AUTH_BASE_PATH } from './auth/member'
 import type { AppEnv } from './env'
 import { resolveSessionActor } from './lib/auth'
-import { resolveDeliveryActor } from './lib/delivery-auth'
+import { resolveDeliveryActor, resolveSessionOrKeyActor } from './lib/delivery-auth'
 import { errorResponse } from './lib/errors'
 import { newId } from './lib/id'
 import { resolveMember } from './lib/member-auth'
@@ -31,14 +31,16 @@ import users from './routes/users'
 
 const app = new Hono<AppEnv>()
 
-/** Routes that are part of the management API, and are reachable only with an admin session. */
+/**
+ * Management routes reachable **only** with an admin session. Identity, tenancy, delivery keys
+ * themselves, and everything that sends mail — none of it is a machine's business, so no API key is
+ * ever resolved here.
+ */
 const ADMIN_PREFIXES = [
   '/api/v1/auth',
   '/api/v1/users',
   '/api/v1/sites',
   '/api/v1/api-keys',
-  '/api/v1/collections',
-  '/api/v1/media',
   '/api/v1/members',
   '/api/v1/email',
   '/api/v1/newsletters',
@@ -46,6 +48,17 @@ const ADMIN_PREFIXES = [
   '/api/v1/subscribers',
   '/api/v1/system',
 ]
+
+/**
+ * Management routes an admin session **or a write-scoped API key** may reach — the authoring
+ * surface, so an import script or another service can create content without a person's password.
+ *
+ * Only content and media, deliberately: a key that can write entries still cannot invite a user,
+ * create a site, read a member's email or mint another key. A key with no write scope is not
+ * resolved here at all, so the credential a public website holds stays confined to the delivery
+ * API and its published-only view. See `resolveSessionOrKeyActor`.
+ */
+const KEY_MANAGED_PREFIXES = ['/api/v1/collections', '/api/v1/media']
 
 const DELIVERY_PREFIX = '/api/v1/content'
 const MEMBER_PREFIX = '/api/v1/member/'
@@ -137,15 +150,23 @@ app.use(
 
 /**
  * Which credential a route accepts is decided here, once, by where the route lives — rather than
- * by each handler remembering to check. A delivery API key is only ever resolved on the delivery
- * API, so a key sitting in a website's environment cannot reach a management route even if that
- * route's own authorisation is wrong. MCP resolves its own OAuth token, and member tokens never
- * produce an actor at all.
+ * by each handler remembering to check. Three tiers, narrowing as the authority grows:
+ *
+ * - the delivery API takes any API key, and serves published content only
+ * - the authoring routes take a session or a *write-scoped* key
+ * - everything else management takes a session and nothing else
+ *
+ * So the key sitting in a public website's environment cannot reach a management route even if that
+ * route's own authorisation is wrong, and the key an import script holds still cannot touch users,
+ * sites or members. MCP resolves its own OAuth token, and member tokens never produce an actor.
  */
 app.use('/api/*', async (c, next) => {
   const path = c.req.path
 
   if (startsWithPrefix(path, DELIVERY_PREFIX)) return resolveDeliveryActor(c, next)
+  if (KEY_MANAGED_PREFIXES.some((prefix) => startsWithPrefix(path, prefix))) {
+    return resolveSessionOrKeyActor(c, next)
+  }
   if (ADMIN_PREFIXES.some((prefix) => startsWithPrefix(path, prefix))) {
     return resolveSessionActor(c, next)
   }

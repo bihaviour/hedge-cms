@@ -22,18 +22,18 @@ app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async
   return c.json({ data: await getCollection(c.env, requireSite(c).id, c.req.param('slug')) })
 })
 
-app.post('/', requireSiteRole('admin'), async (c) => {
+app.post('/', requireSiteRole('admin'), requireScope('collections:write'), async (c) => {
   const input = await validate(c, createCollectionSchema)
   return c.json({ data: await createCollection(c.env, requireSite(c).id, input) }, 201)
 })
 
-app.patch('/:slug', requireSiteRole('admin'), async (c) => {
+app.patch('/:slug', requireSiteRole('admin'), requireScope('collections:write'), async (c) => {
   const input = await validate(c, updateCollectionSchema)
   const data = await updateCollection(c.env, requireSite(c).id, c.req.param('slug'), input)
   return c.json({ data })
 })
 
-app.delete('/:slug', requireSiteRole('admin'), async (c) => {
+app.delete('/:slug', requireSiteRole('admin'), requireScope('collections:write'), async (c) => {
   await deleteCollection(c.env, requireSite(c).id, c.req.param('slug'))
   return c.body(null, 204)
 })

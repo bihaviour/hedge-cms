@@ -5,16 +5,29 @@ Read before adding or changing a Worker route.
 ## Request pipeline (`apps/api/src/index.ts`)
 
 **Which credential a route accepts is decided once, by path prefix, in middleware** — not by
-handlers remembering to check:
+handlers remembering to check. Three tiers, narrowing as authority grows:
 
-- `/api/v1/content/*` → `resolveDeliveryActor` (delivery API key `hdg_…`, HMAC'd with `AUTH_SECRET`)
-- the `ADMIN_PREFIXES` list → `resolveSessionActor` (admin session cookie only)
+- `/api/v1/content/*` → `resolveDeliveryActor` — **any** API key (`hdg_…`, HMAC'd with
+  `AUTH_SECRET`), serving published content only
+- the `KEY_MANAGED_PREFIXES` list (`/collections`, `/media`) → `resolveSessionOrKeyActor` — an admin
+  session, **or** a key that carries a `:write` scope
+- the `ADMIN_PREFIXES` list → `resolveSessionActor` — admin session cookie only
 - `/api/v1/mcp` → resolves its own OAuth bearer token inside the route
 - everything else → `actor = null`
 
 The point is that a delivery key sitting in a public website's env has *no path* into the
 management API even if a route's own authorization check is wrong. **A new management route must be
-added to `ADMIN_PREFIXES`** or it will resolve no actor at all.
+added to one of the two lists** or it will resolve no actor at all; `ADMIN_PREFIXES` is the default,
+and `KEY_MANAGED_PREFIXES` only for authoring routes a machine is meant to reach.
+
+The write-scope condition on the second tier is load-bearing, not a nicety. A `content:read`-only
+key is the delivery credential; resolving it there would hand it `GET /collections/:c/entries`,
+which returns **drafts** — something the delivery API deliberately never serves.
+
+A key's role comes from its scopes (`roleForScopes` in `lib/delivery-auth.ts`): `collections:write`
+→ `admin`, any other `:write` → `editor`, otherwise `viewer`. `requireRole` — instance level —
+rejects API keys outright whatever that role says, so a key can never gain authority over the
+deployment by way of a route added later.
 
 Then `resolveSite` (an API key is bound to the site it was issued for, so the actor comes first),
 then `resolveMember` for delivery and member routes only. All three set `null` rather than
