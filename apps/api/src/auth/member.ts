@@ -15,6 +15,7 @@ import { sendEmail } from '../email/send'
 import type { Bindings } from '../env'
 import { hashPassword, verifyPassword } from '../lib/crypto'
 import { newId } from '../lib/id'
+import { currentRequestSite } from '../lib/site'
 
 /**
  * Better Auth's own member endpoints. The documented member API is the facade at `/api/v1/member`;
@@ -94,10 +95,12 @@ function createMemberAuth(env: Bindings) {
         const invited = !(await hasCredential(env, user.id))
         const key = invited ? 'member_invite' : 'member_reset'
 
+        // A member belongs to a site, so the email goes out as that site if it has a sender of its
+        // own. Nothing here can be handed the site, so it comes from the request in flight.
         await sendEmail(
           env,
           await renderEmail(env, key, { to: user.email, name: user.name, url: setUrl }),
-          { templateKey: key },
+          { templateKey: key, site: currentRequestSite() },
         )
       },
       password: {
@@ -120,7 +123,7 @@ function createMemberAuth(env: Bindings) {
         await sendEmail(
           env,
           await renderEmail(env, 'member_verify', { to: user.email, name: user.name, url }),
-          { templateKey: 'member_verify' },
+          { templateKey: 'member_verify', site: currentRequestSite() },
         )
       },
     },

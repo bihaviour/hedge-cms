@@ -51,6 +51,16 @@ export const sites = sqliteTable(
      */
     metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
     customFields: text('custom_fields', { mode: 'json' }).$type<unknown[]>(),
+    /**
+     * This site's sender for its newsletters and its members' invite, reset and verification email.
+     * Null on each column means inherit — the deployment's `email_config` row, then `EMAIL_FROM` /
+     * `EMAIL_FROM_NAME`. They live on `sites` rather than in a table of their own because every
+     * request already resolves this row, so a send costs no extra query. Operator email never reads
+     * them; see `siteEmailSenderSchema` in `@hedge/core`.
+     */
+    emailFrom: text('email_from'),
+    emailFromName: text('email_from_name'),
+    emailReplyTo: text('email_reply_to'),
     ...timestamps,
   },
   (t) => [uniqueIndex('sites_slug_idx').on(t.slug), uniqueIndex('sites_domain_idx').on(t.domain)],

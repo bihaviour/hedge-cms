@@ -41,6 +41,8 @@ export async function sendUserInvite(env: Bindings, user: UserRow): Promise<void
   })
 
   const url = `${env.PUBLIC_URL}/accept-invite?token=${encodeURIComponent(token)}`
+  // No `site`: an operator is invited to the deployment, so this goes out as the deployment sender
+  // whatever site happened to be resolved on the request that invited them.
   await sendEmail(env, await renderEmail(env, 'invite', { to: user.email, name: user.name, url }), {
     templateKey: 'invite',
   })

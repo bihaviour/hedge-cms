@@ -1,9 +1,9 @@
 import type { EmailStatus, EmailTemplateKey } from '@hedge/core'
 import { getDb } from '../db/client'
-import { emailLog } from '../db/schema'
+import { emailLog, type SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
 import { newId } from '../lib/id'
-import { loadEmailConfig } from './config'
+import { loadEmailConfig, resolveSender } from './config'
 
 export interface EmailMessage {
   to: string
@@ -15,15 +15,21 @@ export interface EmailMessage {
 export interface SendOptions {
   /** The system template this message came from, recorded on the log row. */
   templateKey?: EmailTemplateKey
+  /**
+   * The site this message belongs to — a newsletter, or an email to one of that site's members.
+   * Its sender override wins over the deployment's. Leave it out for deployment email: an operator
+   * invite or password reset is not a site's to relabel.
+   */
+  site?: SiteRow | null
 }
 
 /**
  * Sends through the Cloudflare Email Sending binding, and records the attempt in the email log.
  *
- * The `from` fields come from the stored email config when set, falling back to the deployment's
- * `EMAIL_FROM` / `EMAIL_FROM_NAME`. Sending is skipped — but still logged — when the config disables
- * it, and in development, where the binding is not wired up and invite and reset links stay visible
- * in the `wrangler dev` output instead.
+ * The `from` fields come from the site's override, then the stored email config, then the
+ * deployment's `EMAIL_FROM` / `EMAIL_FROM_NAME` — see `resolveSender`. Sending is skipped — but
+ * still logged — when the config disables it, and in development, where the binding is not wired
+ * up and invite and reset links stay visible in the `wrangler dev` output instead.
  *
  * The onboarded `from` domain must be enabled first:
  *   bunx wrangler email sending enable yourdomain.com
@@ -34,12 +40,7 @@ export async function sendEmail(
   options: SendOptions = {},
 ): Promise<void> {
   const config = await loadEmailConfig(env)
-
-  const from = {
-    email: config?.fromEmail ?? env.EMAIL_FROM,
-    name: config?.fromName ?? env.EMAIL_FROM_NAME,
-  }
-  const replyTo = config?.replyTo ?? undefined
+  const { replyTo, ...from } = resolveSender(env, config, options.site ?? null)
 
   // Sending switched off in the config: compose and log, but never hand it to the provider.
   if (config?.enabled === false) {
@@ -48,9 +49,13 @@ export async function sendEmail(
     return
   }
 
-  // No binding in development: the link is what a developer needs, so print it and move on.
+  // No binding in development: the link is what a developer needs, so print it and move on. The
+  // resolved `from` goes with it — it is the only way to see which sender an override picked
+  // without a real send.
   if (env.ENVIRONMENT !== 'production' || !env.EMAIL) {
-    console.log(`[email] to=${message.to} subject=${message.subject}\n${message.text}`)
+    console.log(
+      `[email] from=${from.name} <${from.email}> to=${message.to} subject=${message.subject}\n${message.text}`,
+    )
     await logEmail(env, message, options.templateKey, 'skipped', 'Not sent in development')
     return
   }

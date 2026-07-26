@@ -199,4 +199,29 @@ describe('updateSiteConfigSchema', () => {
   test('leaves both keys optional so one can be updated alone', () => {
     expect(updateSiteConfigSchema.parse({}).metadata).toBeUndefined()
   })
+
+  test('takes an email sender whose nulls mean "inherit the deployment sender"', () => {
+    const parsed = updateSiteConfigSchema.parse({
+      emailSender: { fromEmail: 'news@example.com', fromName: 'Example', replyTo: null },
+    })
+    expect(parsed.emailSender).toEqual({
+      fromEmail: 'news@example.com',
+      fromName: 'Example',
+      replyTo: null,
+    })
+  })
+
+  test('rejects a sender address that is not an address', () => {
+    const result = updateSiteConfigSchema.safeParse({
+      emailSender: { fromEmail: 'not-an-address', fromName: null, replyTo: null },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  test('requires all three sender fields together, so a blank one clears rather than persists', () => {
+    const result = updateSiteConfigSchema.safeParse({
+      emailSender: { fromEmail: 'news@example.com' },
+    })
+    expect(result.success).toBe(false)
+  })
 })

@@ -124,6 +124,8 @@ function createCmsAuth(env: Bindings) {
       resetPasswordTokenExpiresIn: 60 * 60,
       sendResetPassword: async ({ user, token }) => {
         const url = `${env.PUBLIC_URL}/reset-password?token=${encodeURIComponent(token)}`
+        // No `site`: an operator's account is the deployment's, not any one site's, so this always
+        // goes out as the deployment sender even when a site is resolved on the request.
         await sendEmail(
           env,
           await renderEmail(env, 'password_reset', { to: user.email, name: user.name, url }),

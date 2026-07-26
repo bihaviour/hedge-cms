@@ -74,7 +74,9 @@ Two things are worth doing next, when you need them:
 
 - **Email.** Invites, password resets and newsletters send through Cloudflare Email Sending, which
   needs a domain of yours onboarded first: `bunx wrangler email sending enable yourdomain.com`.
-  Until then those sends fail — the address they send from is set under **Settings → Email**.
+  Until then those sends fail — the address they send from is set under **Settings → Email**, and a
+  site can send its own newsletters and member email as itself by setting a sender under **Site
+  settings**. Operator invites and password resets always use the deployment's.
 - **A custom domain.** Add the route in the Cloudflare dashboard, then set the `PUBLIC_URL` variable
   to that URL. Left empty, the deployment answers with whatever origin the request arrived on, which
   is right for the generated workers.dev URL and for local development but not for a Worker reached

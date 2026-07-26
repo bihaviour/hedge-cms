@@ -73,6 +73,33 @@ export const siteMetadataSchema = z.object({
 
 export type SiteMetadata = z.infer<typeof siteMetadataSchema>
 
+/**
+ * The sender a site's *own* email goes out as: its newsletters, and the invite, reset and
+ * verification emails its members receive. Every field is nullable and null means inherit — the
+ * deployment's stored email config first, then `EMAIL_FROM` / `EMAIL_FROM_NAME`.
+ *
+ * Operator email (a CMS user's invite or password reset) is never affected. That belongs to the
+ * deployment, not to a site, and a site admin must not be able to change what it says it is from.
+ *
+ * A `fromEmail` here is not a spoofing vector: Cloudflare Email Sending only accepts a domain
+ * onboarded on the account, so an address on a domain the deployment does not own fails at the
+ * provider rather than leaving it.
+ */
+export const siteEmailSenderSchema = z.object({
+  fromEmail: z.email().max(320).nullable(),
+  fromName: z.string().max(120).nullable(),
+  replyTo: z.email().max(320).nullable(),
+})
+
+export type SiteEmailSender = z.infer<typeof siteEmailSenderSchema>
+
+/** Inherit everything — what a site that has never set a sender of its own reads as. */
+export const INHERITED_EMAIL_SENDER: SiteEmailSender = {
+  fromEmail: null,
+  fromName: null,
+  replyTo: null,
+}
+
 export const siteSchema = z.object({
   id: z.string(),
   slug: slugSchema,
@@ -95,6 +122,8 @@ export const siteSchema = z.object({
    * for these under its `metadata.custom`, on top of whatever fields its own collection defines.
    */
   customFields: fieldsSchema,
+  /** This site's sender override for newsletters and member email — see `siteEmailSenderSchema`. */
+  emailSender: siteEmailSenderSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -144,13 +173,17 @@ export const updateSiteSchema = z.object({
 export type UpdateSiteInput = z.infer<typeof updateSiteSchema>
 
 /**
- * A site's metadata defaults and custom fields, edited from Site Settings. Kept apart from
+ * A site's metadata defaults, custom fields and sender, edited from Site Settings. Kept apart from
  * `updateSiteSchema` because it is authorised at the *site* level — a per-site admin owns their
  * site's content configuration — where name, domain and member signup are instance-admin concerns.
+ *
+ * `emailSender` is all-or-nothing: sending it replaces all three fields, so clearing one override
+ * is a matter of sending it as null rather than omitting it.
  */
 export const updateSiteConfigSchema = z.object({
   metadata: siteMetadataSchema.optional(),
   customFields: fieldsSchema.optional(),
+  emailSender: siteEmailSenderSchema.optional(),
 })
 
 export type UpdateSiteConfigInput = z.infer<typeof updateSiteConfigSchema>

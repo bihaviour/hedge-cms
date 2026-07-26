@@ -281,6 +281,7 @@ app.delete('/:id', requireSiteRole('editor'), async (c) => {
 
 /** A single copy to one address, so an editor can see the real thing before sending to everyone. */
 app.post('/:id/test', requireSiteRole('admin'), async (c) => {
+  const site = requireSite(c)
   const input = await validate(c, testSendSchema)
   const newsletter = await ownedNewsletter(c)
 
@@ -289,7 +290,8 @@ app.post('/:id/test', requireSiteRole('admin'), async (c) => {
     body: newsletter.body,
     unsubscribeUrl: `${c.env.PUBLIC_URL}/api/v1/newsletter/unsubscribe?test=1`,
   })
-  await sendEmail(c.env, { ...message, to: input.email })
+  // Sent as the site, so the test shows the sender the audience will actually see.
+  await sendEmail(c.env, { ...message, to: input.email }, { site })
 
   return c.json({ data: { ok: true } })
 })
@@ -327,7 +329,7 @@ app.post('/:id/send', requireSiteRole('admin'), async (c) => {
         body: newsletter.body,
         unsubscribeUrl: url,
       })
-      await sendEmail(c.env, { ...message, to: recipient.email })
+      await sendEmail(c.env, { ...message, to: recipient.email }, { site })
     } catch {
       failed++
     }
