@@ -61,8 +61,9 @@
     // origin of the request it is answering. Set this once the deployment has a custom domain,
     // and invite links, media URLs and the OAuth resource identifier follow it.
     "PUBLIC_URL": "",
-    // The address transactional email is sent from. Overridable per deployment in the admin
-    // under Settings → Email, which is the easier place to change it after the fact.
+    // The system sender, for the whole deployment rather than per site: invites, password resets,
+    // member sign-in links and every site's newsletters all leave from this address. Overridable
+    // in the admin under Settings → Email, which is the easier place to change it after the fact.
     "EMAIL_FROM": "",
     "EMAIL_FROM_NAME": "Hedge CMS"
   }

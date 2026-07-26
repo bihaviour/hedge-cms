@@ -89,6 +89,11 @@ Details are in the rule files; these are the ones worth knowing before you read 
   wrangler provisions them on first deploy — which is what lets the README's Deploy to Cloudflare
   button work on somebody else's account. Same reason `PUBLIC_URL` is empty and filled from the
   request origin.
+- **An email's sender resolves site → deployment → environment**, field by field
+  (`email/config.ts`). `sendEmail` takes the site an email belongs to — a newsletter, or anything
+  sent to one site's member — and operator email passes none, so no site can relabel an invite or a
+  password reset. The member auth callbacks get their site from the request-scoped store in
+  `lib/site.ts`, because Better Auth hands them nothing else.
 - **Generated files are committed, never hand-edited**: `migrations/` + `migrations/meta/` from
   `db:generate`, `worker-configuration.d.ts` from `cf-typegen`, `apps/admin/src/components/ui/` from
   the shadcn CLI (also excluded from linting).

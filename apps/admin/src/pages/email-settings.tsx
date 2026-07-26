@@ -57,7 +57,7 @@ export function EmailSettingsPage() {
     <>
       <PageHeader
         title="Email settings"
-        description="Sender identity and delivery for the Cloudflare Email binding. Overrides sit on top of the deployment defaults."
+        description="Sender identity and delivery for the Cloudflare Email binding, for the whole deployment. A site can override the sender for its own newsletters and member email under Site settings."
       />
 
       <div className="max-w-2xl p-8">

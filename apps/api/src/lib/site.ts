@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { SITE_HEADER } from '@hedge/core'
 import { count, eq, or } from 'drizzle-orm'
 import type { Context, MiddlewareHandler } from 'hono'
@@ -59,10 +60,27 @@ async function lookupSite(c: Context<AppEnv>): Promise<SiteRow | null> {
   return null
 }
 
+/**
+ * The site the request in flight resolved to, for code that cannot be handed the Hono context.
+ *
+ * There is exactly one such caller: Better Auth's email callbacks in `auth/member.ts`. They run
+ * inside `auth.api.*`, are given only what Better Auth passes them, and the instance itself is
+ * cached per isolate — so there is no parameter a site could travel through. A member's invite,
+ * reset and verification email all belong to the site they are signing in to, and that is request
+ * state, so it lives here for the duration of the request rather than in a header a caller could
+ * set. Everywhere else knows its site explicitly and should pass it explicitly.
+ */
+const requestSite = new AsyncLocalStorage<SiteRow | null>()
+
+export function currentRequestSite(): SiteRow | null {
+  return requestSite.getStore() ?? null
+}
+
 /** Resolves the site for every request. Never rejects on its own — `requireSite` does that. */
 export const resolveSite: MiddlewareHandler<AppEnv> = async (c, next) => {
-  c.set('site', await lookupSite(c))
-  await next()
+  const site = await lookupSite(c)
+  c.set('site', site)
+  await requestSite.run(site, next)
 }
 
 export function requireSite(c: Context<AppEnv>): SiteRow {
