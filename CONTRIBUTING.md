@@ -7,7 +7,7 @@ issue before a large change saves everyone effort.
 
 ```bash
 bun install
-echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > apps/api/.dev.vars
+echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > .dev.vars
 bun run db:migrate
 bun run dev:api      # terminal 1
 bun run dev:admin    # terminal 2
@@ -32,8 +32,10 @@ bun run test
 - **API routes** are Hono sub-apps under `apps/api/src/routes`, mounted in `apps/api/src/index.ts`.
 - **Database schema** is `apps/api/src/db/schema.ts`. After changing it, run `bun run db:generate`
   to produce a migration and commit both the schema and the generated SQL.
-- **Worker config changes** (`wrangler.jsonc`) require `bun run cf-typegen` so
-  `worker-configuration.d.ts` stays in sync. That file is generated — commit it, don't hand-edit it.
+- **Worker config** is `wrangler.jsonc` at the repository root — one file, no environments, and
+  nothing account-specific in it, so the README's Deploy to Cloudflare button works on anyone's
+  account. Changing it requires `bun run cf-typegen` so `apps/api/worker-configuration.d.ts` stays
+  in sync. That file is generated — commit it, don't hand-edit it.
 
 ## Adding a field kind
 

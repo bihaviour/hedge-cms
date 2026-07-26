@@ -1,0 +1,72 @@
+{
+  "$schema": "apps/api/node_modules/wrangler/config-schema.json",
+  "name": "hedge-cms",
+  // One Worker for the whole product: the API in apps/api, the admin SPA in apps/admin/dist.
+  // The config lives at the repository root because that is where the Deploy to Cloudflare button
+  // and Workers Builds look for it — a monorepo subdirectory would have to be self-contained,
+  // and this one is not. Paths below are relative to this file.
+  "main": "apps/api/src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  // The admin SPA is served straight from the edge. The Worker runs first for API and media
+  // routes so a 404 there returns JSON instead of being rewritten to index.html.
+  "assets": {
+    "directory": "apps/admin/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // `/.well-known/*` is the Worker's too: OAuth discovery lives there, and the SPA fallback
+    // would otherwise answer a metadata request with index.html.
+    "run_worker_first": ["/api/*", "/media/*", "/.well-known/*"]
+  },
+
+  // The D1 database and R2 bucket carry no ids on purpose: Wrangler provisions whatever is
+  // missing on the first `wrangler deploy` (and on the first `wrangler dev`, locally), then keeps
+  // the Worker bound to it. That is what lets someone deploy this repository into their own
+  // account without creating resources or editing this file first.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hedge-db",
+      "migrations_dir": "apps/api/migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "hedge-media"
+    }
+  ],
+
+  // Cloudflare Email Sending. Deploying works without it, but nothing sends until the `from`
+  // domain is onboarded:
+  //   bunx wrangler email sending enable yourdomain.com
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "production",
+    "APP_NAME": "Hedge",
+    // Left empty deliberately. A deployment does not know its own URL until it has one — a
+    // one-click deploy gets a generated workers.dev subdomain — so the Worker falls back to the
+    // origin of the request it is answering. Set this once the deployment has a custom domain,
+    // and invite links, media URLs and the OAuth resource identifier follow it.
+    "PUBLIC_URL": "",
+    // The address transactional email is sent from. Overridable per deployment in the admin
+    // under Settings → Email, which is the easier place to change it after the fact.
+    "EMAIL_FROM": "",
+    "EMAIL_FROM_NAME": "Hedge CMS"
+  }
+
+  // AUTH_SECRET is the only secret. Locally it goes in `.dev.vars`; in a deployment it is set
+  // with `wrangler secret put AUTH_SECRET`, or typed into the Deploy to Cloudflare setup page.
+}

@@ -33,7 +33,7 @@ Then check what the branch touched, because two paths in this repo carry generat
 | Changed | Must also be committed |
 | --- | --- |
 | `apps/api/src/db/schema.ts` | A migration in `apps/api/migrations/` **and** its `meta/` snapshot, from `bun run db:generate` |
-| `apps/api/wrangler.jsonc` | `apps/api/worker-configuration.d.ts`, from `bun run cf-typegen` — generated, never hand-edited |
+| `wrangler.jsonc` (repository root) | `apps/api/worker-configuration.d.ts`, from `bun run cf-typegen` — generated, never hand-edited |
 
 Verify a schema change applies rather than assuming: `bun run db:migrate` against the local D1.
 Drizzle-kit's generated SQL is a starting point, not gospel — SQLite refuses `ADD COLUMN` for a
