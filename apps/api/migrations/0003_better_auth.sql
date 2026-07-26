@@ -8,15 +8,27 @@
  2. No password is lost. Hashes move from `users.password_hash` into `accounts.password` in the
     same `pbkdf2$iterations$salt$hash` format, which is what Better Auth is configured to read.
  3. Members become one identity per deployment instead of one per site. A reader who signed up on
-    two sites with the same address had two unrelated accounts; they now have one, with a grant in
+    two sites with the same address had two unrelated accounts. They now have one, with a grant in
     `member_sites` for each site. Duplicates collapse onto the earliest account, and the earliest
     password that exists for that address is the one kept.
 
  Tables Better Auth owns store dates as epoch seconds, so ISO strings are converted on the way in.
+
+ Comments here are constrained, because a remote apply sends this file to D1's HTTP API verbatim and
+ that parser is stricter than SQLite. All three of these produce "SQL code did not contain a
+ statement [code: 7500]", and none of them fail locally, where wrangler splits the file itself with
+ a comment-aware splitter:
+
+   * a semicolon inside any comment — the API splits on semicolons before stripping comments, so
+     the fragment ahead of it arrives as a statement that isn't one
+   * a double dash inside a block comment — the parser reads it as starting a line comment, which
+     then swallows the closing star-slash and the block never ends. This is why the section markers
+     below are written with `===` and not with dashes
+   * a comment after the last statement, with nothing following it
 */
 PRAGMA defer_foreign_keys = on;--> statement-breakpoint
 
-/* ---------- CMS users ---------- */
+/* === CMS users === */
 
 CREATE TABLE `__new_users` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -35,9 +47,8 @@ SELECT
 	`email`,
 	`name`,
 	/* Having a password means they followed an invite link sent to this address. Written as a bare
-	   comparison, not a CASE: wrangler's SQL splitter treats CASE as a compound-statement start and
-	   only closes it on `END` followed by whitespace, so `END,` swallows every later `;` and the
-	   rest of the file is sent to D1 as one statement. */
+	   comparison rather than a CASE, which is equivalent in SQLite and avoids wrangler's local
+	   splitter treating CASE as a compound statement it then fails to see the end of. */
 	`password_hash` IS NOT NULL,
 	NULL,
 	`role`,
@@ -80,7 +91,7 @@ CREATE UNIQUE INDEX `users_email_idx` ON `users` (`email`);--> statement-breakpo
 CREATE INDEX `accounts_user_idx` ON `accounts` (`user_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `accounts_provider_account_idx` ON `accounts` (`provider_id`,`account_id`);--> statement-breakpoint
 
-/* ---------- Admin sessions ---------- */
+/* === Admin sessions === */
 
 DROP TABLE `sessions`;--> statement-breakpoint
 CREATE TABLE `sessions` (
@@ -98,7 +109,7 @@ CREATE TABLE `sessions` (
 CREATE UNIQUE INDEX `sessions_token_idx` ON `sessions` (`token`);--> statement-breakpoint
 CREATE INDEX `sessions_user_idx` ON `sessions` (`user_id`);--> statement-breakpoint
 
-/* ---------- Verification, rate limiting ---------- */
+/* === Verification, rate limiting === */
 
 CREATE TABLE `verifications` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -118,10 +129,10 @@ CREATE TABLE `rate_limits` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `rate_limits_key_idx` ON `rate_limits` (`key`);--> statement-breakpoint
-/* Password resets are Better Auth's verification rows now; only invites are left here. */
+/* Password resets are Better Auth's verification rows now, so only invites are left here. */
 DELETE FROM `auth_tokens` WHERE `purpose` = 'password_reset';--> statement-breakpoint
 
-/* ---------- OAuth 2.1, for MCP clients ---------- */
+/* === OAuth 2.1, for MCP clients === */
 
 CREATE TABLE `oauth_applications` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -170,7 +181,7 @@ CREATE TABLE `oauth_consents` (
 --> statement-breakpoint
 CREATE INDEX `oauth_consents_user_client_idx` ON `oauth_consents` (`user_id`,`client_id`);--> statement-breakpoint
 
-/* ---------- Members ---------- */
+/* === Members === */
 
 DROP TABLE `member_sessions`;--> statement-breakpoint
 ALTER TABLE `members` RENAME TO `__old_members`;--> statement-breakpoint

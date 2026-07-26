@@ -14,14 +14,35 @@ Drizzle-kit's SQL is a starting point, not gospel. SQLite refuses `ADD COLUMN` f
 column with a foreign key, so such a column needs a hand-written create/copy/drop/rename with a
 backfill. Never edit an already-applied migration — add a new one.
 
-**Avoid `CASE … END` in migration SQL.** Wrangler splits a migration file into statements itself,
-and its splitter treats `CASE` (and `BEGIN`) as opening a compound statement that only closes on
-`END` followed by whitespace or `;`. A perfectly valid `… ELSE 0 END,` therefore swallows every
-later semicolon, and the rest of the file goes to D1 as one statement — which the local SQLite
-tolerates and the remote D1 API rejects with *"SQL code did not contain a statement" [code: 7500]*,
-so it fails only in a deploy. Prefer a bare comparison (`x IS NOT NULL` is already 1/0) or `IIF()`.
-Applying to a *fresh* local D1 catches this class of thing:
-`bunx wrangler d1 migrations apply DB --config ../../wrangler.jsonc --local --persist-to <tmpdir>`.
+## Comments in a migration are constrained — a local apply will not tell you
+
+**`db:migrate` and `db:migrate:remote` do not parse the file the same way.** Locally, wrangler
+splits it with its own comment-aware splitter and runs the statements. Remotely, it posts the file
+to D1's HTTP API *verbatim* and that parser splits it — and it is stricter. Each of the following
+applies cleanly to the local D1 and then fails a deploy with **"SQL code did not contain a
+statement" [code: 7500]**:
+
+| In a migration | Why it breaks remotely |
+| --- | --- |
+| A `;` inside any comment | The API splits on `;` before stripping comments, so the fragment ahead of it arrives as a statement that isn't one |
+| A `--` inside a *block* comment — including a `/* ----- section ----- */` ruler | Read as starting a line comment, which swallows the closing `*/`, so the block never ends and eats the rest of the file |
+| A comment after the final statement | The trailing chunk is a comment with no statement in it |
+
+Use `===` for section rulers, keep comments free of semicolons, and end the file on a statement.
+
+**Verify a migration remotely before shipping it**, because nothing local covers the above. Create a
+throwaway D1, point a scratch config's `DB` binding at it, apply, then delete it:
+
+```bash
+bunx wrangler d1 create hedge-migration-probe      # note the database_id
+bunx wrangler d1 migrations apply DB --config <scratch>.jsonc --remote
+bunx wrangler d1 delete hedge-migration-probe -y
+```
+
+Also avoid `CASE … END` in migration SQL: wrangler's *local* splitter treats `CASE` (and `BEGIN`) as
+opening a compound statement that closes only on `END` followed by whitespace or `;`, so `… ELSE 0
+END,` swallows every later semicolon and the rest of the file becomes one statement. Prefer a bare
+comparison (`x IS NOT NULL` is already 1/0) or `IIF()`.
 
 ## Conventions
 
