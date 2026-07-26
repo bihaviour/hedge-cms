@@ -57,6 +57,12 @@ export interface McpTool {
   /** JSON Schema for the tool's arguments — an object schema. */
   inputSchema: Record<string, unknown>
   annotations?: Record<string, unknown>
+  /**
+   * Kept out of `tools/list` but still callable — the call then fails with whatever the handler
+   * says. A client that cannot use a tool should not be shown it, but one that calls it anyway
+   * deserves the real reason rather than "unknown tool", which reads as "this does not exist".
+   */
+  hidden?: boolean
   handler: (args: Record<string, unknown>) => Promise<McpToolResult>
 }
 
@@ -127,13 +133,15 @@ export async function handleRpcMessage(
 
     case 'tools/list':
       return success(id, {
-        tools: server.tools.map((t) => ({
-          name: t.name,
-          ...(t.title ? { title: t.title } : {}),
-          description: t.description,
-          inputSchema: t.inputSchema,
-          ...(t.annotations ? { annotations: t.annotations } : {}),
-        })),
+        tools: server.tools
+          .filter((t) => !t.hidden)
+          .map((t) => ({
+            name: t.name,
+            ...(t.title ? { title: t.title } : {}),
+            description: t.description,
+            inputSchema: t.inputSchema,
+            ...(t.annotations ? { annotations: t.annotations } : {}),
+          })),
       })
 
     case 'tools/call': {

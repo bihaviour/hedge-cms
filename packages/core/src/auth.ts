@@ -71,16 +71,59 @@ export const userSessionSchema = z.object({
 export type UserSession = z.infer<typeof userSessionSchema>
 
 /**
- * OAuth scopes an MCP client may request. They bound what a *delegated* client can do; the user's
- * own site role still applies on top, so granting `collections:write` to an editor's client does
- * not let it rewrite schemas.
+ * OAuth scopes an MCP client may request, one read/write pair per area of the CMS. They bound what
+ * a *delegated* client can do; the user's own role still applies on top, so granting
+ * `collections:write` to an editor's client does not let it rewrite schemas, and granting
+ * `users:write` to anyone below instance admin does not let it manage users.
+ *
+ * The pairing is deliberate. A client that only ever reads — a documentation assistant, a search
+ * indexer — asks for the `:read` half and cannot be talked into a write by a prompt it was fed.
  */
 export const MCP_SCOPES = {
   collectionsRead: 'collections:read',
   collectionsWrite: 'collections:write',
+  entriesRead: 'entries:read',
+  entriesWrite: 'entries:write',
+  mediaRead: 'media:read',
+  mediaWrite: 'media:write',
+  newslettersRead: 'newsletters:read',
+  newslettersWrite: 'newsletters:write',
+  sitesRead: 'sites:read',
+  sitesWrite: 'sites:write',
+  usersRead: 'users:read',
+  usersWrite: 'users:write',
+  keysRead: 'keys:read',
+  keysWrite: 'keys:write',
 } as const
 
 export type McpScope = (typeof MCP_SCOPES)[keyof typeof MCP_SCOPES]
+
+/** Every MCP scope, for the OAuth server's metadata and the consent screen. */
+export const MCP_SCOPE_LIST = Object.values(MCP_SCOPES) as McpScope[]
+
+/**
+ * Plain-language descriptions of each scope, shown on the consent screen. They live here rather
+ * than in the admin because the same wording has to survive any client that reads the OAuth
+ * metadata — and because a consent screen that undersells what it is granting is the one bug in
+ * this flow with no technical symptom.
+ */
+export const MCP_SCOPE_LABELS: Record<McpScope, string> = {
+  'collections:read': 'Read this site’s collections and their fields',
+  // Deleting a collection takes its entries with it, which is how this reaches content.
+  'collections:write': 'Create, change and delete this site’s collections',
+  'entries:read': 'Read this site’s entries, including unpublished drafts',
+  'entries:write': 'Create, edit, publish and delete this site’s entries',
+  'media:read': 'List this site’s uploaded media',
+  'media:write': 'Rename, re-caption and delete this site’s media',
+  'newsletters:read': 'Read this site’s newsletters, templates and subscriber list',
+  'newsletters:write': 'Write newsletters and templates, and manage subscribers',
+  'sites:read': 'See the sites you have access to and their settings',
+  'sites:write': 'Create sites and change their settings',
+  'users:read': 'See who has access to this deployment',
+  'users:write': 'Invite users, change their roles, and remove them',
+  'keys:read': 'List this site’s API keys',
+  'keys:write': 'Issue and revoke API keys for this site',
+}
 
 /** Admin route that asks the operator to approve an MCP client's authorization request. */
 export const OAUTH_CONSENT_PATH = '/oauth/consent'

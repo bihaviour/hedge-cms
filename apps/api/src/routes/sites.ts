@@ -1,69 +1,24 @@
 import {
   createSiteSchema,
-  fieldsSchema,
   roleAtLeast,
-  type Site,
-  siteMetadataSchema,
   updateSiteConfigSchema,
   updateSiteSchema,
 } from '@hedge/core'
-import { and, count, eq, ne } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { getDb } from '../db/client'
-import { type SiteRow, sites } from '../db/schema'
-import type { AppEnv, Bindings } from '../env'
+import type { AppEnv } from '../env'
 import { accessibleSites, requireActor, requireRole, siteRoleFor } from '../lib/auth'
 import { ApiError } from '../lib/errors'
-import { newId } from '../lib/id'
+import {
+  createSite,
+  deleteSite,
+  findSite,
+  toSite,
+  updateSite,
+  updateSiteConfig,
+} from '../lib/sites'
 import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
-
-export function toSite(row: SiteRow): Site {
-  return {
-    id: row.id,
-    slug: row.slug,
-    name: row.name,
-    description: row.description,
-    domain: row.domain,
-    allowMemberSignup: row.allowMemberSignup,
-    locales: row.locales,
-    defaultLocale: row.defaultLocale,
-    timezone: row.timezone,
-    // Null on rows predating these columns and on freshly created sites — parse into empty defaults.
-    metadata: siteMetadataSchema.parse(row.metadata ?? {}),
-    customFields: fieldsSchema.parse(row.customFields ?? []),
-    // Nulls are meaningful here rather than missing: each one means "inherit the deployment's".
-    emailSender: {
-      fromEmail: row.emailFrom,
-      fromName: row.emailFromName,
-      replyTo: row.emailReplyTo,
-    },
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  }
-}
-
-async function findSite(env: Bindings, slug: string): Promise<SiteRow> {
-  const [row] = await getDb(env).select().from(sites).where(eq(sites.slug, slug)).limit(1)
-  if (!row) throw ApiError.notFound('Site')
-  return row
-}
-
-/** Two sites answering to the same hostname would make `Host` resolution ambiguous. */
-async function assertDomainFree(env: Bindings, domain: string, exceptSiteId?: string) {
-  const [clash] = await getDb(env)
-    .select({ slug: sites.slug })
-    .from(sites)
-    .where(
-      exceptSiteId
-        ? and(eq(sites.domain, domain), ne(sites.id, exceptSiteId))
-        : eq(sites.domain, domain),
-    )
-    .limit(1)
-
-  if (clash) throw ApiError.conflict(`"${domain}" is already pointed at the "${clash.slug}" site`)
-}
 
 /**
  * The sites this caller can reach — every site for owners and admins, granted ones for everyone
@@ -77,28 +32,7 @@ app.get('/', async (c) => {
 
 app.post('/', requireRole('admin'), async (c) => {
   const input = await validate(c, createSiteSchema)
-  const db = getDb(c.env)
-
-  const [existing] = await db.select({ id: sites.id }).from(sites).where(eq(sites.slug, input.slug))
-  if (existing) throw ApiError.conflict(`A site with slug "${input.slug}" already exists`)
-  if (input.domain) await assertDomainFree(c.env, input.domain)
-
-  const [row] = await db
-    .insert(sites)
-    .values({
-      id: newId('sit'),
-      slug: input.slug,
-      name: input.name,
-      description: input.description ?? null,
-      domain: input.domain ?? null,
-      allowMemberSignup: input.allowMemberSignup,
-      locales: input.locales,
-      defaultLocale: input.defaultLocale,
-      timezone: input.timezone,
-    })
-    .returning()
-
-  return c.json({ data: toSite(row!) }, 201)
+  return c.json({ data: await createSite(c.env, input) }, 201)
 })
 
 app.get('/:slug', async (c) => {
@@ -110,37 +44,7 @@ app.get('/:slug', async (c) => {
 
 app.patch('/:slug', requireRole('admin'), async (c) => {
   const input = await validate(c, updateSiteSchema)
-  const existing = await findSite(c.env, c.req.param('slug'))
-  if (input.domain) await assertDomainFree(c.env, input.domain, existing.id)
-
-  // A schema `.refine` only sees one request's fields, so it cannot catch a `defaultLocale` that no
-  // longer sits inside `locales` after a partial update — check the *merged* state here instead.
-  const locales = input.locales ?? existing.locales
-  const defaultLocale = input.defaultLocale ?? existing.defaultLocale
-  if (!locales.includes(defaultLocale)) {
-    throw ApiError.badRequest('The default locale must be one of the enabled locales', {
-      defaultLocale: ['the default locale must be one of the enabled locales'],
-    })
-  }
-
-  const [row] = await getDb(c.env)
-    .update(sites)
-    .set({
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.domain !== undefined ? { domain: input.domain } : {}),
-      ...(input.allowMemberSignup !== undefined
-        ? { allowMemberSignup: input.allowMemberSignup }
-        : {}),
-      ...(input.locales !== undefined ? { locales: input.locales } : {}),
-      ...(input.defaultLocale !== undefined ? { defaultLocale: input.defaultLocale } : {}),
-      ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(sites.id, existing.id))
-    .returning()
-
-  return c.json({ data: toSite(row!) })
+  return c.json({ data: await updateSite(c.env, c.req.param('slug'), input) })
 })
 
 /**
@@ -150,46 +54,19 @@ app.patch('/:slug', requireRole('admin'), async (c) => {
  * as `GET /:slug` does, so the active-site header cannot widen a caller's reach here.
  */
 app.patch('/:slug/config', async (c) => {
-  const actor = requireActor(c)
   const existing = await findSite(c.env, c.req.param('slug'))
 
-  const role = await siteRoleFor(c.env, actor, existing.id)
+  const role = await siteRoleFor(c.env, requireActor(c), existing.id)
   if (!role || !roleAtLeast(role, 'admin')) {
     throw ApiError.forbidden('Site admin access is required to change site settings')
   }
 
   const input = await validate(c, updateSiteConfigSchema)
-  const [row] = await getDb(c.env)
-    .update(sites)
-    .set({
-      ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
-      ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
-      // All three move together, so a cleared override is a null the caller sent rather than a
-      // field it happened to leave out.
-      ...(input.emailSender !== undefined
-        ? {
-            emailFrom: input.emailSender.fromEmail,
-            emailFromName: input.emailSender.fromName,
-            emailReplyTo: input.emailSender.replyTo,
-          }
-        : {}),
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(sites.id, existing.id))
-    .returning()
-
-  return c.json({ data: toSite(row!) })
+  return c.json({ data: await updateSiteConfig(c.env, existing.id, input) })
 })
 
-/** Deleting a site takes its collections, entries, media rows, keys and members with it. */
 app.delete('/:slug', requireRole('owner'), async (c) => {
-  const existing = await findSite(c.env, c.req.param('slug'))
-  const db = getDb(c.env)
-
-  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(sites)
-  if (total <= 1) throw ApiError.badRequest('An instance must keep at least one site')
-
-  await db.delete(sites).where(eq(sites.id, existing.id))
+  await deleteSite(c.env, c.req.param('slug'))
   return c.body(null, 204)
 })
 

@@ -7,6 +7,8 @@
  * is left waiting on a callback that never comes.
  */
 
+import { MCP_SCOPE_LABELS } from '@hedge/core'
+
 const AUTHORIZE_PATH = '/api/v1/auth/mcp/authorize'
 const CONSENT_PATH = '/api/v1/auth/oauth2/consent'
 
@@ -48,15 +50,17 @@ export async function decideConsent(consentCode: string, accept: boolean): Promi
   window.location.assign(payload.redirectURI)
 }
 
-/** Plain-language descriptions of what a client is asking for. */
+/**
+ * Plain-language descriptions of what a client is asking for. The Hedge scopes come from
+ * `@hedge/core`, so a scope added to the MCP surface can never reach this screen as a bare
+ * `users:write` nobody can read; only the OIDC standard ones are named here.
+ */
 const SCOPE_LABELS: Record<string, string> = {
   openid: 'Confirm who you are',
   profile: 'See your name',
   email: 'See your email address',
   offline_access: 'Stay connected when you are not at the keyboard',
-  'collections:read': 'Read this site’s collections and their fields',
-  // Deleting a collection takes its entries with it, which is the only way this reaches content.
-  'collections:write': 'Create, change and delete this site’s collections',
+  ...MCP_SCOPE_LABELS,
 }
 
 export function describeScopes(scope: string | null): string[] {
