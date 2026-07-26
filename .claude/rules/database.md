@@ -14,6 +14,15 @@ Drizzle-kit's SQL is a starting point, not gospel. SQLite refuses `ADD COLUMN` f
 column with a foreign key, so such a column needs a hand-written create/copy/drop/rename with a
 backfill. Never edit an already-applied migration — add a new one.
 
+**Avoid `CASE … END` in migration SQL.** Wrangler splits a migration file into statements itself,
+and its splitter treats `CASE` (and `BEGIN`) as opening a compound statement that only closes on
+`END` followed by whitespace or `;`. A perfectly valid `… ELSE 0 END,` therefore swallows every
+later semicolon, and the rest of the file goes to D1 as one statement — which the local SQLite
+tolerates and the remote D1 API rejects with *"SQL code did not contain a statement" [code: 7500]*,
+so it fails only in a deploy. Prefer a bare comparison (`x IS NOT NULL` is already 1/0) or `IIF()`.
+Applying to a *fresh* local D1 catches this class of thing:
+`bunx wrangler d1 migrations apply DB --config ../../wrangler.jsonc --local --persist-to <tmpdir>`.
+
 ## Conventions
 
 - `getDb(env)` from `db/client.ts` is the only way in. D1 connections are per-request and cheap;

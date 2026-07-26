@@ -34,8 +34,11 @@ SELECT
 	`id`,
 	`email`,
 	`name`,
-	/* Having a password means they followed an invite link sent to this address. */
-	CASE WHEN `password_hash` IS NOT NULL THEN 1 ELSE 0 END,
+	/* Having a password means they followed an invite link sent to this address. Written as a bare
+	   comparison, not a CASE: wrangler's SQL splitter treats CASE as a compound-statement start and
+	   only closes it on `END` followed by whitespace, so `END,` swallows every later `;` and the
+	   rest of the file is sent to D1 as one statement. */
+	`password_hash` IS NOT NULL,
 	NULL,
 	`role`,
 	CAST(strftime('%s', `created_at`) AS INTEGER),
