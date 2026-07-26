@@ -55,7 +55,8 @@ const SCOPE_LABELS: Record<string, string> = {
   email: 'See your email address',
   offline_access: 'Stay connected when you are not at the keyboard',
   'collections:read': 'Read this site’s collections and their fields',
-  'collections:write': 'Create, change and delete collections — and the entries inside them',
+  // Deleting a collection takes its entries with it, which is the only way this reaches content.
+  'collections:write': 'Create, change and delete this site’s collections',
 }
 
 export function describeScopes(scope: string | null): string[] {

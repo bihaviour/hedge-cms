@@ -35,8 +35,9 @@ cached read-only delivery API.
   onboarding wizard, emailed invites, password reset, email verification, revocable sessions, and
   rate limiting backed by D1. Nobody ever sets somebody else's password: users and members alike
   are added by email and choose their own.
-- **Collections** — user-defined content types. Nine field kinds (text, richtext, number,
-  boolean, date, select, media, reference, json), edited in the admin and enforced on write.
+- **Collections** — user-defined content types. Twelve field kinds (text, richtext, number,
+  boolean, date, select, media, reference, url, email, color, json), edited in the admin and
+  enforced on write.
 - **Entries** — draft/published/archived, public or members-only, per-locale, keyset-paginated,
   with an automatic revision snapshot on every update.
 - **Media** — uploads to R2 with type and size limits, served from `/media/*` with immutable
@@ -163,6 +164,32 @@ Query parameters: `locale`, `limit`, `cursor`, `sort`, `order`.
 
 A key belongs to the site it was created on and can only read that site's content, so nothing
 extra is needed to pick a tenant.
+
+## Writing content from a script
+
+A key with a **write** scope also reaches the authoring routes, so an import or another service can
+create content without a person's password:
+
+```bash
+curl -X POST https://your-worker.workers.dev/api/v1/collections/posts/entries \
+  -H "Authorization: Bearer hdg_..." -H 'content-type: application/json' \
+  -d '{"slug":"hello","status":"published","data":{"title":"Hello"}}'
+```
+
+| Scope | Reaches |
+| ----- | ------- |
+| `content:read` | The delivery API — published entries only |
+| `content:write` | Creating, editing and deleting entries |
+| `media:read` / `media:write` | Listing media, and uploading or deleting it |
+| `collections:write` | Creating, changing and deleting collections |
+
+An authoring key wants `content:read` **and** `content:write`: the first is what lets it read back
+what it wrote, including drafts.
+
+A key with no write scope is confined to the delivery API and never sees a draft — that is the
+credential a public website holds, and the separation is enforced by which middleware runs on which
+path prefix, not by each route remembering to check. **No key of any kind** reaches users, sites,
+members, email, or the API key routes themselves; those need a signed-in person.
 
 ## Managing collections over MCP
 

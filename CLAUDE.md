@@ -78,8 +78,10 @@ request or response type in `apps/api` or `apps/admin`.
 Details are in the rule files; these are the ones worth knowing before you read anything.
 
 - **Credentials are separated by route prefix, in middleware** (`apps/api/src/index.ts`), so a
-  delivery API key cannot reach the management API even if a route's own check is wrong. A new
-  management route must be added to `ADMIN_PREFIXES`.
+  delivery API key cannot reach the management API even if a route's own check is wrong. Three
+  tiers: the delivery API takes any key, `KEY_MANAGED_PREFIXES` (content and media) takes a session
+  or a *write-scoped* key, `ADMIN_PREFIXES` takes a session only. **A new management route must be
+  added to one of the two lists** — pick `ADMIN_PREFIXES` unless a machine is meant to reach it.
 - **Operators and website members are two Better Auth instances over separate tables.** A member
   token isn't rejected by the admin API, it's unresolvable there.
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
