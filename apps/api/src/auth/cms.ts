@@ -1,5 +1,5 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
-import { MCP_SCOPES, OAUTH_CONSENT_PATH } from '@hedge/core'
+import { MCP_SCOPE_LIST, MCP_SCOPES, OAUTH_CONSENT_PATH } from '@hedge/core'
 import { betterAuth } from 'better-auth'
 import { mcp } from 'better-auth/plugins'
 import { getDb } from '../db/client'
@@ -189,17 +189,13 @@ function createCmsAuth(env: Bindings) {
           consentPage: OAUTH_CONSENT_PATH,
           accessTokenExpiresIn: 60 * 60,
           refreshTokenExpiresIn: 60 * 60 * 24 * 30,
+          // A client that asks for nothing gets the narrowest useful grant, not everything on
+          // offer: reading one site's content model. Anything more has to be requested by name
+          // and therefore appears on the consent screen the operator reads.
           defaultScope: `openid ${MCP_SCOPES.collectionsRead}`,
-          scopes: [MCP_SCOPES.collectionsRead, MCP_SCOPES.collectionsWrite],
+          scopes: [...MCP_SCOPE_LIST],
           metadata: {
-            scopes_supported: [
-              'openid',
-              'profile',
-              'email',
-              'offline_access',
-              MCP_SCOPES.collectionsRead,
-              MCP_SCOPES.collectionsWrite,
-            ],
+            scopes_supported: ['openid', 'profile', 'email', 'offline_access', ...MCP_SCOPE_LIST],
           },
         },
       }),

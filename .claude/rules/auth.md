@@ -65,9 +65,52 @@ Discovery documents are served from the root (`/.well-known/oauth-authorization-
 `index.html`.
 
 An MCP token is limited **twice**: by the scopes granted at consent, and by the approving user's own
-role on the site (`routes/mcp.ts` re-checks `currentSiteRole` / `userRole`). Delivery API keys are
-deliberately not accepted at the MCP endpoint — the key that serves a public website lives in that
-website's environment variables, the least protected place any Hedge credential sits.
+role. Delivery API keys are deliberately not accepted at the MCP endpoint — the key that serves a
+public website lives in that website's environment variables, the least protected place any Hedge
+credential sits.
 
 MCP tool argument schemas reuse the REST schemas from `@hedge/core`, so the MCP surface can never
 accept something the HTTP API would reject. Keep it that way when adding a tool.
+
+## The MCP tool surface (`apps/api/src/mcp/`)
+
+The endpoint covers the whole CMS — collections, entries, media, newsletters and subscribers, sites,
+users, API keys — one module per area, assembled in `mcp/index.ts`.
+
+**A tool is defined by a scope *and* a role, and both are checked on every call** (`mcp/registry.ts`):
+
+| | Means | Checked against |
+| --- | --- | --- |
+| `access.scope` | what the operator delegated to this client at consent | the token's scopes |
+| `access.site` | site-level minimum, for one tenant's content | `currentSiteRole` |
+| `access.instance` | instance-level minimum, for users and creating/deleting sites | `users.role` |
+
+Neither implies the other and the narrower wins, which is what makes the surface differ per user
+without any per-user configuration: the same client approved by an editor and by an owner can do
+two different things. **An owner needs no special case** — `roleAtLeast` clears every minimum and
+`siteRoleFor` resolves an instance owner or admin to that role on every site, so an owner passes by
+construction rather than by exemption. Don't add one.
+
+Pick the role a new tool declares by **matching the REST route that does the same thing**. Content
+writes are `editor`, schema and key writes are site `admin`, user management is instance `admin`,
+deleting a site is instance `owner`. A tool whose gate is looser than its route is a hole.
+
+Adding an area means adding a `:read`/`:write` pair to `MCP_SCOPES` **and** a line to
+`MCP_SCOPE_LABELS` in `packages/core/src/auth.ts` — the consent screen renders from the labels, and
+a scope with no label reaches an operator as a bare `users:write` nobody can evaluate. Nothing else
+needs touching: `auth/cms.ts` and the admin's consent screen both read the list.
+
+`tools/list` is filtered by scope; dispatch is not. An ungranted tool is `hidden` but still callable,
+so calling it reports the missing scope rather than "unknown tool" — which a model reads as "the CMS
+cannot do this" and works around. Role failures are never hidden; a role can change between two calls
+on one token.
+
+Two REST powers are deliberately withheld, and `mcp.test.ts` pins the first:
+
+- **Sending a newsletter to its audience.** It reaches real inboxes and cannot be recalled.
+  `send_test_newsletter` mails one named address, which is what an agent actually needs.
+- **Uploading media.** It needs a multipart body streamed into R2; base64 through a context window
+  is not a substitute. Everything *about* an upload — listing, captioning, deleting — is exposed.
+
+`create_api_key` returns a raw secret into a model's context. That is a real weakening versus the
+admin's show-once dialog, so the tool description says so; keep that warning if you touch it.
