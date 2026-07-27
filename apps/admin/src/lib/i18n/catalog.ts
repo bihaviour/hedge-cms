@@ -34,6 +34,12 @@ export const en = {
   'language.label': 'Language',
   'language.change': 'Change language',
 
+  // Theme toggle (admin appearance, a per-viewer preference).
+  'theme.label': 'Theme',
+  'theme.light': 'Light',
+  'theme.dark': 'Dark',
+  'theme.system': 'System',
+
   // Sidebar navigation groups and items.
   'nav.content': 'Content',
   'nav.audience': 'Audience',
@@ -41,25 +47,35 @@ export const en = {
   'nav.collections': 'Collections',
   'nav.media': 'Media',
   'nav.members': 'Members',
+  'nav.configuration': 'Configuration',
   'nav.siteSettings': 'Site settings',
   'nav.sites': 'Sites',
   'nav.users': 'Users',
   'nav.roles': 'Roles',
+  'nav.admin': 'Admin',
   'nav.apiKeys': 'API keys',
   'nav.about': 'About & updates',
+  'nav.updates': 'Updates',
   'nav.account': 'Account',
   'nav.signOut': 'Sign out',
   'nav.manageSites': 'Manage sites',
   'nav.sitesTagline': 'headless + edge CMS',
   'nav.siteCount': '{count} sites',
 
+  // Configuration page tabs.
+  'config.tabOverview': 'Overview',
+  'config.tabApi': 'API',
+  'config.tabEmail': 'Email',
+
   // Breadcrumb / route labels.
   'label.collections': 'Collections',
   'label.media': 'Media',
   'label.members': 'Members',
   'label.settings': 'Settings',
+  'label.configuration': 'Configuration',
   'label.sites': 'Sites',
   'label.users': 'Users',
+  'label.admin': 'Admin',
   'label.apiKeys': 'API keys',
   'label.entries': 'Entries',
   'label.new': 'New',
@@ -71,6 +87,7 @@ export const en = {
   'nav.newsletterTemplates': 'Newsletter templates',
   'nav.subscribers': 'Subscribers',
   'nav.email': 'Email',
+  'nav.communication': 'Communication',
   'nav.emailSettings': 'Settings',
   'nav.emailTemplates': 'Templates',
   'nav.emailLog': 'Log',
@@ -251,7 +268,11 @@ export const en = {
 
   // Account page.
   'account.title': 'Account',
-  'account.subtitle': 'Your profile, password and active sessions.',
+  'account.subtitle': 'Your profile and password.',
+
+  // Admin page (sessions and connected clients).
+  'admin.title': 'Admin',
+  'admin.subtitle': 'Active sessions and the clients connected to your account.',
   'account.save': 'Save changes',
   'account.changePassword': 'Change password',
   'account.uiLanguage': 'Admin language',

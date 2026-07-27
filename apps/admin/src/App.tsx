@@ -7,11 +7,11 @@ import { useSites } from '@/hooks/use-site'
 import { AboutPage } from '@/pages/about'
 import { AcceptInvitePage } from '@/pages/accept-invite'
 import { AccountPage } from '@/pages/account'
-import { ApiKeysPage } from '@/pages/api-keys'
+import { AdminPage } from '@/pages/admin'
 import { CollectionSettingsPage } from '@/pages/collection-settings'
 import { CollectionsPage } from '@/pages/collections'
+import { ConfigurationPage } from '@/pages/configuration'
 import { EmailLogPage } from '@/pages/email-log'
-import { EmailSettingsPage } from '@/pages/email-settings'
 import { EmailTemplatesPage } from '@/pages/email-templates'
 import { EntriesPage } from '@/pages/entries'
 import { EntryEditorPage } from '@/pages/entry-editor'
@@ -24,7 +24,6 @@ import { NewslettersPage } from '@/pages/newsletters'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { OnboardingPage } from '@/pages/onboarding'
 import { RolesPage } from '@/pages/roles'
-import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
 
@@ -103,12 +102,12 @@ export function App() {
         <Route path="/newsletters" element={<NewslettersPage />} />
         <Route path="/newsletters/templates" element={<NewsletterTemplatesPage />} />
         <Route path="/subscribers" element={<NewsletterSubscribersPage />} />
-        <Route path="/settings/site" element={<SiteSettingsPage />} />
+        {/* Site settings, API keys and the deployment email sender are tabs of one page now. */}
+        <Route path="/settings/configuration" element={<ConfigurationPage />} />
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/roles" element={<RolesPage />} />
-        <Route path="/settings/api-keys" element={<ApiKeysPage />} />
-        <Route path="/settings/email" element={<EmailSettingsPage />} />
+        <Route path="/settings/admin" element={<AdminPage />} />
         <Route path="/settings/email/templates" element={<EmailTemplatesPage />} />
         <Route path="/settings/email/log" element={<EmailLogPage />} />
         <Route path="/settings/account" element={<AccountPage />} />
