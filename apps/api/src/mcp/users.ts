@@ -38,7 +38,7 @@ export const userTools = [
       'List everyone with access to this deployment, with their instance role. `pending` means ' +
       'they have been invited but have not set a password yet.',
     args: z.object({}),
-    access: { scope: MCP_SCOPES.usersRead, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersRead, instance: 'users:manage' },
     annotations: { readOnlyHint: true },
     handler: async (_input, ctx) => {
       const data = await listUsers(ctx.env)
@@ -61,7 +61,7 @@ export const userTools = [
       'The per-site grants a user holds. Owners and admins reach every site and so hold no ' +
       'grants — an empty list for one of them is not a lack of access.',
     args: userIdArg,
-    access: { scope: MCP_SCOPES.usersRead, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersRead, instance: 'users:manage' },
     annotations: { readOnlyHint: true },
     handler: async ({ userId }, ctx) => {
       const data = await listUserSites(ctx.env, userId)
@@ -82,7 +82,7 @@ export const userTools = [
       'is ever set on their behalf. An editor or viewer is granted the **active** site, since ' +
       'they would otherwise sign in to nothing; owners and admins reach every site already.',
     args: inviteUserSchema,
-    access: { scope: MCP_SCOPES.usersWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersWrite, instance: 'users:manage' },
     handler: async (input, ctx) => {
       const data = await inviteUser(ctx.env, input, ctx.site.id)
       return {
@@ -102,7 +102,7 @@ export const userTools = [
       name: z.string().min(1).max(120).optional(),
       role: z.enum(ROLES).optional(),
     }),
-    access: { scope: MCP_SCOPES.usersWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersWrite, instance: 'users:manage' },
     handler: async ({ userId, ...input }, ctx) => {
       const data = await updateUser(ctx.env, userId, input, ctx.actor.id)
       return { structured: data, text: `Updated ${data.email} → ${data.role}.` }
@@ -116,7 +116,7 @@ export const userTools = [
       'Remove a user from the deployment. Refused for your own account and for the owner. ' +
       'Content they authored stays; the authorship reference is cleared.',
     args: userIdArg,
-    access: { scope: MCP_SCOPES.usersWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersWrite, instance: 'users:manage' },
     annotations: { destructiveHint: true },
     handler: async ({ userId }, ctx) => {
       await deleteUser(ctx.env, userId, ctx.actor.id)
@@ -131,7 +131,7 @@ export const userTools = [
       'Give a user a role on one site, or change the role they already have there. Refused for ' +
       'owners and admins, who reach every site without a grant.',
     args: userIdArg.extend(siteSlugArg.shape).extend({ role: z.enum(SITE_ROLES) }),
-    access: { scope: MCP_SCOPES.usersWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersWrite, instance: 'users:manage' },
     handler: async ({ userId, siteSlug, role }, ctx) => {
       const site = await findSite(ctx.env, siteSlug)
       const data = await setUserSiteRole(ctx.env, userId, site.id, role)
@@ -146,7 +146,7 @@ export const userTools = [
       'Remove a user’s grant on one site. For an editor or viewer the grant *is* their access, ' +
       'so this takes the site away from them entirely.',
     args: userIdArg.extend(siteSlugArg.shape),
-    access: { scope: MCP_SCOPES.usersWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.usersWrite, instance: 'users:manage' },
     annotations: { destructiveHint: true },
     handler: async ({ userId, siteSlug }, ctx) => {
       const site = await findSite(ctx.env, siteSlug)

@@ -1,4 +1,4 @@
-import { OAUTH_CONSENT_PATH, roleAtLeast } from '@hedge/core'
+import { OAUTH_CONSENT_PATH } from '@hedge/core'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { AppLayout } from '@/components/app-layout'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -23,6 +23,7 @@ import { NewsletterTemplatesPage } from '@/pages/newsletter-templates'
 import { NewslettersPage } from '@/pages/newsletters'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { OnboardingPage } from '@/pages/onboarding'
+import { RolesPage } from '@/pages/roles'
 import { SiteSettingsPage } from '@/pages/site-settings'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
@@ -79,7 +80,7 @@ export function App() {
    * and an empty site switcher, which is the truth about their access rather than a wizard they
    * would be refused.
    */
-  if (sites.data?.length === 0 && roleAtLeast(session.data.role, 'admin')) {
+  if (sites.data?.length === 0 && session.data.permissions.includes('sites:create')) {
     return (
       <Routes>
         <Route path="*" element={<OnboardingPage hasAccount />} />
@@ -105,6 +106,7 @@ export function App() {
         <Route path="/settings/site" element={<SiteSettingsPage />} />
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
+        <Route path="/settings/roles" element={<RolesPage />} />
         <Route path="/settings/api-keys" element={<ApiKeysPage />} />
         <Route path="/settings/email" element={<EmailSettingsPage />} />
         <Route path="/settings/email/templates" element={<EmailTemplatesPage />} />

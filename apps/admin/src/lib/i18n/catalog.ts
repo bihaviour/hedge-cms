@@ -44,6 +44,7 @@ export const en = {
   'nav.siteSettings': 'Site settings',
   'nav.sites': 'Sites',
   'nav.users': 'Users',
+  'nav.roles': 'Roles',
   'nav.apiKeys': 'API keys',
   'nav.about': 'About & updates',
   'nav.account': 'Account',

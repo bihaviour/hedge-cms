@@ -6,7 +6,7 @@ import {
 } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { accessibleSites, requireActor, requireRole, siteRoleFor } from '../lib/auth'
+import { accessibleSites, requireActor, requirePermission, siteRoleFor } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import {
   createSite,
@@ -32,7 +32,7 @@ app.get('/', async (c) => {
 
 // The response carries a raw delivery-key secret (`data.deliveryKey.key`), the only time it is ever
 // returned — like `POST /api-keys`, treat it accordingly in logging and anything recording bodies.
-app.post('/', requireRole('admin'), async (c) => {
+app.post('/', requirePermission('sites:create'), async (c) => {
   const input = await validate(c, createSiteSchema)
   return c.json({ data: await createSite(c.env, input) }, 201)
 })
@@ -44,7 +44,7 @@ app.get('/:slug', async (c) => {
   return c.json({ data: toSite(row) })
 })
 
-app.patch('/:slug', requireRole('admin'), async (c) => {
+app.patch('/:slug', requirePermission('sites:update'), async (c) => {
   const input = await validate(c, updateSiteSchema)
   return c.json({ data: await updateSite(c.env, c.req.param('slug'), input) })
 })
@@ -67,7 +67,7 @@ app.patch('/:slug/config', async (c) => {
   return c.json({ data: await updateSiteConfig(c.env, existing.id, input) })
 })
 
-app.delete('/:slug', requireRole('owner'), async (c) => {
+app.delete('/:slug', requirePermission('sites:delete'), async (c) => {
   await deleteSite(c.env, c.req.param('slug'))
   return c.body(null, 204)
 })

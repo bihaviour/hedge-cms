@@ -1,4 +1,4 @@
-import { type McpScope, type Role, roleAtLeast } from '@hedge/core'
+import { type InstancePermission, type McpScope, type Role, roleAtLeast } from '@hedge/core'
 import { z } from 'zod'
 import type { SiteRow } from '../db/schema'
 import type { Actor, Bindings } from '../env'
@@ -18,9 +18,9 @@ import { type McpTool, McpToolError } from '../lib/mcp'
  * user without any per-user configuration: the same client, approved by two different people, can
  * do two different things.
  *
- * An owner needs no special case anywhere in here. `roleAtLeast` puts `owner` above every minimum,
- * and `siteRoleFor` already resolves an instance owner or admin to that role on *every* site — so
- * an owner passes both halves of every check by construction rather than by exemption.
+ * An owner needs no special case anywhere in here. The built-in owner role carries every instance
+ * permission, and `siteRoleFor` resolves anyone with `sites:access_all` to site admin on *every*
+ * site — so an owner passes both halves of every check by construction rather than by exemption.
  */
 
 /** What a tool requires: a delegated scope, plus a role at one of the two authorisation levels. */
@@ -32,10 +32,11 @@ export interface ToolAccess {
    */
   site?: Role
   /**
-   * Minimum **instance** role (`users.role`). For anything that is not one site's business —
-   * managing users, or creating and destroying sites.
+   * The **instance** permission required. For anything that is not one site's business — managing
+   * users, or creating and destroying sites. Matched against the operator's own role permissions,
+   * the same set `requirePermission` checks on the REST side.
    */
-  instance?: Role
+  instance?: InstancePermission
 }
 
 /** What a tool handler is given. Resolved once per request, before any tool runs. */
@@ -45,8 +46,8 @@ export interface McpContext {
   site: SiteRow
   /** The user the token acts for. Always `kind: 'user'`, `via: 'oauth'`. */
   actor: Actor
-  /** Their instance role — `users.role`. */
-  instanceRole: Role
+  /** The instance permissions their role carries — what user- and site-management tools check. */
+  instancePermissions: string[]
   /** Their role on the active site. Never null: the endpoint refuses a caller with none. */
   siteRole: Role
 }
@@ -102,9 +103,9 @@ function authorize(definition: ToolDefinition, ctx: McpContext, granted: Set<str
     throw new McpToolError(`This client was not granted the "${scope}" scope`)
   }
 
-  if (instance && !roleAtLeast(ctx.instanceRole, instance)) {
+  if (instance && !ctx.instancePermissions.includes(instance)) {
     throw new McpToolError(
-      `"${definition.name}" requires the ${instance} role on this deployment — you are ${ctx.instanceRole}`,
+      `"${definition.name}" requires the "${instance}" permission on this deployment, which your role does not carry`,
     )
   }
 

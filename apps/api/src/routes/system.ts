@@ -1,7 +1,7 @@
 import { HEDGE_REPO, HEDGE_VERSION, isUpdateAvailable, type SystemVersion } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { requireRole } from '../lib/auth'
+import { requirePermission } from '../lib/auth'
 
 const app = new Hono<AppEnv>()
 
@@ -69,7 +69,7 @@ async function latestRelease(): Promise<GithubRelease | null> {
  * Update awareness for a deployed instance. Admin-only, because it is a deployment-management
  * concern rather than a per-site one — the same reason it lives under `/api/v1/system`.
  */
-app.get('/version', requireRole('admin'), async (c) => {
+app.get('/version', requirePermission('system:read'), async (c) => {
   const release = await latestRelease()
   const latest = release?.tag_name ?? null
 

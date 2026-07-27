@@ -4,6 +4,7 @@ import { getCmsAuth } from '../auth/cms'
 import type { AppEnv } from '../env'
 import { currentSiteRole, userRole } from '../lib/auth'
 import { handleRpcPayload, type McpServer } from '../lib/mcp'
+import { permissionsForRole } from '../lib/roles'
 import { requireSite } from '../lib/site'
 import { ALL_TOOLS, buildTools, type McpContext } from '../mcp'
 
@@ -38,12 +39,14 @@ app.post('/', async (c) => {
   const role = await userRole(c.env, token.userId)
   if (!role) return challenge(c, 'Unauthorized: the account behind this token no longer exists')
 
+  const permissions = await permissionsForRole(c.env, role)
   const scopes = token.scopes.split(/[\s,]+/).filter(Boolean)
   const actor = {
     kind: 'user' as const,
     via: 'oauth' as const,
     id: token.userId,
     role,
+    permissions,
     scopes,
     siteId: null,
   }
@@ -61,7 +64,7 @@ app.post('/', async (c) => {
     )
   }
 
-  const ctx: McpContext = { env: c.env, site, actor, instanceRole: role, siteRole }
+  const ctx: McpContext = { env: c.env, site, actor, instancePermissions: permissions, siteRole }
   const tools = buildTools(ALL_TOOLS, ctx, scopes)
 
   const server: McpServer = {

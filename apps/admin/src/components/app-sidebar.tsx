@@ -1,4 +1,4 @@
-import { roleAtLeast, type User } from '@hedge/core'
+import type { InstancePermission, User } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronsUpDown, Layers, LogOut, Plus } from 'lucide-react'
 import type * as React from 'react'
@@ -51,14 +51,15 @@ function initials(name: string): string {
 /**
  * Static nav. Collections fills its sub-items from the API; everything else is fixed.
  *
- * `instanceOnly` items are managing the deployment rather than a site, so they are hidden from
- * editors and viewers — the API would refuse them anyway, and offering a door that does not open
- * is worse than not showing it. API keys stays: it is gated by the *site* role, which a
- * per-site admin can hold without being an instance admin.
+ * An item with a `permission` is managing the deployment rather than a site, so it is hidden from
+ * anyone whose role does not carry that permission — the API would refuse them anyway, and offering
+ * a door that does not open is worse than not showing it. Items without one are site-level (gated
+ * by the site role, which a per-site admin can hold without any instance permission) and show for
+ * everyone. UI gating is cosmetic; the server check is the real one.
  */
 const NAV: {
   title: MessageKey
-  items: { title: MessageKey; url: string; instanceOnly?: boolean }[]
+  items: { title: MessageKey; url: string; permission?: InstancePermission }[]
 }[] = [
   {
     title: 'nav.content',
@@ -79,20 +80,21 @@ const NAV: {
   {
     title: 'nav.email',
     items: [
-      { title: 'nav.emailSettings', url: '/settings/email', instanceOnly: true },
-      { title: 'nav.emailTemplates', url: '/settings/email/templates', instanceOnly: true },
-      { title: 'nav.emailLog', url: '/settings/email/log', instanceOnly: true },
+      { title: 'nav.emailSettings', url: '/settings/email', permission: 'email:manage' },
+      { title: 'nav.emailTemplates', url: '/settings/email/templates', permission: 'email:manage' },
+      { title: 'nav.emailLog', url: '/settings/email/log', permission: 'email:manage' },
     ],
   },
   {
     title: 'nav.settings',
     items: [
       { title: 'nav.siteSettings', url: '/settings/site' },
-      { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
-      { title: 'nav.users', url: '/settings/users', instanceOnly: true },
+      { title: 'nav.sites', url: '/settings/sites', permission: 'sites:create' },
+      { title: 'nav.users', url: '/settings/users', permission: 'users:manage' },
+      { title: 'nav.roles', url: '/settings/roles', permission: 'roles:manage' },
       { title: 'nav.apiKeys', url: '/settings/api-keys' },
       // Deployment version and update awareness — a manage-the-deployment concern, like Sites.
-      { title: 'nav.about', url: '/settings/about', instanceOnly: true },
+      { title: 'nav.about', url: '/settings/about', permission: 'system:read' },
     ],
   },
 ]
@@ -111,16 +113,20 @@ export function AppSidebar({
     enabled: Boolean(siteSlug),
   })
 
-  const isInstanceAdmin = roleAtLeast(user.role, 'admin')
   const groups = NAV.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isInstanceAdmin || !('instanceOnly' in item)),
+    items: group.items.filter(
+      (item) => !item.permission || user.permissions.includes(item.permission),
+    ),
   })).filter((group) => group.items.length > 0)
+
+  // Creating a site is the power the switcher's "manage sites" shortcut leads to.
+  const canManageSites = user.permissions.includes('sites:create')
 
   return (
     <Sidebar {...props}>
       <SidebarHeader>
-        <SiteSwitcher canManage={isInstanceAdmin} />
+        <SiteSwitcher canManage={canManageSites} />
       </SidebarHeader>
 
       <SidebarContent>

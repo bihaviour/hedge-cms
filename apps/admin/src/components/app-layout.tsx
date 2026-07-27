@@ -1,4 +1,4 @@
-import { roleAtLeast, type User } from '@hedge/core'
+import type { User } from '@hedge/core'
 import { Fragment } from 'react'
 import { Link, Outlet, useLocation } from 'react-router'
 import { AppSidebar } from '@/components/app-sidebar'
@@ -98,10 +98,12 @@ export function AppLayout({ user }: { user: User }) {
               <EmptyState
                 title={t('sites.emptyTitle')}
                 description={
-                  roleAtLeast(user.role, 'admin') ? t('sites.emptyAdmin') : t('sites.emptyGuest')
+                  user.permissions.includes('sites:create')
+                    ? t('sites.emptyAdmin')
+                    : t('sites.emptyGuest')
                 }
                 action={
-                  roleAtLeast(user.role, 'admin') ? (
+                  user.permissions.includes('sites:create') ? (
                     <Button asChild>
                       <Link to="/settings/sites">{t('sites.goToSites')}</Link>
                     </Button>
