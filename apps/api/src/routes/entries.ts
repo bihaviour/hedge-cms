@@ -21,7 +21,13 @@ const authorId = (actor: Actor) => (actor.kind === 'user' ? actor.id : null)
 
 app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
   const query = validateQuery(c, listEntriesQuerySchema)
-  const page = await listEntries(c.env, requireSite(c), c.req.param('collection')!, query)
+  const page = await listEntries(
+    c.env,
+    requireSite(c),
+    c.req.param('collection')!,
+    query,
+    new URL(c.req.url).searchParams,
+  )
   return c.json(page)
 })
 

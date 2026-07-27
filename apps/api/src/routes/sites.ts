@@ -30,6 +30,8 @@ app.get('/', async (c) => {
   return c.json({ data: rows.map(toSite) })
 })
 
+// The response carries a raw delivery-key secret (`data.deliveryKey.key`), the only time it is ever
+// returned — like `POST /api-keys`, treat it accordingly in logging and anything recording bodies.
 app.post('/', requireRole('admin'), async (c) => {
   const input = await validate(c, createSiteSchema)
   return c.json({ data: await createSite(c.env, input) }, 201)

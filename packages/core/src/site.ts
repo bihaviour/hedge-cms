@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ApiKey } from './auth'
 import { slugSchema } from './collection'
 import { fieldsSchema } from './fields'
 import {
@@ -146,6 +147,13 @@ export const createSiteSchema = z
     locales: localesSchema.default([DEFAULT_LOCALE]),
     defaultLocale: localeCodeSchema.default(DEFAULT_LOCALE),
     timezone: timezoneSchema.default(DEFAULT_TIMEZONE),
+    /**
+     * Issue a `content:read` delivery key alongside the site — the credential a public website
+     * needs and that the delivery API has no anonymous fallback for. On by default so the
+     * interactive create-site flow gets a working site; a scripted creation that manages keys
+     * itself can pass `false`. The plaintext is returned once, in the create response.
+     */
+    createDeliveryKey: z.boolean().default(true),
   })
   .refine((value) => value.locales.includes(value.defaultLocale), {
     message: 'the default locale must be one of the enabled locales',
@@ -153,6 +161,19 @@ export const createSiteSchema = z
   })
 
 export type CreateSiteInput = z.infer<typeof createSiteSchema>
+
+/**
+ * The result of creating a site. `deliveryKey` carries the raw `key` secret and is the only time it
+ * is ever returned — treat this response like the API-key create response in logging and anything
+ * that records request bodies. Null when `createDeliveryKey` was false.
+ */
+export interface CreateSiteResult {
+  site: Site
+  deliveryKey: (ApiKey & { key: string }) | null
+}
+
+/** The predictable name a site's auto-issued delivery key is given, so it reads as infrastructure. */
+export const DELIVERY_KEY_NAME = 'delivery'
 
 /**
  * Locale and timezone are all optional here, like everything else — but `defaultLocale` and

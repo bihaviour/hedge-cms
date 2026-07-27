@@ -101,7 +101,10 @@ export const listEntriesQuerySchema = z.object({
   q: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
-  sort: z.enum(['createdAt', 'updatedAt', 'publishedAt', 'slug']).default('updatedAt'),
+  // A built-in column (`createdAt`, `updatedAt`, `publishedAt`, `slug`) or a declared content field
+  // addressed as `data.<field>` / `field:<field>`. Which fields are valid depends on the collection,
+  // so the resolution — and the 400 on an undeclared one — happens at the route (`lib/entry-query.ts`).
+  sort: z.string().max(96).default('updatedAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
 })
 

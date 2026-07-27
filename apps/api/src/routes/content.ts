@@ -8,13 +8,22 @@ import {
   type SiteMetadata,
   siteMetadataSchema,
 } from '@hedge/core'
-import { and, asc, desc, eq, gt, lt, type SQL } from 'drizzle-orm'
+import { and, eq, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
 import { collections, entries } from '../db/schema'
 import type { AppEnv } from '../env'
 import { requireScope, requireSiteRole } from '../lib/auth'
+import {
+  cursorCondition,
+  decodeCursor,
+  encodeCursor,
+  orderByClause,
+  parseEntryFilters,
+  resolveSort,
+  whereConditions,
+} from '../lib/entry-query'
 import { ApiError } from '../lib/errors'
 import { requireSite } from '../lib/site'
 import { validateQuery } from '../lib/validate'
@@ -39,9 +48,19 @@ const listQuery = z.object({
   locale: localeCodeSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
-  sort: z.enum(['publishedAt', 'updatedAt', 'slug']).default('publishedAt'),
+  // A built-in column or a declared content field via `data.<field>` / `field:<field>`; resolved
+  // against the collection below so a site can order by a `date` field it owns, not just publishing
+  // timestamps. `where[field][op]` filters are read straight off the query string.
+  sort: z.string().max(96).default('publishedAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
 })
+
+/** Columns the delivery API can sort by directly, on top of any declared field via `data.<field>`. */
+const DELIVERY_SORT_COLUMNS = {
+  publishedAt: entries.publishedAt,
+  updatedAt: entries.updatedAt,
+  slug: entries.slug,
+}
 
 const DELIVERY_COLUMNS = {
   slug: entries.slug,
@@ -142,31 +161,33 @@ app.get('/:collection', async (c) => {
     .limit(1)
   if (!collection) throw ApiError.notFound('Collection')
 
-  const column = entries[query.sort]
+  const fields = fieldsSchema.parse(collection.fields)
+  const sort = resolveSort(query.sort, fields, DELIVERY_SORT_COLUMNS)
+
   const filters: SQL[] = [
     eq(entries.collectionId, collection.id),
     eq(entries.status, 'published'),
     eq(entries.locale, query.locale ?? site.defaultLocale),
+    ...whereConditions(parseEntryFilters(new URL(c.req.url).searchParams, fields)),
   ]
-  if (query.cursor) {
-    filters.push(query.order === 'desc' ? lt(column, query.cursor) : gt(column, query.cursor))
-  }
+  if (query.cursor) filters.push(cursorCondition(sort, query.order, decodeCursor(query.cursor)))
 
   const rows = await db
-    .select(DELIVERY_COLUMNS)
+    .select({ ...DELIVERY_COLUMNS, id: entries.id, _sort: sort.expr })
     .from(entries)
     .where(and(...filters))
-    .orderBy(query.order === 'desc' ? desc(column) : asc(column))
+    .orderBy(...orderByClause(sort, query.order))
     .limit(query.limit + 1)
 
   const hasMore = rows.length > query.limit
   const page = hasMore ? rows.slice(0, query.limit) : rows
+  const last = page.at(-1)
   const siteMeta = siteMetadataSchema.parse(site.metadata ?? {})
 
   setCacheHeaders(c, isMember)
   return c.json({
     data: page.map((row) => toDelivery(row, isMember, siteMeta)),
-    nextCursor: hasMore ? String(page.at(-1)?.[query.sort] ?? '') : null,
+    nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   })
 })
 

@@ -2,7 +2,7 @@ import type { EntryMetadata, EntryStatus, EntryVisibility } from '@hedge/core'
 import { localeLabel, slugify } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { EntryRevisions } from '@/components/entry-revisions'
@@ -54,6 +54,35 @@ export function EntryEditorPage() {
     queryFn: () => api.entries.get(collectionSlug, slug!, locale),
     enabled: !isNew && Boolean(siteSlug),
   })
+
+  // A creatable or multiple select converges on a shared vocabulary if the editor suggests values
+  // already used elsewhere in the collection. Only fetched when such a field exists.
+  const collectionFields = collection.data?.fields ?? []
+  const needsSuggestions = collectionFields.some(
+    (field) => field.kind === 'select' && (field.creatable || field.multiple),
+  )
+  const suggestionSource = useQuery({
+    queryKey: ['field-suggestions', siteSlug, collectionSlug],
+    queryFn: () => api.entries.list(collectionSlug, { limit: 100 }),
+    enabled: Boolean(siteSlug) && needsSuggestions,
+  })
+  const suggestions = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const field of collection.data?.fields ?? []) {
+      if (field.kind !== 'select') continue
+      const seen = new Set<string>()
+      for (const item of suggestionSource.data?.data ?? []) {
+        const raw = item.data[field.name]
+        if (Array.isArray(raw)) {
+          for (const one of raw) if (typeof one === 'string' && one) seen.add(one)
+        } else if (typeof raw === 'string' && raw) {
+          seen.add(raw)
+        }
+      }
+      map[field.name] = [...seen]
+    }
+    return map
+  }, [collection.data?.fields, suggestionSource.data])
 
   // Following a link to an existing slug in a locale that has no translation yet 404s. That is not
   // an error to the editor — it is the empty canvas for creating that translation, sharing the slug.
@@ -191,6 +220,7 @@ export function EntryEditorPage() {
               key={field.name}
               field={field}
               value={data[field.name]}
+              suggestions={suggestions[field.name]}
               error={fieldErrors[field.name]?.join(', ')}
               onChange={(value) => setData((current) => ({ ...current, [field.name]: value }))}
             />

@@ -10,7 +10,7 @@ import {
   slugify,
   type UpdateEntryInput,
 } from '@hedge/core'
-import { and, asc, desc, eq, gt, like, lt, type SQL } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, like, type SQL } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   type CollectionRow,
@@ -22,8 +22,29 @@ import {
 } from '../db/schema'
 import type { Bindings } from '../env'
 import { findCollection } from './collections'
+import {
+  cursorCondition,
+  decodeCursor,
+  encodeCursor,
+  orderByClause,
+  parseEntryFilters,
+  resolveSort,
+  whereConditions,
+} from './entry-query'
 import { ApiError } from './errors'
 import { newId } from './id'
+
+/**
+ * Columns the management list can sort by directly, on top of any declared field via `data.<field>`.
+ * `createdAt` is here and not on the delivery API because the admin lists drafts, which have no
+ * publish date to order by.
+ */
+const MANAGEMENT_SORT_COLUMNS = {
+  createdAt: entries.createdAt,
+  updatedAt: entries.updatedAt,
+  publishedAt: entries.publishedAt,
+  slug: entries.slug,
+}
 
 /**
  * Entry CRUD, factored out of the HTTP route so the REST API and the MCP endpoint drive exactly
@@ -145,25 +166,29 @@ export async function listEntries(
   site: SiteRow,
   collectionSlug: string,
   query: ListEntriesQuery,
+  searchParams?: URLSearchParams,
 ): Promise<{ data: Entry[]; nextCursor: string | null }> {
   const collection = await findCollection(env, site.id, collectionSlug)
-  const column = entries[query.sort]
+  const fields = fieldsSchema.parse(collection.fields)
+  const sort = resolveSort(query.sort, fields, MANAGEMENT_SORT_COLUMNS)
 
   const filters: SQL[] = [eq(entries.collectionId, collection.id)]
   if (query.status) filters.push(eq(entries.status, query.status))
   if (query.visibility) filters.push(eq(entries.visibility, query.visibility))
   if (query.locale) filters.push(eq(entries.locale, query.locale))
   if (query.q) filters.push(like(entries.slug, `%${query.q}%`))
-  // Keyset pagination: the cursor is the last row's sort value, which keeps deep pages cheap.
-  if (query.cursor) {
-    filters.push(query.order === 'desc' ? lt(column, query.cursor) : gt(column, query.cursor))
-  }
+  // `where[field][op]` filters live in the query string, not the parsed body, so they are read
+  // straight off it here — only when the route passes it (the MCP list tool does not).
+  if (searchParams) filters.push(...whereConditions(parseEntryFilters(searchParams, fields)))
+  if (query.cursor) filters.push(cursorCondition(sort, query.order, decodeCursor(query.cursor)))
 
+  // Select the sort expression alongside the row so the next cursor is the value actually ordered
+  // by, whether that was a column or a `json_extract` of a declared field.
   const rows = await getDb(env)
-    .select()
+    .select({ ...getTableColumns(entries), _sort: sort.expr })
     .from(entries)
     .where(and(...filters))
-    .orderBy(query.order === 'desc' ? desc(column) : asc(column))
+    .orderBy(...orderByClause(sort, query.order))
     .limit(query.limit + 1)
 
   const hasMore = rows.length > query.limit
@@ -172,7 +197,7 @@ export async function listEntries(
 
   return {
     data: page.map((row) => toEntry(row, collection)),
-    nextCursor: hasMore && last ? String(last[query.sort] ?? '') : null,
+    nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   }
 }
 

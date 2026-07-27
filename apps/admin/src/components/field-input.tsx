@@ -1,4 +1,7 @@
 import type { Field } from '@hedge/core'
+import { X } from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -11,6 +14,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
+const unique = (values: string[]) => [...new Set(values)]
+
 /**
  * Renders the editor control for a single field definition. New field kinds only need a
  * case here plus a validator in `@hedge/core`.
@@ -20,11 +25,14 @@ export function FieldInput({
   value,
   onChange,
   error,
+  suggestions,
 }: {
   field: Field
   value: unknown
   onChange: (value: unknown) => void
   error?: string
+  /** Extra values to offer as suggestions — e.g. values already used elsewhere in the collection. */
+  suggestions?: string[]
 }) {
   const id = `field-${field.name}`
 
@@ -110,22 +118,48 @@ export function FieldInput({
           />
         )
 
-      case 'select':
+      case 'select': {
+        const optionValues = field.options.map((option) => option.value)
+        const labelFor = (val: string) =>
+          field.options.find((option) => option.value === val)?.label ?? val
+        const current = Array.isArray(value) ? (value as string[]) : value ? [String(value)] : []
+        // Offer the declared options, whatever is already used elsewhere, and the current values.
+        const hints = unique([...optionValues, ...(suggestions ?? []), ...current])
+
         if (field.multiple) {
           return (
-            <Input
+            <TokenInput
               id={id}
-              placeholder="comma,separated,values"
-              value={Array.isArray(value) ? value.join(',') : ''}
-              onChange={(event) =>
-                onChange(
-                  event.target.value
-                    .split(',')
-                    .map((part) => part.trim())
-                    .filter(Boolean),
-                )
-              }
+              values={current}
+              hints={hints}
+              labelFor={labelFor}
+              // A non-creatable field is a closed set: the input accepts only its declared options,
+              // so the form can no longer submit a value the API would reject.
+              allowed={field.creatable ? null : optionValues}
+              onChange={onChange}
             />
+          )
+        }
+
+        // An open single-value select is a free text box with the options as suggestions; a closed
+        // one stays a dropdown that cannot express an invalid value in the first place.
+        if (field.creatable) {
+          return (
+            <>
+              <Input
+                id={id}
+                list={`${id}-list`}
+                value={String(value ?? '')}
+                onChange={(event) => onChange(event.target.value)}
+              />
+              <datalist id={`${id}-list`}>
+                {hints.map((hint) => (
+                  <option key={hint} value={hint}>
+                    {labelFor(hint)}
+                  </option>
+                ))}
+              </datalist>
+            </>
           )
         }
         return (
@@ -142,6 +176,7 @@ export function FieldInput({
             </SelectContent>
           </Select>
         )
+      }
 
       case 'media':
         return (
@@ -231,4 +266,92 @@ export function FieldInput({
 function toDateInputValue(value: unknown, includeTime: boolean): string {
   if (typeof value !== 'string' || !value) return ''
   return includeTime ? value.slice(0, 16) : value.slice(0, 10)
+}
+
+/**
+ * A chip/token editor for a multiple `select`. Existing values render as removable chips; typing
+ * filters the suggestions and Enter (or a comma) commits. `allowed`, when set, is the closed set of
+ * declared option values — anything else is refused in the input, so a non-creatable field can no
+ * longer submit a value its validator would reject. `null` means the field is creatable: any
+ * non-empty string is accepted, with the suggestions offered as a convergent vocabulary rather than
+ * a constraint.
+ */
+function TokenInput({
+  id,
+  values,
+  hints,
+  labelFor,
+  allowed,
+  onChange,
+}: {
+  id: string
+  values: string[]
+  hints: string[]
+  labelFor: (value: string) => string
+  allowed: string[] | null
+  onChange: (values: string[]) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const listId = `${id}-list`
+
+  function commit(raw: string) {
+    const text = raw.trim()
+    setDraft('')
+    if (!text) return
+    let next = text
+    if (allowed) {
+      // Match a declared option case-insensitively and store its canonical value; refuse the rest.
+      const match = allowed.find((option) => option.toLowerCase() === text.toLowerCase())
+      if (!match) return
+      next = match
+    }
+    if (!values.includes(next)) onChange([...values, next])
+  }
+
+  return (
+    <div className="space-y-2">
+      {values.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {values.map((val) => (
+            <Badge key={val} variant="secondary" className="gap-1 pr-1 font-normal">
+              {labelFor(val)}
+              <button
+                type="button"
+                aria-label={`Remove ${labelFor(val)}`}
+                className="rounded-sm text-muted-foreground hover:text-foreground"
+                onClick={() => onChange(values.filter((v) => v !== val))}
+              >
+                <X className="size-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <Input
+        id={id}
+        list={listId}
+        placeholder={allowed ? 'Choose a value…' : 'Type a value and press Enter'}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ',') {
+            event.preventDefault()
+            commit(draft)
+          } else if (event.key === 'Backspace' && !draft && values.length > 0) {
+            onChange(values.slice(0, -1))
+          }
+        }}
+        onBlur={() => commit(draft)}
+      />
+      <datalist id={listId}>
+        {hints
+          .filter((hint) => !values.includes(hint))
+          .map((hint) => (
+            <option key={hint} value={hint}>
+              {labelFor(hint)}
+            </option>
+          ))}
+      </datalist>
+    </div>
+  )
 }

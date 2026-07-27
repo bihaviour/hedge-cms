@@ -69,6 +69,11 @@ export const fieldSchema = z.discriminatedUnion('kind', [
     kind: z.literal('select'),
     options: z.array(z.object({ value: z.string(), label: z.string() })).min(1),
     multiple: z.boolean().default(false),
+    // When true the declared `options` are suggestions rather than a closed set: any non-empty
+    // string is accepted. This is what turns a `select` into a free-form tag/keyword field without
+    // a new field kind — the storage is identical (`string[]` when `multiple`), only the validator
+    // changes. See `validatorForField`.
+    creatable: z.boolean().default(false),
     default: z.union([z.string(), z.array(z.string())]).optional(),
   }),
   baseField.extend({
@@ -153,8 +158,11 @@ function validatorForField(field: Field): z.ZodTypeAny {
     case 'date':
       return z.iso.datetime({ offset: true }).or(z.iso.date())
     case 'select': {
+      // A creatable select is an open vocabulary: the declared options are only suggestions, so any
+      // non-empty string is valid. A plain one is a closed enum. Either way `multiple` wraps it in
+      // an array — a tag list is a creatable, multiple select.
       const values = field.options.map((o) => o.value) as [string, ...string[]]
-      const one = z.enum(values)
+      const one = field.creatable ? z.string().min(1) : z.enum(values)
       return field.multiple ? z.array(one) : one
     }
     case 'media': {
