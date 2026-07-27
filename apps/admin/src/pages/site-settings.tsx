@@ -211,8 +211,8 @@ export function SiteSettingsPage() {
             <p className="text-muted-foreground text-sm">
               What this site's newsletters, and the invite, reset and verification emails its
               members receive, are sent as. Leave a field blank to inherit the deployment sender
-              from Settings → Email. Operator invites and password resets always use the deployment
-              sender.
+              from Configuration → Email. Operator invites and password resets always use the
+              deployment sender.
             </p>
           </div>
 

@@ -1,16 +1,33 @@
 import { roleAtLeast, type User } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
-import { Check, ChevronsUpDown, Layers, LogOut, Plus } from 'lucide-react'
+import {
+  ArrowUpCircle,
+  Check,
+  ChevronRight,
+  ChevronsUpDown,
+  Languages,
+  Layers,
+  LogOut,
+  Plus,
+  SunMoon,
+  UserRound,
+} from 'lucide-react'
+import { useTheme } from 'next-themes'
 import type * as React from 'react'
+import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
-import { LanguageSwitcher } from '@/components/language-switcher'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -21,7 +38,6 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -32,10 +48,11 @@ import {
 import { useLogout } from '@/hooks/use-session'
 import { useActiveSite, useActiveSiteSlug, useSwitchSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { useT } from '@/lib/i18n'
+import { UI_LANGUAGES, useLanguageSetting, useT } from '@/lib/i18n'
 import type { MessageKey } from '@/lib/i18n/catalog'
+import { cn } from '@/lib/utils'
 
-/** Your own profile and credentials. Reached from the footer, not from the nav. */
+/** Your own profile and credentials. Reached from the account menu in the footer, not from the nav. */
 const ACCOUNT_PATH = '/settings/account'
 
 /** Up to two letters, so a long name and a mononym both come out the same size. */
@@ -53,8 +70,8 @@ function initials(name: string): string {
  *
  * `instanceOnly` items are managing the deployment rather than a site, so they are hidden from
  * editors and viewers — the API would refuse them anyway, and offering a door that does not open
- * is worse than not showing it. API keys stays: it is gated by the *site* role, which a
- * per-site admin can hold without being an instance admin.
+ * is worse than not showing it. Configuration stays for everyone: its site-scoped tabs are gated by
+ * the *site* role, which a per-site admin can hold without being an instance admin.
  */
 const NAV: {
   title: MessageKey
@@ -77,9 +94,8 @@ const NAV: {
     ],
   },
   {
-    title: 'nav.email',
+    title: 'nav.communication',
     items: [
-      { title: 'nav.emailSettings', url: '/settings/email', instanceOnly: true },
       { title: 'nav.emailTemplates', url: '/settings/email/templates', instanceOnly: true },
       { title: 'nav.emailLog', url: '/settings/email/log', instanceOnly: true },
     ],
@@ -87,12 +103,12 @@ const NAV: {
   {
     title: 'nav.settings',
     items: [
-      { title: 'nav.siteSettings', url: '/settings/site' },
+      // Site metadata (Overview), delivery keys (API) and the deployment sender (Email), tabbed.
+      { title: 'nav.configuration', url: '/settings/configuration' },
       { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
       { title: 'nav.users', url: '/settings/users', instanceOnly: true },
-      { title: 'nav.apiKeys', url: '/settings/api-keys' },
-      // Deployment version and update awareness — a manage-the-deployment concern, like Sites.
-      { title: 'nav.about', url: '/settings/about', instanceOnly: true },
+      // Sessions and connected clients — the deployment's security surface.
+      { title: 'nav.admin', url: '/settings/admin', instanceOnly: true },
     ],
   },
 ]
@@ -101,9 +117,6 @@ export function AppSidebar({
   user,
   ...props
 }: { user: User } & React.ComponentProps<typeof Sidebar>) {
-  const { pathname } = useLocation()
-  const t = useT()
-  const logout = useLogout()
   const siteSlug = useActiveSiteSlug()
   const collections = useQuery({
     queryKey: ['collections', siteSlug],
@@ -125,79 +138,193 @@ export function AppSidebar({
 
       <SidebarContent>
         {groups.map((group) => (
-          <SidebarGroup key={group.title}>
-            <SidebarGroupLabel>{t(group.title)}</SidebarGroupLabel>
-            <SidebarMenu>
-              {group.items.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={pathname === item.url}>
-                    <NavLink to={item.url} className="font-medium">
-                      {t(item.title)}
-                    </NavLink>
-                  </SidebarMenuButton>
-
-                  {/* The collections this site actually has, nested under the section. */}
-                  {item.url === '/collections' &&
-                    collections.data &&
-                    collections.data.length > 0 && (
-                      <SidebarMenuSub>
-                        {collections.data.map((collection) => (
-                          <SidebarMenuSubItem key={collection.id}>
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={pathname.startsWith(`/collections/${collection.slug}`)}
-                            >
-                              <NavLink to={`/collections/${collection.slug}`}>
-                                {collection.name}
-                              </NavLink>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        ))}
-                      </SidebarMenuSub>
-                    )}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
+          <NavGroup key={group.title} group={group} collections={collections.data ?? []} />
         ))}
       </SidebarContent>
 
       <SidebarFooter>
-        <LanguageSwitcher />
-        <SidebarMenu>
-          {/*
-            The profile bar is a link to your own account, not a menu: the one thing it does
-            besides that is sign out, and that needs its own button — leaving on the way to
-            changing a password is exactly the accident this avoids.
-          */}
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild isActive={pathname === ACCOUNT_PATH}>
-              <NavLink to={ACCOUNT_PATH}>
-                <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg">{initials(user.name)}</AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs opacity-70">{user.email}</span>
-                </div>
-              </NavLink>
-            </SidebarMenuButton>
-
-            <SidebarMenuAction
-              className="top-1/2 -translate-y-1/2"
-              aria-label={t('nav.signOut')}
-              title={t('nav.signOut')}
-              disabled={logout.isPending}
-              onClick={() => logout.mutate()}
-            >
-              <LogOut />
-            </SidebarMenuAction>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <UserMenu user={user} isInstanceAdmin={isInstanceAdmin} />
       </SidebarFooter>
 
       <SidebarRail />
     </Sidebar>
+  )
+}
+
+/**
+ * One nav section, collapsible so a long portal can be tidied section by section. Open by default —
+ * the sections are the map of the app, and hiding them all on first load would bury it.
+ */
+function NavGroup({
+  group,
+  collections,
+}: {
+  group: (typeof NAV)[number]
+  collections: { id: string; slug: string; name: string }[]
+}) {
+  const t = useT()
+  const { pathname } = useLocation()
+  const [open, setOpen] = useState(true)
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel asChild>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="flex w-full items-center justify-between transition-colors hover:text-sidebar-foreground"
+        >
+          {t(group.title)}
+          <ChevronRight className={cn('transition-transform', open && 'rotate-90')} />
+        </button>
+      </SidebarGroupLabel>
+
+      {open && (
+        <SidebarMenu>
+          {group.items.map((item) => (
+            <SidebarMenuItem key={item.url}>
+              <SidebarMenuButton asChild isActive={pathname === item.url}>
+                <NavLink to={item.url} className="font-medium">
+                  {t(item.title)}
+                </NavLink>
+              </SidebarMenuButton>
+
+              {/* The collections this site actually has, nested under the section. */}
+              {item.url === '/collections' && collections.length > 0 && (
+                <SidebarMenuSub>
+                  {collections.map((collection) => (
+                    <SidebarMenuSubItem key={collection.id}>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={pathname.startsWith(`/collections/${collection.slug}`)}
+                      >
+                        <NavLink to={`/collections/${collection.slug}`}>{collection.name}</NavLink>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  ))}
+                </SidebarMenuSub>
+              )}
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      )}
+    </SidebarGroup>
+  )
+}
+
+/**
+ * The account menu in the footer: who you are, plus the preferences and account actions that belong
+ * to the person rather than the site — display language, theme, the update notice and signing out.
+ * These are deliberately behind one click: they are rarely-changed settings, not primary nav, and
+ * grouping them keeps sign-out from sitting a stray tap away from everything else.
+ */
+function UserMenu({ user, isInstanceAdmin }: { user: User; isInstanceAdmin: boolean }) {
+  const t = useT()
+  const navigate = useNavigate()
+  const logout = useLogout()
+  const [language, setLanguage] = useLanguageSetting()
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton size="lg" aria-label={user.name}>
+              <Avatar className="size-8 rounded-lg">
+                <AvatarFallback className="rounded-lg">{initials(user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="grid flex-1 text-left leading-tight">
+                <span className="truncate font-medium">{user.name}</span>
+                <span className="truncate text-xs opacity-70">{user.email}</span>
+              </div>
+              <ChevronsUpDown className="ml-auto size-4 opacity-70" />
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent
+            side="right"
+            align="end"
+            sideOffset={8}
+            className="min-w-56 rounded-lg"
+          >
+            {/* The profile header doubles as the way into your account — clicking it lands on the
+                same page as the Account item below. */}
+            <DropdownMenuItem className="gap-2 p-2" onSelect={() => navigate(ACCOUNT_PATH)}>
+              <Avatar className="size-8 rounded-lg">
+                <AvatarFallback className="rounded-lg">{initials(user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="grid flex-1 text-left leading-tight">
+                <span className="truncate font-medium text-sm">{user.name}</span>
+                <span className="truncate text-muted-foreground text-xs">{user.email}</span>
+              </div>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onSelect={() => navigate(ACCOUNT_PATH)}>
+              <UserRound />
+              {t('nav.account')}
+            </DropdownMenuItem>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Languages />
+                {t('language.label')}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup value={language} onValueChange={setLanguage}>
+                  {UI_LANGUAGES.map((option) => (
+                    <DropdownMenuRadioItem key={option.code} value={option.code}>
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <SunMoon />
+                {t('theme.label')}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
+                  <DropdownMenuRadioItem value="light">{t('theme.light')}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark">{t('theme.dark')}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="system">{t('theme.system')}</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            {/* Deployment version and update awareness — a manage-the-deployment concern, so only
+                instance admins see it, matching the old About & updates nav entry. */}
+            {isInstanceAdmin && (
+              <DropdownMenuItem onSelect={() => navigate('/settings/about')}>
+                <ArrowUpCircle />
+                {t('nav.updates')}
+              </DropdownMenuItem>
+            )}
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={logout.isPending}
+              onSelect={(event) => {
+                // Keep the menu from closing before the mutation is even fired.
+                event.preventDefault()
+                logout.mutate()
+              }}
+            >
+              <LogOut />
+              {t('nav.signOut')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
   )
 }
 
