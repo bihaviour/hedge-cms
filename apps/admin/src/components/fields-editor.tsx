@@ -1,4 +1,8 @@
 import { FIELD_KINDS, type Field, type FieldKind } from '@hedge/core'
+
+/** The `select` member of the field union — the one kind with editable options and flags. */
+type SelectField = Extract<Field, { kind: 'select' }>
+
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -48,6 +52,18 @@ export function FieldsEditor({
     onChange(
       rows.map((row, i) =>
         i === index ? { ...row, field: { ...row.field, ...patch } as Field } : row,
+      ),
+    )
+  }
+
+  // Select carries config the shared `updateField` can't type — `options` and the two flags only
+  // exist on this kind — so it gets its own narrowed updater.
+  function updateSelect(index: number, patch: Partial<SelectField>) {
+    onChange(
+      rows.map((row, i) =>
+        i === index && row.field.kind === 'select'
+          ? { ...row, field: { ...row.field, ...patch } }
+          : row,
       ),
     )
   }
@@ -157,6 +173,14 @@ export function FieldsEditor({
                 </Label>
               </div>
             </div>
+
+            {field.kind === 'select' && (
+              <SelectConfig
+                fieldKey={key}
+                field={field}
+                onPatch={(patch) => updateSelect(index, patch)}
+              />
+            )}
           </CardContent>
         </Card>
       ))}
@@ -179,6 +203,92 @@ export function FieldsEditor({
         <Plus className="size-4" />
         {addLabel}
       </Button>
+    </div>
+  )
+}
+
+/**
+ * The extra configuration a `select` needs: whether it takes multiple values, whether new values
+ * can be created beyond the declared list (turning the options into suggestions), and the options
+ * themselves. `creatable` is what makes a `select` usable as a free-form tag field.
+ */
+function SelectConfig({
+  fieldKey,
+  field,
+  onPatch,
+}: {
+  fieldKey: string
+  field: SelectField
+  onPatch: (patch: Partial<SelectField>) => void
+}) {
+  function updateOption(index: number, patch: Partial<SelectField['options'][number]>) {
+    onPatch({
+      options: field.options.map((option, i) => (i === index ? { ...option, ...patch } : option)),
+    })
+  }
+
+  return (
+    <div className="space-y-3 border-t pt-4 pl-7">
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <Switch
+            id={`${fieldKey}-multiple`}
+            checked={field.multiple}
+            onCheckedChange={(checked) => onPatch({ multiple: checked })}
+          />
+          <Label htmlFor={`${fieldKey}-multiple`} className="text-sm font-normal">
+            Allow multiple
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id={`${fieldKey}-creatable`}
+            checked={field.creatable}
+            onCheckedChange={(checked) => onPatch({ creatable: checked })}
+          />
+          <Label htmlFor={`${fieldKey}-creatable`} className="text-sm font-normal">
+            Allow new values
+          </Label>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs">{field.creatable ? 'Suggested values' : 'Options'}</Label>
+        {field.options.map((option, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: options have no stable id and this short list is edited in place, never reordered
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              className="h-8"
+              placeholder="value"
+              value={option.value}
+              onChange={(event) => updateOption(index, { value: event.target.value })}
+            />
+            <Input
+              className="h-8"
+              placeholder="label"
+              value={option.label}
+              onChange={(event) => updateOption(index, { label: event.target.value })}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Remove option"
+              disabled={field.options.length <= 1}
+              onClick={() => onPatch({ options: field.options.filter((_, i) => i !== index) })}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPatch({ options: [...field.options, { value: '', label: '' }] })}
+        >
+          <Plus className="size-4" />
+          Add option
+        </Button>
+      </div>
     </div>
   )
 }
@@ -207,7 +317,13 @@ export function blankField(
     case 'date':
       return { ...shared, kind, includeTime: true }
     case 'select':
-      return { ...shared, kind, options: [{ value: 'option', label: 'Option' }], multiple: false }
+      return {
+        ...shared,
+        kind,
+        options: [{ value: 'option', label: 'Option' }],
+        multiple: false,
+        creatable: false,
+      }
     case 'media':
       return { ...shared, kind, accept: [], multiple: false }
     case 'reference':

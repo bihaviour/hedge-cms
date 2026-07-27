@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Globe, Languages, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { DeliveryKeyReveal } from '@/components/delivery-key-reveal'
 import { LocalizationFields, type LocalizationValue } from '@/components/localization-fields'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +45,7 @@ function browserTimezone(): string {
 export function SitesPage() {
   const t = useT()
   const [open, setOpen] = useState(false)
+  const [issuedKey, setIssuedKey] = useState<string | null>(null)
   const [localizing, setLocalizing] = useState<Site | null>(null)
   const queryClient = useQueryClient()
   const { site: active, sites, isLoading } = useActiveSite()
@@ -115,8 +117,23 @@ export function SitesPage() {
         )}
       </div>
 
-      <NewSiteDialog open={open} onOpenChange={setOpen} />
+      <NewSiteDialog open={open} onOpenChange={setOpen} onIssued={setIssuedKey} />
       <LocalizationDialog site={localizing} onOpenChange={(next) => !next && setLocalizing(null)} />
+
+      <Dialog open={issuedKey !== null} onOpenChange={() => setIssuedKey(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Your site is ready</DialogTitle>
+            <DialogDescription>
+              Copy its delivery key — your website reads published content with it.
+            </DialogDescription>
+          </DialogHeader>
+          {issuedKey && <DeliveryKeyReveal deliveryKey={issuedKey} />}
+          <DialogFooter>
+            <Button onClick={() => setIssuedKey(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -281,9 +298,11 @@ function LocalizationDialog({
 function NewSiteDialog({
   open,
   onOpenChange,
+  onIssued,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onIssued: (key: string) => void
 }) {
   const t = useT()
   const queryClient = useQueryClient()
@@ -301,11 +320,13 @@ function NewSiteDialog({
 
   const create = useMutation({
     mutationFn: api.sites.create,
-    onSuccess: (site) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['sites'] })
-      toast.success(t('common.created', { name: site.name }))
+      toast.success(t('common.created', { name: result.site.name }))
       onOpenChange(false)
       reset()
+      // Reveal the delivery key that was issued with the site, once.
+      if (result.deliveryKey) onIssued(result.deliveryKey.key)
     },
     onError: (error) => toast.error(error.message),
   })
@@ -321,6 +342,7 @@ function NewSiteDialog({
               slug: form.slug || slugify(form.name),
               domain: form.domain || null,
               allowMemberSignup: true,
+              createDeliveryKey: true,
               ...i18n,
             })
           }}

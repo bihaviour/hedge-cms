@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { EmptyState, PageHeader } from '@/components/page-header'
+import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -52,6 +52,19 @@ export function ApiKeysPage() {
     },
   })
 
+  // Sites created before keys were issued automatically — and any whose delivery key was revoked —
+  // have no `content:read` key, so no website can read them. Surface a one-click prompt to issue it
+  // with the right scope rather than leaving the operator to infer which of the scopes is safe.
+  const hasDeliveryKey = keys.data?.some((key) => key.scopes.includes('content:read'))
+  const issueDelivery = useMutation({
+    mutationFn: () => api.apiKeys.create({ name: 'delivery', scopes: ['content:read'] }),
+    onSuccess: (key) => {
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
+      setIssued(key.key)
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
   return (
     <>
       <PageHeader
@@ -65,15 +78,28 @@ export function ApiKeysPage() {
         }
       />
 
-      <div className="p-8">
+      <div className="space-y-6 p-8">
         {keys.isLoading && <Skeleton className="h-48 w-full" />}
 
-        {keys.data?.length === 0 && (
-          <EmptyState
-            title={t('apiKeys.emptyTitle')}
-            description={t('apiKeys.emptyDescription')}
-            action={<Button onClick={() => setOpen(true)}>{t('apiKeys.new')}</Button>}
-          />
+        {keys.data && !hasDeliveryKey && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-dashed p-6">
+            <div>
+              <h3 className="font-medium">No delivery key</h3>
+              <p className="text-muted-foreground text-sm">
+                A website reads this site's published content with a{' '}
+                <code className="font-mono text-xs">content:read</code> key. Issue one now, or
+                create a custom key.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={() => issueDelivery.mutate()} disabled={issueDelivery.isPending}>
+                Issue delivery key
+              </Button>
+              <Button variant="outline" onClick={() => setOpen(true)}>
+                {t('apiKeys.new')}
+              </Button>
+            </div>
+          </div>
         )}
 
         {keys.data && keys.data.length > 0 && (

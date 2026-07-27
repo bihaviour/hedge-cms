@@ -10,6 +10,7 @@ import type {
   CreateNewsletterInput,
   CreateNewsletterTemplateInput,
   CreateSiteInput,
+  CreateSiteResult,
   CreateSubscriberInput,
   EmailConfig,
   EmailLog,
@@ -159,7 +160,10 @@ export const api = {
 
   sites: {
     list: () => request<Site[]>('/sites'),
-    create: (input: CreateSiteInput) => request<Site>('/sites', { method: 'POST', ...json(input) }),
+    // Creating a site also issues its delivery key (unless opted out), so the result carries both
+    // the site and the raw key secret — shown once, in the create-site UI.
+    create: (input: CreateSiteInput) =>
+      request<CreateSiteResult>('/sites', { method: 'POST', ...json(input) }),
     update: (slug: string, input: UpdateSiteInput) =>
       request<Site>(`/sites/${slug}`, { method: 'PATCH', ...json(input) }),
     /** A site's own metadata defaults and custom fields — authorised at the site level. */

@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  buildEntryValidator,
   createEntrySchema,
   createSiteSchema,
   entryMetadataSchema,
+  type Field,
+  fieldsSchema,
   isValidTimeZone,
+  listEntriesQuerySchema,
   localeCodeSchema,
   memberRegisterSchema,
   setSiteRoleSchema,
@@ -72,6 +76,14 @@ describe('createSiteSchema', () => {
     expect(parsed.locales).toEqual(['en'])
     expect(parsed.defaultLocale).toBe('en')
     expect(parsed.timezone).toBe('UTC')
+  })
+
+  test('issues a delivery key by default, and can opt out for scripted creation', () => {
+    expect(createSiteSchema.parse({ slug: 'docs', name: 'Docs' }).createDeliveryKey).toBe(true)
+    expect(
+      createSiteSchema.parse({ slug: 'docs', name: 'Docs', createDeliveryKey: false })
+        .createDeliveryKey,
+    ).toBe(false)
   })
 
   test('rejects a default locale the site does not publish', () => {
@@ -183,6 +195,45 @@ describe('entryMetadataSchema', () => {
     const parsed = entryMetadataSchema.parse({})
     expect(parsed.noIndex).toBe(false)
     expect(parsed.custom).toEqual({})
+  })
+})
+
+describe('select field validator', () => {
+  const options = [{ value: 'essay', label: 'Essay' }]
+  const validatorFor = (field: Record<string, unknown>) =>
+    buildEntryValidator(fieldsSchema.parse([field]) as Field[])
+
+  test('creatable defaults off', () => {
+    const [parsed] = fieldsSchema.parse([{ kind: 'select', name: 'tags', label: 'Tags', options }])
+    expect(parsed && 'creatable' in parsed && parsed.creatable).toBe(false)
+  })
+
+  test('a closed multiple select rejects an undeclared value', () => {
+    const v = validatorFor({ kind: 'select', name: 'tags', label: 'Tags', options, multiple: true })
+    expect(v.safeParse({ tags: ['essay'] }).success).toBe(true)
+    expect(v.safeParse({ tags: ['freeform'] }).success).toBe(false)
+  })
+
+  test('a creatable multiple select accepts any non-empty string', () => {
+    const v = validatorFor({
+      kind: 'select',
+      name: 'tags',
+      label: 'Tags',
+      options,
+      multiple: true,
+      creatable: true,
+    })
+    expect(v.safeParse({ tags: ['essay', 'freeform', 'AI Agents'] }).success).toBe(true)
+    // Still not a home for empty strings.
+    expect(v.safeParse({ tags: [''] }).success).toBe(false)
+  })
+})
+
+describe('listEntriesQuerySchema', () => {
+  test('sort defaults to updatedAt and now accepts a declared-field path', () => {
+    expect(listEntriesQuerySchema.parse({}).sort).toBe('updatedAt')
+    expect(listEntriesQuerySchema.parse({ sort: 'data.date' }).sort).toBe('data.date')
+    expect(listEntriesQuerySchema.parse({ sort: 'field:date' }).sort).toBe('field:date')
   })
 })
 

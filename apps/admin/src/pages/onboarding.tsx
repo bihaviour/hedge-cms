@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
+import { DeliveryKeyReveal } from '@/components/delivery-key-reveal'
 import { FormError } from '@/components/form-error'
 import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
@@ -153,6 +154,38 @@ function AccountStep() {
 }
 
 /**
+ * The site exists; the last thing onboarding does is hand over its delivery key. A website has no
+ * anonymous read against the delivery API, so this key — not the site — is what a first-run migration
+ * actually needs, and it is only shown here once.
+ */
+function SiteReadyStep({
+  deliveryKey,
+  onFinish,
+}: {
+  deliveryKey: string | null
+  onFinish: () => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Your site is ready</CardTitle>
+        <CardDescription>
+          {deliveryKey
+            ? 'Copy the delivery key below — your website reads published content with it.'
+            : 'Your site is set up. Add a delivery key under API keys when a website needs to read it.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {deliveryKey && <DeliveryKeyReveal deliveryKey={deliveryKey} />}
+        <Button className="w-full" onClick={onFinish}>
+          Go to the dashboard
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
  * A site is the tenant everything else hangs off — collections, media, API keys, members — so
  * there is no usable CMS until one exists. That is why this step cannot be skipped.
  */
@@ -163,15 +196,28 @@ function SiteStep() {
 
   const create = useMutation({
     mutationFn: api.sites.create,
-    onSuccess: async (site) => {
-      // Land in the site that was just made, rather than whatever the last browser remembered.
-      setActiveSite(site.slug)
-      await queryClient.invalidateQueries()
-      navigate('/collections', { replace: true })
+    onSuccess: (result) => {
+      // Land in the site that was just made, rather than whatever the last browser remembered. The
+      // sites query is deliberately *not* invalidated yet: that is what keeps this wizard mounted so
+      // the delivery key can be shown once before the app navigates away.
+      setActiveSite(result.site.slug)
     },
   })
 
   const slug = form.slug || slugify(form.name)
+
+  // The site was created — show its delivery key, then let the user into the CMS.
+  if (create.isSuccess) {
+    return (
+      <SiteReadyStep
+        deliveryKey={create.data.deliveryKey?.key ?? null}
+        onFinish={async () => {
+          await queryClient.invalidateQueries()
+          navigate('/collections', { replace: true })
+        }}
+      />
+    )
+  }
 
   return (
     <Card>
@@ -191,6 +237,7 @@ function SiteStep() {
               slug,
               domain: form.domain || null,
               allowMemberSignup: form.allowMemberSignup,
+              createDeliveryKey: true,
               // English on the browser's timezone to start; refine it under Sites → Localization.
               locales: ['en'],
               defaultLocale: 'en',

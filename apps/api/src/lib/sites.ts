@@ -1,5 +1,7 @@
 import {
   type CreateSiteInput,
+  type CreateSiteResult,
+  DELIVERY_KEY_NAME,
   fieldsSchema,
   type Site,
   siteMetadataSchema,
@@ -10,6 +12,7 @@ import { and, count, eq, ne } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { type SiteRow, sites } from '../db/schema'
 import type { Bindings } from '../env'
+import { createApiKey } from './api-keys'
 import { ApiError } from './errors'
 import { newId } from './id'
 
@@ -67,7 +70,7 @@ async function assertDomainFree(env: Bindings, domain: string, exceptSiteId?: st
   if (clash) throw ApiError.conflict(`"${domain}" is already pointed at the "${clash.slug}" site`)
 }
 
-export async function createSite(env: Bindings, input: CreateSiteInput): Promise<Site> {
+export async function createSite(env: Bindings, input: CreateSiteInput): Promise<CreateSiteResult> {
   const db = getDb(env)
 
   const [existing] = await db.select({ id: sites.id }).from(sites).where(eq(sites.slug, input.slug))
@@ -89,7 +92,17 @@ export async function createSite(env: Bindings, input: CreateSiteInput): Promise
     })
     .returning()
 
-  return toSite(row!)
+  const site = toSite(row!)
+
+  // A site with no key is a site no website can read — the delivery API has no anonymous fallback.
+  // Issue the `content:read` delivery credential here so the create-site flow ends with a working
+  // site, scoped to reading published content only: auto-issuing anything write-scoped would hand
+  // every new site a key that reaches the authoring routes, the exact split we maintain elsewhere.
+  const deliveryKey = input.createDeliveryKey
+    ? await createApiKey(env, site.id, { name: DELIVERY_KEY_NAME, scopes: ['content:read'] }, null)
+    : null
+
+  return { site, deliveryKey }
 }
 
 export async function updateSite(

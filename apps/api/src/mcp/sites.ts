@@ -77,12 +77,17 @@ export const siteTools = [
     title: 'Create site',
     description:
       'Create a new site on this deployment. A site is a whole tenant — its own collections, ' +
-      'entries, media, members and keys.',
+      'entries, media, members and keys. Unless `createDeliveryKey` is false, a `content:read` ' +
+      'delivery key is issued with it and **its raw secret is returned once, in the result** — ' +
+      'hand it to the person who asked and do not repeat it.',
     args: createSiteSchema,
     access: { scope: MCP_SCOPES.sitesWrite, instance: 'admin' },
     handler: async (input, ctx) => {
       const data = await createSite(ctx.env, input)
-      return { structured: data, text: `Created site "${data.slug}".` }
+      const keyNote = data.deliveryKey
+        ? ` Delivery key "${data.deliveryKey.name}" issued; its secret is in the result and cannot be shown again.`
+        : ''
+      return { structured: data, text: `Created site "${data.site.slug}".${keyNote}` }
     },
   }),
 
