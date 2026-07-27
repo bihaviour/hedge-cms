@@ -29,6 +29,7 @@ const LABELS: Record<string, MessageKey> = {
   configuration: 'label.configuration',
   sites: 'label.sites',
   users: 'label.users',
+  admin: 'label.admin',
   'api-keys': 'label.apiKeys',
   email: 'label.email',
   templates: 'label.templates',

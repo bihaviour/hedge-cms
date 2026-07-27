@@ -51,6 +51,7 @@ export const en = {
   'nav.siteSettings': 'Site settings',
   'nav.sites': 'Sites',
   'nav.users': 'Users',
+  'nav.admin': 'Admin',
   'nav.apiKeys': 'API keys',
   'nav.about': 'About & updates',
   'nav.updates': 'Updates',
@@ -73,6 +74,7 @@ export const en = {
   'label.configuration': 'Configuration',
   'label.sites': 'Sites',
   'label.users': 'Users',
+  'label.admin': 'Admin',
   'label.apiKeys': 'API keys',
   'label.entries': 'Entries',
   'label.new': 'New',
@@ -265,7 +267,11 @@ export const en = {
 
   // Account page.
   'account.title': 'Account',
-  'account.subtitle': 'Your profile, password and active sessions.',
+  'account.subtitle': 'Your profile and password.',
+
+  // Admin page (sessions and connected clients).
+  'admin.title': 'Admin',
+  'admin.subtitle': 'Active sessions and the clients connected to your account.',
   'account.save': 'Save changes',
   'account.changePassword': 'Change password',
   'account.uiLanguage': 'Admin language',

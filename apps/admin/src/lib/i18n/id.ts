@@ -41,6 +41,7 @@ export const id: Catalog = {
   'nav.siteSettings': 'Pengaturan situs',
   'nav.sites': 'Situs',
   'nav.users': 'Pengguna',
+  'nav.admin': 'Admin',
   'nav.apiKeys': 'Kunci API',
   'nav.updates': 'Pembaruan',
   'nav.account': 'Akun',
@@ -60,6 +61,7 @@ export const id: Catalog = {
   'label.configuration': 'Konfigurasi',
   'label.sites': 'Situs',
   'label.users': 'Pengguna',
+  'label.admin': 'Admin',
   'label.apiKeys': 'Kunci API',
   'label.entries': 'Entri',
   'label.new': 'Baru',
@@ -237,7 +239,10 @@ export const id: Catalog = {
   'apiKeys.emptyDescription': 'Buat kunci untuk membaca situs ini dari API pengiriman.',
 
   'account.title': 'Akun',
-  'account.subtitle': 'Profil, kata sandi, dan sesi aktif Anda.',
+  'account.subtitle': 'Profil dan kata sandi Anda.',
+
+  'admin.title': 'Admin',
+  'admin.subtitle': 'Sesi aktif dan klien yang terhubung ke akun Anda.',
   'account.save': 'Simpan perubahan',
   'account.changePassword': 'Ubah kata sandi',
   'account.uiLanguage': 'Bahasa admin',

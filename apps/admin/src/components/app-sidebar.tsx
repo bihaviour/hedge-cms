@@ -107,6 +107,8 @@ const NAV: {
       { title: 'nav.configuration', url: '/settings/configuration' },
       { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
       { title: 'nav.users', url: '/settings/users', instanceOnly: true },
+      // Sessions and connected clients — the deployment's security surface.
+      { title: 'nav.admin', url: '/settings/admin', instanceOnly: true },
     ],
   },
 ]
@@ -247,7 +249,9 @@ function UserMenu({ user, isInstanceAdmin }: { user: User; isInstanceAdmin: bool
             sideOffset={8}
             className="min-w-56 rounded-lg"
           >
-            <DropdownMenuLabel className="flex items-center gap-2 p-2 font-normal">
+            {/* The profile header doubles as the way into your account — clicking it lands on the
+                same page as the Account item below. */}
+            <DropdownMenuItem className="gap-2 p-2" onSelect={() => navigate(ACCOUNT_PATH)}>
               <Avatar className="size-8 rounded-lg">
                 <AvatarFallback className="rounded-lg">{initials(user.name)}</AvatarFallback>
               </Avatar>
@@ -255,7 +259,7 @@ function UserMenu({ user, isInstanceAdmin }: { user: User; isInstanceAdmin: bool
                 <span className="truncate font-medium text-sm">{user.name}</span>
                 <span className="truncate text-muted-foreground text-xs">{user.email}</span>
               </div>
-            </DropdownMenuLabel>
+            </DropdownMenuItem>
 
             <DropdownMenuSeparator />
 
