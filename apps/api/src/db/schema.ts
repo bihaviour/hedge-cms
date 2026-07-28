@@ -71,8 +71,11 @@ export const sites = sqliteTable(
  * ------------------------------------------------------------------ */
 
 /**
- * `owner` and `admin` run the instance and reach every site; `editor` and `viewer` here is only
- * the default role a user is granted with — what they can actually reach lives in `site_users`.
+ * `role` is a role *slug* — a built-in (`owner`/`admin`/`editor`/`viewer`) or one an operator
+ * defined under Settings → Roles. What the slug grants at the instance level is the permission set
+ * on that role (built-in ones in `@hedge/core`, custom ones in `roles` below); what a user can
+ * actually reach on a site still lives in `site_users`. It is a plain text column rather than an
+ * enum so a custom slug is a valid value.
  *
  * Passwords are not here: Better Auth keeps credentials in `accounts`, so one identity can grow
  * a second sign-in method later without this table changing shape.
@@ -85,12 +88,30 @@ export const users = sqliteTable(
     name: text('name').notNull(),
     emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
     image: text('image'),
-    role: text('role', { enum: ['owner', 'admin', 'editor', 'viewer'] })
-      .notNull()
-      .default('editor'),
+    role: text('role').notNull().default('editor'),
     ...authTimestamps,
   },
   (t) => [uniqueIndex('users_email_idx').on(t.email)],
+)
+
+/**
+ * Operator-defined instance roles. Only *custom* roles live here — the four built-ins are fixed in
+ * `@hedge/core` so their powers cannot drift and an owner cannot edit themselves out of control.
+ * `permissions` is a JSON array of instance-permission ids; `slug` is what `users.role` references,
+ * so it is permanent once assigned.
+ */
+export const roles = sqliteTable(
+  'roles',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    permissions: text('permissions', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    defaultSiteRole: text('default_site_role', { enum: ['admin', 'editor', 'viewer'] }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('roles_slug_idx').on(t.slug)],
 )
 
 /**
@@ -665,6 +686,7 @@ export const newsletterTemplates = sqliteTable(
 export type SiteRow = typeof sites.$inferSelect
 export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
+export type RoleRow = typeof roles.$inferSelect
 export type SessionRow = typeof sessions.$inferSelect
 export type MemberRow = typeof members.$inferSelect
 export type MemberSiteRow = typeof memberSites.$inferSelect

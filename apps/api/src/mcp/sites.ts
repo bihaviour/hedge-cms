@@ -81,7 +81,7 @@ export const siteTools = [
       'delivery key is issued with it and **its raw secret is returned once, in the result** — ' +
       'hand it to the person who asked and do not repeat it.',
     args: createSiteSchema,
-    access: { scope: MCP_SCOPES.sitesWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.sitesWrite, instance: 'sites:create' },
     handler: async (input, ctx) => {
       const data = await createSite(ctx.env, input)
       const keyNote = data.deliveryKey
@@ -99,7 +99,7 @@ export const siteTools = [
       'hostname resolves to this tenant, so it affects the whole deployment — hence instance ' +
       'admin rather than site admin.',
     args: updateSiteSchema.extend({ slug: slugSchema.describe('Slug of the site to update') }),
-    access: { scope: MCP_SCOPES.sitesWrite, instance: 'admin' },
+    access: { scope: MCP_SCOPES.sitesWrite, instance: 'sites:update' },
     handler: async ({ slug, ...input }, ctx) => {
       const data = await updateSite(ctx.env, slug, input)
       return { structured: data, text: `Updated site "${data.slug}".` }
@@ -129,7 +129,7 @@ export const siteTools = [
       'members. Irreversible, owner-only, and refused if it would leave the deployment with no ' +
       'sites at all.',
     args: z.object({ slug: slugSchema }),
-    access: { scope: MCP_SCOPES.sitesWrite, instance: 'owner' },
+    access: { scope: MCP_SCOPES.sitesWrite, instance: 'sites:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ slug }, ctx) => {
       await deleteSite(ctx.env, slug)

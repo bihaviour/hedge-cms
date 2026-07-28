@@ -1,11 +1,4 @@
-import {
-  type InviteUserInput,
-  type Role,
-  roleAtLeast,
-  type SiteAccess,
-  type SiteRole,
-  type User,
-} from '@hedge/core'
+import type { InviteUserInput, SiteAccess, SiteRole, User } from '@hedge/core'
 import { and, asc, eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { accounts, sites, siteUsers, type UserRow, users } from '../db/schema'
@@ -13,6 +6,7 @@ import type { Bindings } from '../env'
 import { ApiError } from './errors'
 import { newId } from './id'
 import { sendUserInvite } from './invites'
+import { getRole, listRoles, permissionsForRole } from './roles'
 
 /**
  * User and per-site-access management, factored out of the HTTP routes so the REST API and the MCP
@@ -26,12 +20,13 @@ import { sendUserInvite } from './invites'
 
 export type PendingUser = User & { pending: boolean }
 
-export function toUser(row: UserRow, pending = false): PendingUser {
+export function toUser(row: UserRow, pending = false, permissions: string[] = []): PendingUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: row.role,
+    permissions,
     createdAt: row.createdAt.toISOString(),
     pending,
   }
@@ -52,7 +47,13 @@ export async function listUsers(env: Bindings): Promise<PendingUser[]> {
     .leftJoin(accounts, and(eq(accounts.userId, users.id), eq(accounts.providerId, 'credential')))
     .orderBy(asc(users.createdAt))
 
-  return rows.map((row) => toUser(row.user, row.credential === null))
+  // One catalog for the whole list rather than a lookup per row: built-in roles resolve from code
+  // and custom ones are a single small table, so this stays one query regardless of user count.
+  const permissions = new Map((await listRoles(env)).map((role) => [role.slug, role.permissions]))
+
+  return rows.map((row) =>
+    toUser(row.user, row.credential === null, permissions.get(row.user.role) ?? []),
+  )
 }
 
 /**
@@ -70,6 +71,9 @@ export async function inviteUser(
   const db = getDb(env)
   const email = input.email.toLowerCase()
 
+  const role = await getRole(env, input.role)
+  if (!role) throw ApiError.badRequest(`"${input.role}" is not a role`)
+
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email))
   if (existing) throw ApiError.conflict('A user with that email already exists')
 
@@ -78,22 +82,29 @@ export async function inviteUser(
     .values({ id: newId('usr'), email, name: input.name, role: input.role })
     .returning()
 
-  if (input.role === 'editor' || input.role === 'viewer') {
-    await db.insert(siteUsers).values({ siteId, userId: user!.id, role: input.role })
+  // A role that reaches every site needs no grant; anything else would sign in to nothing at all,
+  // so it starts on the site the invite was sent from, at that role's default site role.
+  if (!role.permissions.includes('sites:access_all')) {
+    await db
+      .insert(siteUsers)
+      .values({ siteId, userId: user!.id, role: role.defaultSiteRole ?? 'editor' })
   }
 
   await sendUserInvite(env, user!)
-  return toUser(user!)
+  return toUser(user!, false, role.permissions)
 }
 
 export async function updateUser(
   env: Bindings,
   id: string,
-  input: { name?: string; role?: Role },
+  input: { name?: string; role?: string },
   actorId: string,
 ): Promise<PendingUser> {
   if (input.role && id === actorId) {
     throw ApiError.badRequest('You cannot change your own role')
+  }
+  if (input.role !== undefined && !(await getRole(env, input.role))) {
+    throw ApiError.badRequest(`"${input.role}" is not a role`)
   }
 
   const [row] = await getDb(env)
@@ -107,7 +118,7 @@ export async function updateUser(
     .returning()
 
   if (!row) throw ApiError.notFound('User')
-  return toUser(row)
+  return toUser(row, false, await permissionsForRole(env, row.role))
 }
 
 export async function deleteUser(env: Bindings, id: string, actorId: string): Promise<void> {
@@ -151,10 +162,8 @@ export async function setUserSiteRole(
   const [site] = await db.select({ id: sites.id }).from(sites).where(eq(sites.id, siteId)).limit(1)
   if (!site) throw ApiError.notFound('Site')
 
-  if (roleAtLeast(user.role, 'admin')) {
-    throw ApiError.badRequest(
-      `${user.name} is an instance ${user.role} and already reaches every site`,
-    )
+  if ((await permissionsForRole(env, user.role)).includes('sites:access_all')) {
+    throw ApiError.badRequest(`${user.name}'s role already reaches every site`)
   }
 
   await db

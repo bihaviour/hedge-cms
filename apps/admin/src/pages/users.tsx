@@ -1,4 +1,4 @@
-import { ROLES, roleAtLeast, SITE_ROLES, type SiteRole, type User } from '@hedge/core'
+import { SITE_ROLES, type SiteRole, type User } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeySquare, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
@@ -43,6 +43,8 @@ export function UsersPage() {
   const [accessFor, setAccessFor] = useState<User | null>(null)
   const queryClient = useQueryClient()
   const users = useQuery({ queryKey: ['users'], queryFn: api.users.list })
+  // The assignable roles — built-ins plus any the deployment has defined under Settings → Roles.
+  const roles = useQuery({ queryKey: ['roles'], queryFn: api.roles.list })
 
   const remove = useMutation({
     mutationFn: api.users.remove,
@@ -119,16 +121,16 @@ export function UsersPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {ROLES.map((role) => (
-                            <SelectItem key={role} value={role} className="capitalize">
-                              {role}
+                          {roles.data?.map((role) => (
+                            <SelectItem key={role.slug} value={role.slug}>
+                              {role.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell>
-                      {roleAtLeast(user.role, 'admin') ? (
+                      {user.permissions.includes('sites:access_all') ? (
                         <span className="text-muted-foreground text-sm">{t('users.allSites')}</span>
                       ) : (
                         <Button variant="outline" size="sm" onClick={() => setAccessFor(user)}>
@@ -277,6 +279,9 @@ function InviteDialog({
 }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState({ name: '', email: '', role: 'editor' })
+  // The owner role is never handed out by invite — the first owner comes from setup.
+  const roles = useQuery({ queryKey: ['roles'], queryFn: api.roles.list })
+  const assignable = roles.data?.filter((role) => role.slug !== 'owner') ?? []
 
   const invite = useMutation({
     mutationFn: api.auth.invite,
@@ -332,9 +337,9 @@ function InviteDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.filter((role) => role !== 'owner').map((role) => (
-                    <SelectItem key={role} value={role} className="capitalize">
-                      {role}
+                  {assignable.map((role) => (
+                    <SelectItem key={role.slug} value={role.slug}>
+                      {role.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

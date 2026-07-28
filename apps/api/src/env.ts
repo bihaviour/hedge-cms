@@ -37,7 +37,17 @@ export interface Actor {
   kind: 'user' | 'api_key'
   via: 'session' | 'oauth' | 'api_key'
   id: string
-  role: Role
+  /**
+   * For a user, the *slug* of their instance role — built-in or custom. For an API key, the site
+   * `Role` its scopes imply (a key never has instance authority). Instance authority for a user is
+   * decided by `permissions`, not by this; site authority still reads it as a `Role`.
+   */
+  role: string
+  /**
+   * The instance permissions the user's role carries — the basis for every instance-level check
+   * (`requirePermission`). Empty for an API key, which cannot reach the management API at all.
+   */
+  permissions: string[]
   /** Scopes carried by a key or a delegated OAuth client. Empty for a signed-in user. */
   scopes: string[]
   /** Set for API keys, which are issued per site. Users are global to the deployment. */

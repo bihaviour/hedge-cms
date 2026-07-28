@@ -25,6 +25,7 @@ import members, { memberAuth } from './routes/members'
 import newsletterPublic from './routes/newsletter-public'
 import newsletterTemplates from './routes/newsletter-templates'
 import newsletters, { subscribers } from './routes/newsletters'
+import roles from './routes/roles'
 import sites from './routes/sites'
 import system from './routes/system'
 import users from './routes/users'
@@ -39,6 +40,7 @@ const app = new Hono<AppEnv>()
 const ADMIN_PREFIXES = [
   '/api/v1/auth',
   '/api/v1/users',
+  '/api/v1/roles',
   '/api/v1/sites',
   '/api/v1/api-keys',
   '/api/v1/members',
@@ -238,6 +240,7 @@ app.route('/api/v1/auth', auth)
 app.all(`${CMS_AUTH_BASE_PATH}/*`, (c) => getCmsAuth(c.env).handler(c.req.raw))
 
 app.route('/api/v1/users', users)
+app.route('/api/v1/roles', roles)
 app.route('/api/v1/sites', sites)
 app.route('/api/v1/api-keys', apiKeys)
 app.route('/api/v1/collections', collections)

@@ -1,8 +1,8 @@
-import { ROLES, setSiteRoleSchema } from '@hedge/core'
+import { setSiteRoleSchema } from '@hedge/core'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../env'
-import { requireActor, requireRole } from '../lib/auth'
+import { requireActor, requirePermission } from '../lib/auth'
 import {
   deleteUser,
   listUserSites,
@@ -15,16 +15,17 @@ import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
-app.get('/', requireRole('admin'), async (c) => {
+app.get('/', requirePermission('users:manage'), async (c) => {
   return c.json({ data: await listUsers(c.env) })
 })
 
-app.patch('/:id', requireRole('admin'), async (c) => {
+app.patch('/:id', requirePermission('users:manage'), async (c) => {
   const input = await validate(
     c,
     z.object({
       name: z.string().min(1).max(120).optional(),
-      role: z.enum(ROLES).optional(),
+      // A role slug — built-in or custom. `updateUser` rejects one that names no existing role.
+      role: z.string().optional(),
     }),
   )
   const data = await updateUser(c.env, c.req.param('id'), input, requireActor(c).id)
@@ -37,22 +38,22 @@ app.patch('/:id', requireRole('admin'), async (c) => {
  * ------------------------------------------------------------------ */
 
 /** The sites this user has been granted, for the admin's access editor. */
-app.get('/:id/sites', requireRole('admin'), async (c) => {
+app.get('/:id/sites', requirePermission('users:manage'), async (c) => {
   return c.json({ data: await listUserSites(c.env, c.req.param('id')) })
 })
 
-app.put('/:id/sites/:siteId', requireRole('admin'), async (c) => {
+app.put('/:id/sites/:siteId', requirePermission('users:manage'), async (c) => {
   const { role } = await validate(c, setSiteRoleSchema)
   const data = await setUserSiteRole(c.env, c.req.param('id'), c.req.param('siteId'), role)
   return c.json({ data })
 })
 
-app.delete('/:id/sites/:siteId', requireRole('admin'), async (c) => {
+app.delete('/:id/sites/:siteId', requirePermission('users:manage'), async (c) => {
   await removeUserSiteRole(c.env, c.req.param('id'), c.req.param('siteId'))
   return c.body(null, 204)
 })
 
-app.delete('/:id', requireRole('admin'), async (c) => {
+app.delete('/:id', requirePermission('users:manage'), async (c) => {
   await deleteUser(c.env, c.req.param('id'), requireActor(c).id)
   return c.body(null, 204)
 })

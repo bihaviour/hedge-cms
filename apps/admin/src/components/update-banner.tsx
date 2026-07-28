@@ -1,4 +1,4 @@
-import { HEDGE_VERSION, roleAtLeast, type User } from '@hedge/core'
+import { HEDGE_VERSION, type User } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpCircle } from 'lucide-react'
 import { Link } from 'react-router'
@@ -11,7 +11,7 @@ import { api } from '@/lib/api'
  * button that updates in place.
  */
 export function UpdateBanner({ user }: { user: User }) {
-  const isAdmin = roleAtLeast(user.role, 'admin')
+  const isAdmin = user.permissions.includes('system:read')
   const version = useQuery({
     queryKey: ['system-version'],
     queryFn: api.system.version,

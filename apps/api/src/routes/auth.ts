@@ -23,22 +23,24 @@ import {
   users,
 } from '../db/schema'
 import type { AppEnv } from '../env'
-import { requireActor, requireRole, requireUserActor } from '../lib/auth'
+import { requireActor, requirePermission, requireUserActor } from '../lib/auth'
 import { hashPassword, hmac } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { hasCredential, sendUserInvite } from '../lib/invites'
+import { permissionsForRole } from '../lib/roles'
 import { requireSite } from '../lib/site'
 import { inviteUser } from '../lib/users'
 import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
-const toUser = (row: typeof users.$inferSelect): User => ({
+const toUser = (row: typeof users.$inferSelect, permissions: string[]): User => ({
   id: row.id,
   email: row.email,
   name: row.name,
   role: row.role,
+  permissions,
   createdAt: row.createdAt.toISOString(),
 })
 
@@ -76,7 +78,7 @@ app.post('/login', async (c) => {
   if (!user) throw ApiError.unauthorized('Incorrect email or password')
 
   applyCookies(c, cookies)
-  return c.json({ data: toUser(user) })
+  return c.json({ data: toUser(user, await permissionsForRole(c.env, user.role)) })
 })
 
 app.post('/logout', async (c) => {
@@ -87,7 +89,8 @@ app.post('/logout', async (c) => {
 
 app.get('/me', async (c) => {
   const actor = requireUserActor(c)
-  return c.json({ data: toUser(await userById(c.env, actor.id)) })
+  const row = await userById(c.env, actor.id)
+  return c.json({ data: toUser(row, await permissionsForRole(c.env, row.role)) })
 })
 
 app.post('/change-password', async (c) => {
@@ -211,7 +214,7 @@ app.post('/setup', async (c) => {
     throw error
   }
 
-  return c.json({ data: toUser(user!) }, 201)
+  return c.json({ data: toUser(user!, await permissionsForRole(c.env, user!.role)) }, 201)
 })
 
 app.get('/setup-required', async (c) => {
@@ -224,13 +227,13 @@ app.get('/setup-required', async (c) => {
  * Invites
  * ------------------------------------------------------------------ */
 
-app.post('/invite', requireRole('admin'), async (c) => {
+app.post('/invite', requirePermission('users:manage'), async (c) => {
   const input = await validate(c, inviteUserSchema)
   return c.json({ data: await inviteUser(c.env, input, requireSite(c).id) }, 201)
 })
 
 /** Sends the invite again — the first one bounced, went to spam, or simply expired. */
-app.post('/invite/:id/resend', requireRole('admin'), async (c) => {
+app.post('/invite/:id/resend', requirePermission('users:manage'), async (c) => {
   const user = await userById(c.env, c.req.param('id'))
 
   if (await hasCredential(c.env, user.id)) {
@@ -281,7 +284,7 @@ app.post('/accept-invite', async (c) => {
   })
 
   applyCookies(c, cookies)
-  return c.json({ data: toUser(user) })
+  return c.json({ data: toUser(user, await permissionsForRole(c.env, user.role)) })
 })
 
 /* ------------------------------------------------------------------ *

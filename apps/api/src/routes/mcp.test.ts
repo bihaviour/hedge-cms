@@ -294,17 +294,19 @@ describe('POST /mcp', () => {
     expect(invited).toContainEqual({ email: 'new@example.com', name: 'New', role: 'editor' })
   })
 
-  /** Deleting a site is owner-only, so an admin is refused where they pass everything else. */
+  /** Deleting a site needs `sites:delete`, which the built-in admin role lacks — so an admin is
+   *  refused where they pass everything else. */
   test('delete_site is refused for an instance admin', async () => {
     reset()
     const { json } = await call('delete_site', { slug: 'blog' })
     expect(json.result.isError).toBe(true)
-    expect(json.result.content[0].text).toContain('owner')
+    expect(json.result.content[0].text).toContain('sites:delete')
   })
 
   /**
-   * An owner needs no special case in the authorisation code — `roleAtLeast` clears every minimum
-   * and `siteRoleFor` resolves them to owner on every site. This is what pins that.
+   * An owner needs no special case in the authorisation code — the built-in owner role carries
+   * every instance permission and `sites:access_all` resolves them to site admin everywhere. This
+   * is what pins that.
    */
   test('an owner passes both role levels', async () => {
     reset()

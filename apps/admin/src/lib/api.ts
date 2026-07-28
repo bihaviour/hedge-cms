@@ -9,6 +9,7 @@ import type {
   CreateMemberInput,
   CreateNewsletterInput,
   CreateNewsletterTemplateInput,
+  CreateRoleInput,
   CreateSiteInput,
   CreateSiteResult,
   CreateSubscriberInput,
@@ -26,6 +27,7 @@ import type {
   NewsletterAudience,
   NewsletterPreview,
   NewsletterTemplate,
+  RoleDefinition,
   SendResult,
   Site,
   SiteAccess,
@@ -39,6 +41,7 @@ import type {
   UpdateMemberInput,
   UpdateNewsletterInput,
   UpdateNewsletterTemplateInput,
+  UpdateRoleInput,
   UpdateSiteConfigInput,
   UpdateSiteInput,
   UpdateSubscriberInput,
@@ -211,6 +214,19 @@ export const api = {
       request<SiteAccess>(`/users/${id}/sites/${siteId}`, { method: 'PUT', ...json({ role }) }),
     revokeSite: (id: string, siteId: string) =>
       request<void>(`/users/${id}/sites/${siteId}`, { method: 'DELETE' }),
+  },
+
+  /**
+   * Instance roles — the built-in four plus any the deployment has defined. `list` is readable by
+   * any signed-in user (the invite and role dropdowns need it); writing is gated on `roles:manage`.
+   */
+  roles: {
+    list: () => request<RoleDefinition[]>('/roles'),
+    create: (input: CreateRoleInput) =>
+      request<RoleDefinition>('/roles', { method: 'POST', ...json(input) }),
+    update: (slug: string, input: UpdateRoleInput) =>
+      request<RoleDefinition>(`/roles/${slug}`, { method: 'PATCH', ...json(input) }),
+    remove: (slug: string) => request<void>(`/roles/${slug}`, { method: 'DELETE' }),
   },
 
   collections: {

@@ -1,4 +1,4 @@
-import { roleAtLeast, type User } from '@hedge/core'
+import type { InstancePermission, User } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpCircle,
@@ -68,14 +68,15 @@ function initials(name: string): string {
 /**
  * Static nav. Collections fills its sub-items from the API; everything else is fixed.
  *
- * `instanceOnly` items are managing the deployment rather than a site, so they are hidden from
- * editors and viewers — the API would refuse them anyway, and offering a door that does not open
- * is worse than not showing it. Configuration stays for everyone: its site-scoped tabs are gated by
- * the *site* role, which a per-site admin can hold without being an instance admin.
+ * An item with a `permission` is managing the deployment rather than a site, so it is hidden from
+ * anyone whose role does not carry that permission — the API would refuse them anyway, and offering
+ * a door that does not open is worse than not showing it. Items without one are site-level (like
+ * Configuration, whose tabs are gated by the *site* role a per-site admin can hold) and show for
+ * everyone. UI gating is cosmetic; the server check is the real one.
  */
 const NAV: {
   title: MessageKey
-  items: { title: MessageKey; url: string; instanceOnly?: boolean }[]
+  items: { title: MessageKey; url: string; permission?: InstancePermission }[]
 }[] = [
   {
     title: 'nav.content',
@@ -96,8 +97,8 @@ const NAV: {
   {
     title: 'nav.communication',
     items: [
-      { title: 'nav.emailTemplates', url: '/settings/email/templates', instanceOnly: true },
-      { title: 'nav.emailLog', url: '/settings/email/log', instanceOnly: true },
+      { title: 'nav.emailTemplates', url: '/settings/email/templates', permission: 'email:manage' },
+      { title: 'nav.emailLog', url: '/settings/email/log', permission: 'email:manage' },
     ],
   },
   {
@@ -105,10 +106,12 @@ const NAV: {
     items: [
       // Site metadata (Overview), delivery keys (API) and the deployment sender (Email), tabbed.
       { title: 'nav.configuration', url: '/settings/configuration' },
-      { title: 'nav.sites', url: '/settings/sites', instanceOnly: true },
-      { title: 'nav.users', url: '/settings/users', instanceOnly: true },
-      // Sessions and connected clients — the deployment's security surface.
-      { title: 'nav.admin', url: '/settings/admin', instanceOnly: true },
+      { title: 'nav.sites', url: '/settings/sites', permission: 'sites:create' },
+      { title: 'nav.users', url: '/settings/users', permission: 'users:manage' },
+      // Define the roles that users can be assigned, and the permissions each carries.
+      { title: 'nav.roles', url: '/settings/roles', permission: 'roles:manage' },
+      // Sessions and connected clients — the deployment's security surface, like About/updates.
+      { title: 'nav.admin', url: '/settings/admin', permission: 'system:read' },
     ],
   },
 ]
@@ -124,16 +127,20 @@ export function AppSidebar({
     enabled: Boolean(siteSlug),
   })
 
-  const isInstanceAdmin = roleAtLeast(user.role, 'admin')
   const groups = NAV.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isInstanceAdmin || !('instanceOnly' in item)),
+    items: group.items.filter(
+      (item) => !item.permission || user.permissions.includes(item.permission),
+    ),
   })).filter((group) => group.items.length > 0)
+
+  // Creating a site is the power the switcher's "manage sites" shortcut leads to.
+  const canManageSites = user.permissions.includes('sites:create')
 
   return (
     <Sidebar {...props}>
       <SidebarHeader>
-        <SiteSwitcher canManage={isInstanceAdmin} />
+        <SiteSwitcher canManage={canManageSites} />
       </SidebarHeader>
 
       <SidebarContent>
@@ -143,7 +150,7 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter>
-        <UserMenu user={user} isInstanceAdmin={isInstanceAdmin} />
+        <UserMenu user={user} />
       </SidebarFooter>
 
       <SidebarRail />
@@ -219,12 +226,14 @@ function NavGroup({
  * These are deliberately behind one click: they are rarely-changed settings, not primary nav, and
  * grouping them keeps sign-out from sitting a stray tap away from everything else.
  */
-function UserMenu({ user, isInstanceAdmin }: { user: User; isInstanceAdmin: boolean }) {
+function UserMenu({ user }: { user: User }) {
   const t = useT()
   const navigate = useNavigate()
   const logout = useLogout()
   const [language, setLanguage] = useLanguageSetting()
   const { theme, setTheme } = useTheme()
+  // The update notice is a manage-the-deployment concern, shown to whoever can read system status.
+  const canSeeUpdates = user.permissions.includes('system:read')
 
   return (
     <SidebarMenu>
@@ -300,7 +309,7 @@ function UserMenu({ user, isInstanceAdmin }: { user: User; isInstanceAdmin: bool
 
             {/* Deployment version and update awareness — a manage-the-deployment concern, so only
                 instance admins see it, matching the old About & updates nav entry. */}
-            {isInstanceAdmin && (
+            {canSeeUpdates && (
               <DropdownMenuItem onSelect={() => navigate('/settings/about')}>
                 <ArrowUpCircle />
                 {t('nav.updates')}

@@ -57,6 +57,9 @@ async function apiKeyActor(c: Context<AppEnv>): Promise<Actor | null> {
     via: 'api_key',
     id: row.id,
     role: roleForScopes(row.scopes),
+    // A key never has instance authority, whatever its scopes imply — it cannot reach a route that
+    // checks a permission at all. Empty keeps `requirePermission` refusing it by construction.
+    permissions: [],
     scopes: row.scopes,
     siteId: row.siteId,
   }

@@ -1,4 +1,4 @@
-import { HEDGE_VERSION, roleAtLeast } from '@hedge/core'
+import { HEDGE_VERSION } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
@@ -18,7 +18,7 @@ import { useFormatters } from '@/lib/i18n'
 export function AboutPage() {
   const session = useSession()
   const { formatDateTime } = useFormatters()
-  const isAdmin = session.data ? roleAtLeast(session.data.role, 'admin') : false
+  const isAdmin = session.data?.permissions.includes('system:read') ?? false
 
   const version = useQuery({
     queryKey: ['system-version'],

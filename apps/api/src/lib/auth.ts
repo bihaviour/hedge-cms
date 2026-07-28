@@ -1,4 +1,4 @@
-import { type Role, roleAtLeast } from '@hedge/core'
+import { type InstancePermission, type Role, roleAtLeast } from '@hedge/core'
 import { and, asc, eq } from 'drizzle-orm'
 import type { Context, MiddlewareHandler } from 'hono'
 import { getCmsAuth } from '../auth/cms'
@@ -8,6 +8,7 @@ import type { Actor, AppEnv, Bindings } from '../env'
 import { hmac, randomToken } from './crypto'
 import { ApiError } from './errors'
 import { newId } from './id'
+import { permissionsForRole } from './roles'
 import { requireSite } from './site'
 
 export const API_KEY_PREFIX = 'hdg_'
@@ -24,19 +25,25 @@ export const API_KEY_PREFIX = 'hdg_'
 export const resolveSessionActor: MiddlewareHandler<AppEnv> = async (c, next) => {
   const session = await getCmsAuth(c.env).api.getSession({ headers: c.req.raw.headers })
 
-  c.set(
-    'actor',
-    session
-      ? {
-          kind: 'user',
-          via: 'session',
-          id: session.user.id,
-          role: session.user.role as Role,
-          scopes: [],
-          siteId: null,
-        }
-      : null,
-  )
+  if (!session) {
+    c.set('actor', null)
+    await next()
+    return
+  }
+
+  // `users.role` is NOT NULL with a default, so a signed-in user always has one; the `?? 'editor'`
+  // only satisfies Better Auth's looser type. The slug tells us who they are; its permission set is
+  // what every instance check reads — resolved once, free for built-in roles and one lookup for custom.
+  const role = session.user.role ?? 'editor'
+  c.set('actor', {
+    kind: 'user',
+    via: 'session',
+    id: session.user.id,
+    role,
+    permissions: await permissionsForRole(c.env, role),
+    scopes: [],
+    siteId: null,
+  })
   await next()
 }
 
@@ -56,22 +63,23 @@ export function requireUserActor(c: Context<AppEnv>): Actor {
 }
 
 /**
- * Instance-level authorisation: managing users and sites. Use `requireSiteRole` for anything
- * that belongs to one site — passing this alone would let a site admin invite users.
+ * Instance-level authorisation: managing users, sites, email and the roles themselves. Use
+ * `requireSiteRole` for anything that belongs to one site — passing this alone would let a site
+ * admin invite users.
  *
- * An API key never satisfies this, whatever role its scopes imply. Instance level is about a person
- * running the deployment, and a key's role is only ever a statement about one site. No route a key
- * can reach uses this today; the check is here so that adding one later cannot quietly hand a key
- * authority over the instance.
+ * The check is set membership against the caller's role permissions, not a rank: a role carries
+ * exactly the powers it was defined with. An API key never satisfies this, whatever its scopes
+ * imply — instance authority is about a person running the deployment, and a key is only ever a
+ * statement about one site.
  */
-export function requireRole(minimum: Role): MiddlewareHandler<AppEnv> {
+export function requirePermission(permission: InstancePermission): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const actor = requireActor(c)
     if (actor.kind === 'api_key') {
       throw ApiError.forbidden('This endpoint requires a signed-in user')
     }
-    if (!roleAtLeast(actor.role, minimum)) {
-      throw ApiError.forbidden(`Requires ${minimum} role or higher`)
+    if (!actor.permissions.includes(permission)) {
+      throw ApiError.forbidden(`Requires the "${permission}" permission`)
     }
     await next()
   }
@@ -80,17 +88,18 @@ export function requireRole(minimum: Role): MiddlewareHandler<AppEnv> {
 /**
  * The caller's role on one site, or `null` when they have none.
  *
- * Owners and admins run the instance and reach every site. For everyone else the grant in
- * `site_users` *is* their access — their `users.role` is only the default they were granted
- * with, and a grant can raise or lower it per site. API keys are bound to a single site.
+ * A user whose instance role carries `sites:access_all` reaches every site as a site admin. For
+ * everyone else the grant in `site_users` *is* their access — their `users.role` is only the
+ * default they were invited with, and a grant can raise or lower it per site. API keys are bound
+ * to a single site.
  */
 export async function siteRoleFor(
   env: Bindings,
   actor: Actor,
   siteId: string,
 ): Promise<Role | null> {
-  if (actor.kind === 'api_key') return actor.siteId === siteId ? actor.role : null
-  if (roleAtLeast(actor.role, 'admin')) return actor.role
+  if (actor.kind === 'api_key') return actor.siteId === siteId ? (actor.role as Role) : null
+  if (actor.permissions.includes('sites:access_all')) return 'admin'
 
   const [grant] = await getDb(env)
     .select({ role: siteUsers.role })
@@ -133,7 +142,7 @@ export async function accessibleSites(env: Bindings, actor: Actor): Promise<Site
     return actor.siteId ? await db.select().from(sites).where(eq(sites.id, actor.siteId)) : []
   }
 
-  if (roleAtLeast(actor.role, 'admin')) {
+  if (actor.permissions.includes('sites:access_all')) {
     return await db.select().from(sites).orderBy(asc(sites.name))
   }
 
@@ -162,8 +171,8 @@ export function requireScope(scope: string): MiddlewareHandler<AppEnv> {
   }
 }
 
-/** The role a user has on a site, looked up for a caller resolved outside the session middleware. */
-export async function userRole(env: Bindings, userId: string): Promise<Role | null> {
+/** A user's role *slug*, looked up for a caller resolved outside the session middleware (MCP). */
+export async function userRole(env: Bindings, userId: string): Promise<string | null> {
   const [row] = await getDb(env)
     .select({ role: users.role })
     .from(users)

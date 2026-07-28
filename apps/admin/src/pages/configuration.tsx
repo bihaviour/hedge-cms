@@ -1,4 +1,3 @@
-import { roleAtLeast } from '@hedge/core'
 import { useState } from 'react'
 import { useSession } from '@/hooks/use-session'
 import { useT } from '@/lib/i18n'
@@ -16,19 +15,19 @@ type TabId = 'overview' | 'api' | 'email'
  * Each tab reuses its original page whole, header and all — so the pages stay usable in isolation
  * and this is only the shell that switches between them.
  *
- * The Email tab manages the deployment, not a site, so it appears only for instance admins — the
- * same gate the standalone Email settings entry carried in the sidebar. Overview and API are
- * site-scoped and open to whoever holds the site role.
+ * The Email tab manages the deployment, not a site, so it appears only for those who can manage
+ * email — the same `email:manage` gate the standalone Email settings entry carried in the sidebar.
+ * Overview and API are site-scoped and open to whoever holds the site role.
  */
 export function ConfigurationPage() {
   const t = useT()
   const session = useSession()
-  const isInstanceAdmin = session.data ? roleAtLeast(session.data.role, 'admin') : false
+  const canManageEmail = session.data?.permissions.includes('email:manage') ?? false
 
   const tabs: { id: TabId; label: MessageKey }[] = [
     { id: 'overview', label: 'config.tabOverview' },
     { id: 'api', label: 'config.tabApi' },
-    ...(isInstanceAdmin ? [{ id: 'email' as TabId, label: 'config.tabEmail' as MessageKey }] : []),
+    ...(canManageEmail ? [{ id: 'email' as TabId, label: 'config.tabEmail' as MessageKey }] : []),
   ]
 
   const [tab, setTab] = useState<TabId>('overview')
@@ -58,7 +57,7 @@ export function ConfigurationPage() {
 
       {active === 'overview' && <SiteSettingsPage />}
       {active === 'api' && <ApiKeysPage />}
-      {active === 'email' && isInstanceAdmin && <EmailSettingsPage />}
+      {active === 'email' && canManageEmail && <EmailSettingsPage />}
     </>
   )
 }

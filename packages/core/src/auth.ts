@@ -19,7 +19,13 @@ export const userSchema = z.object({
   id: z.string(),
   email: z.email(),
   name: z.string(),
-  role: z.enum(ROLES),
+  /** The role's slug — a built-in (`owner`/`admin`/`editor`/`viewer`) or a custom one. */
+  role: z.string(),
+  /**
+   * The instance permissions that role carries, resolved server-side. Drives the admin's UI gating
+   * (which is cosmetic — the server check is the real one). Empty for a role with no instance powers.
+   */
+  permissions: z.array(z.string()),
   createdAt: z.string(),
 })
 
@@ -42,7 +48,8 @@ export const passwordSchema = z.string().min(12, 'must be at least 12 characters
 export const inviteUserSchema = z.strictObject({
   email: z.email(),
   name: z.string().min(1).max(120),
-  role: z.enum(ROLES).default('editor'),
+  /** A role slug — built-in or custom. The route rejects one that names no existing role. */
+  role: z.string().default('editor'),
 })
 
 export type InviteUserInput = z.infer<typeof inviteUserSchema>

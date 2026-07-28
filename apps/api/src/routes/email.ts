@@ -23,7 +23,7 @@ import {
 import { EMAIL_CONFIG_ID, loadEmailConfig } from '../email/config'
 import { renderMessage } from '../email/render'
 import type { AppEnv } from '../env'
-import { requireActor, requireRole } from '../lib/auth'
+import { requireActor, requirePermission } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { validate, validateQuery } from '../lib/validate'
@@ -31,8 +31,8 @@ import { validate, validateQuery } from '../lib/validate'
 const app = new Hono<AppEnv>()
 
 // Email is deployment infrastructure — one binding, one from-domain — so managing it is an
-// instance-admin power, the same level that manages users and sites, not a per-site role.
-app.use('*', requireRole('admin'))
+// instance power, the same level that manages users and sites, not a per-site role.
+app.use('*', requirePermission('email:manage'))
 
 /* ------------------------------------------------------------------ *
  * Templates

@@ -64,6 +64,13 @@
       "when": 1785075160597,
       "tag": "0008_wooden_talkback",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785166758650,
+      "tag": "0009_smart_tombstone",
+      "breakpoints": true
     }
   ]
 }
