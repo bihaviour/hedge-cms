@@ -2,6 +2,7 @@ import {
   HEDGE_REPO,
   HEDGE_VERSION,
   isUpdateAvailable,
+  parseInstallMethod,
   type SystemVersion,
   systemUpdateSchema,
 } from '@hedge/core'
@@ -89,8 +90,12 @@ app.get('/version', requirePermission('system:read'), async (c) => {
     notesUrl: release?.html_url ?? null,
     publishedAt: release?.published_at ?? null,
     checkedAt: new Date().toISOString(),
-    // The deployment's own fork, if it told us — so the admin can deep-link its "Sync fork" page.
+    // The deployment's own repository, if it told us — so the admin can deep-link it.
     repoUrl: c.env.REPO_URL?.trim() || null,
+    // How it was installed, so the About page offers the update path that exists for it (#39).
+    // Anything unrecognised — including the empty default every older deployment has — resolves to
+    // null, which the admin reads as "show both paths, claim no repository".
+    installedBy: parseInstallMethod(c.env.INSTALLED_BY),
   }
   return c.json({ data: payload })
 })

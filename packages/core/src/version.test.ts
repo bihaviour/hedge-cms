@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { compareVersions, isUpdateAvailable, parseVersion } from './version'
+import { compareVersions, isUpdateAvailable, parseInstallMethod, parseVersion } from './version'
 
 describe('parseVersion', () => {
   test('parses x.y.z and tolerates a leading v', () => {
@@ -35,5 +35,31 @@ describe('isUpdateAvailable', () => {
 
   test('a null latest (the check could not reach GitHub) is never an update', () => {
     expect(isUpdateAvailable('0.1.0', null)).toBe(false)
+  })
+})
+
+describe('parseInstallMethod', () => {
+  test('recognises the three ways a deployment can exist', () => {
+    expect(parseInstallMethod('button')).toBe('button')
+    expect(parseInstallMethod('installer')).toBe('installer')
+    expect(parseInstallMethod('cli')).toBe('cli')
+  })
+
+  test('tolerates whitespace and casing, because this is a hand-typed deployment var', () => {
+    expect(parseInstallMethod('  Installer ')).toBe('installer')
+    expect(parseInstallMethod('BUTTON')).toBe('button')
+  })
+
+  /**
+   * The one that matters. Every deployment made before this var existed has it unset, and they must
+   * keep seeing correct instructions — `null` is read as "show both update paths, claim no
+   * repository", which is what the admin did before #39.
+   */
+  test('anything unrecognised degrades to null rather than to a guess', () => {
+    expect(parseInstallMethod('')).toBeNull()
+    expect(parseInstallMethod(undefined)).toBeNull()
+    expect(parseInstallMethod(null)).toBeNull()
+    expect(parseInstallMethod('terraform')).toBeNull()
+    expect(parseInstallMethod('installer ; drop table users')).toBeNull()
   })
 })

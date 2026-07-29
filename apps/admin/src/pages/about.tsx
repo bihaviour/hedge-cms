@@ -15,9 +15,20 @@ const UPSTREAM_URL = `https://github.com/${HEDGE_REPO}`
 
 /**
  * The running version, and — for instance admins — whether a newer Hedge release exists upstream and
- * how to move to it. An owner can update from here directly (`POST /api/v1/system/update`); everyone
- * else, and anyone who prefers it, gets a manual path that is correct for a cloned repository — the
- * deploy button creates a *clone*, not a fork, so there is no "Sync fork" button to point at.
+ * how to move to it.
+ *
+ * **Which instructions appear depends on how the deployment was installed** (#39). There are three
+ * ways in after Stage 2 of #31, and they do not share an update path:
+ *
+ * - all three — the dashboard update, for an owner (`POST /api/v1/system/update`)
+ * - `button` / `cli` — plus the git fallback, which is correct for a *clone*: the deploy button
+ *   clones rather than forks, so there is no "Sync fork" button to point at and the upstream has to
+ *   be added explicitly before merging
+ * - `installer` — no git fallback at all, because there is no repository. Offering one would tell
+ *   the operator to go somewhere that does not exist, which is worse than offering nothing
+ *
+ * `null` — every deployment installed before the var existed — gets both, claiming no relationship
+ * to a repository. That is the pre-#39 behaviour, and it is the safe reading of "we don't know".
  */
 export function AboutPage() {
   const session = useSession()
@@ -37,6 +48,10 @@ export function AboutPage() {
 
   const data = version.data
   const repoUrl = data?.repoUrl ?? null
+  // An installer deployment has no repository, so it is the one case with no git path to show.
+  // Unknown (`null`) keeps the git path: it is true for the button and the CLI, which are the only
+  // two ways a deployment predating this var can have been made.
+  const hasRepository = data ? data.installedBy !== 'installer' : true
 
   return (
     <>
@@ -109,29 +124,43 @@ export function AboutPage() {
                     </div>
                   )}
 
-                  {/* The manual path, always available and correct for a clone. A Cloudflare-created
-                      repository has no upstream, so it is added explicitly before merging. */}
-                  <div className="space-y-2">
+                  {/* The git fallback — for a deployment that has a repository. Correct for a
+                      clone: a Cloudflare-created repository has no upstream, so it is added
+                      explicitly before merging. */}
+                  {hasRepository && (
+                    <div className="space-y-2">
+                      <p className="text-muted-foreground text-sm">
+                        {canUpdate
+                          ? 'Or update manually:'
+                          : 'To update, from a checkout of your repository:'}
+                      </p>
+                      <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs">
+                        <code>
+                          {`git remote add upstream ${UPSTREAM_URL}\n`}
+                          {'git fetch upstream && git merge upstream/main && git push'}
+                        </code>
+                      </pre>
+                      <p className="text-muted-foreground text-xs">
+                        Cloudflare Workers Builds redeploys on the push and runs pending database
+                        migrations automatically. Skip the first line if you have already added the
+                        upstream remote.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Installed without a repository. There is nothing to sync, nothing to push and
+                      no Workers Build to trigger, so the dashboard update is the whole story — and
+                      the operator needs telling that rather than being left to wonder. */}
+                  {!hasRepository && (
                     <p className="text-muted-foreground text-sm">
                       {canUpdate
-                        ? 'Or update manually:'
-                        : 'To update, from a checkout of your repository:'}
+                        ? 'This deployment was created by the Hedge installer, so it has no Git repository to sync — updating from here is the way it updates.'
+                        : 'This deployment was created by the Hedge installer, so it has no Git repository to sync. An owner can update it from this page.'}
                     </p>
-                    <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs">
-                      <code>
-                        {`git remote add upstream ${UPSTREAM_URL}\n`}
-                        {'git fetch upstream && git merge upstream/main && git push'}
-                      </code>
-                    </pre>
-                    <p className="text-muted-foreground text-xs">
-                      Cloudflare Workers Builds redeploys on the push and runs pending database
-                      migrations automatically. Skip the first line if you have already added the
-                      upstream remote.
-                    </p>
-                  </div>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
-                    {repoUrl && (
+                    {repoUrl && hasRepository && (
                       <Button asChild size="sm" variant="outline">
                         <a href={repoUrl} target="_blank" rel="noreferrer">
                           Open your repository <ExternalLink className="size-3.5" />
