@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+artifact/
 .wrangler/
 .dev.vars
 .dev.vars.*

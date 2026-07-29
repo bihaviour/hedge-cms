@@ -33,6 +33,8 @@ import type {
   SiteAccess,
   SiteRole,
   Subscriber,
+  SystemUpdateInput,
+  SystemUpdateResult,
   SystemVersion,
   UpdateCollectionInput,
   UpdateEmailConfigInput,
@@ -374,6 +376,13 @@ export const api = {
   /** Deployment-level version and update awareness. Admin-only on the server. */
   system: {
     version: () => request<SystemVersion>('/system/version'),
+    /**
+     * Move the deployment to a newer release. Owner-only on the server. The Cloudflare token is sent
+     * once and never stored anywhere — not here, not on the server. The result carries a per-step
+     * outcome so a partial failure can be shown as one.
+     */
+    update: (input: SystemUpdateInput) =>
+      request<SystemUpdateResult>('/system/update', { method: 'POST', ...json(input) }),
   },
 }
 

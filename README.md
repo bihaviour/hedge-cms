@@ -96,14 +96,26 @@ R2 must be enabled on the account, since media lives there.
 
 ## Keeping a deployment up to date
 
-Your deployment is a fork, and every push to it redeploys, so updating is a **Sync fork** on GitHub
-or GitLab: pull this repository's new commits into your fork and Workers Builds rebuilds and applies
-any new database migrations on the way. Nothing else to run.
+**Settings → About & updates** shows the version the deployment runs and, when this project has cut
+a newer release, offers two ways to take it.
 
-The admin knows when there is something to sync. **Settings → About & updates** shows the version the
-deployment runs and, when this project has cut a newer release, a banner and the steps to take it.
-Set the `REPO_URL` variable to your fork's URL and that page links straight to its sync button —
-otherwise it links to the release notes.
+- **From the dashboard.** An owner clicks **Update now**, pastes a Cloudflare API token that carries
+  `Workers Scripts:Edit` and `D1:Edit`, and Hedge uploads the new release, applies pending
+  migrations, and deploys — in that order, so new code never serves against an un-migrated schema.
+  The token is used once and never stored, so the Worker holds no standing deploy credential.
+
+- **From Git.** The deploy button creates a *clone*, not a fork, so there is no "Sync fork" button —
+  add this repository as an upstream and merge it:
+
+  ```bash
+  git remote add upstream https://github.com/bihaviour/hedge-cms
+  git fetch upstream && git merge upstream/main && git push
+  ```
+
+  Workers Builds redeploys on the push and applies any new database migrations on the way.
+
+Both paths use the same migration bookkeeping, so switching between them never re-runs or skips one.
+Set the `REPO_URL` variable to your repository's URL and the About page links straight to it.
 
 ## Getting started locally
 
