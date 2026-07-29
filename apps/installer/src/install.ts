@@ -256,7 +256,7 @@ interface BindingContext {
  * keeps, and it is what makes an artifact built from a tag deployable on anybody's account. So each
  * declaration is filled in here with this account's own values.
  *
- * Two things are added that the manifest does not declare, and both are deliberate:
+ * Two are added when the manifest does not already declare them, and both are deliberate:
  *
  * - **`AUTH_SECRET`**, because it is a secret and secrets are not in `wrangler.jsonc` for the
  *   artifact to carry. Generating it is the single clearest UX win over the deploy button, which
@@ -265,6 +265,11 @@ interface BindingContext {
  *   dashboard updater (#35) has to find itself on the account. Without it, a deployment installed
  *   under any name but `hedge-cms` could never update from its own admin — and #39 would then be
  *   showing it an update path that does not work, which is the exact failure #39 exists to prevent.
+ *
+ * **Every binding name appears exactly once.** `wrangler.jsonc` declares `WORKER_NAME` as an empty
+ * var, so it arrives in the manifest and is filled in by `varValue` above; appending it again would
+ * send Cloudflare the same name twice, once empty, and leave which one wins to the API. The
+ * append-if-absent below is what keeps that from depending on the order two files happen to be in.
  */
 export function installBindings(manifest: HedgeManifest, ctx: BindingContext): CloudflareBinding[] {
   const bindings: CloudflareBinding[] = []
@@ -274,8 +279,13 @@ export function installBindings(manifest: HedgeManifest, ctx: BindingContext): C
     if (binding) bindings.push(binding)
   }
 
-  bindings.push({ type: 'secret_text', name: 'AUTH_SECRET', text: generateAuthSecret() })
-  bindings.push({ type: 'plain_text', name: 'WORKER_NAME', text: ctx.scriptName })
+  const declaredNames = new Set(bindings.map((binding) => binding.name))
+  const addIfAbsent = (binding: CloudflareBinding) => {
+    if (!declaredNames.has(binding.name)) bindings.push(binding)
+  }
+
+  addIfAbsent({ type: 'secret_text', name: 'AUTH_SECRET', text: generateAuthSecret() })
+  addIfAbsent({ type: 'plain_text', name: 'WORKER_NAME', text: ctx.scriptName })
   return bindings
 }
 
@@ -318,6 +328,10 @@ function varValue(declared: HedgeBinding, ctx: BindingContext): string {
       // #39 — the About page reads this to offer the update path that matches. An installer
       // deployment has no repository, so it must never be shown the git fallback.
       return 'installer'
+    case 'WORKER_NAME':
+      // The name the operator chose, so the deployment can address itself when it updates. Empty in
+      // the manifest, because a button or CLI deploy is always the `name` in `wrangler.jsonc`.
+      return ctx.scriptName
     case 'PUBLIC_URL':
       // Stays empty, always. The deployment answers on a generated workers.dev hostname, which is
       // exactly the case the request-origin fallback is right for, and a wrong value here 500s every

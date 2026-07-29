@@ -108,6 +108,9 @@ const MANIFEST: HedgeManifest = {
     { type: 'plain_text', name: 'EMAIL_FROM_NAME', text: 'Hedge CMS' },
     { type: 'plain_text', name: 'REPO_URL', text: '' },
     { type: 'plain_text', name: 'INSTALLED_BY', text: '' },
+    // Declared empty in `wrangler.jsonc`, so it reaches the manifest — the installer must fill it
+    // in rather than appending a second binding of the same name.
+    { type: 'plain_text', name: 'WORKER_NAME', text: '' },
   ],
   assets: { notFoundHandling: 'single-page-application', runWorkerFirst: ['/api/*'] },
   files: [],
@@ -280,6 +283,23 @@ describe('installBindings', () => {
 
   test('records the script name, so the deployment can update itself under a custom name', () => {
     expect(bindingByName(installBindings(MANIFEST, ctx), 'WORKER_NAME')?.text).toBe('demo')
+  })
+
+  test('never sends a binding name twice, whatever the manifest declares', () => {
+    // `WORKER_NAME` is declared in `wrangler.jsonc` *and* added by the installer; `AUTH_SECRET` is
+    // added only by the installer. Sending either name twice would leave which value wins to
+    // Cloudflare, and one of the two is always the empty one.
+    for (const manifest of [MANIFEST, { ...MANIFEST, bindings: [] }]) {
+      const names = installBindings(manifest, ctx).map((binding) => binding.name)
+      expect(names).toEqual([...new Set(names)])
+    }
+  })
+
+  test('still supplies AUTH_SECRET and WORKER_NAME when the manifest declares neither', () => {
+    const bare: HedgeManifest = { ...MANIFEST, bindings: [] }
+    const bindings = installBindings(bare, ctx)
+    expect(bindingByName(bindings, 'AUTH_SECRET')?.type).toBe('secret_text')
+    expect(bindingByName(bindings, 'WORKER_NAME')?.text).toBe('demo')
   })
 
   test('leaves PUBLIC_URL and REPO_URL empty', () => {
