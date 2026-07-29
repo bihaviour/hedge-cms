@@ -6,7 +6,7 @@ import { z } from 'zod'
  * together with the workspace `package.json` versions and a git tag when cutting a release; the
  * checklist is in `.claude/rules/workers-config.md`.
  */
-export const HEDGE_VERSION = '0.0.3'
+export const HEDGE_VERSION = '0.0.4'
 
 /**
  * The canonical upstream the update check compares a deployment against — deliberately *not* a
