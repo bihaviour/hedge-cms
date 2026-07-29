@@ -110,8 +110,6 @@ const NAV: {
       { title: 'nav.users', url: '/settings/users', permission: 'users:manage' },
       // Define the roles that users can be assigned, and the permissions each carries.
       { title: 'nav.roles', url: '/settings/roles', permission: 'roles:manage' },
-      // Sessions and connected clients — the deployment's security surface, like About/updates.
-      { title: 'nav.admin', url: '/settings/admin', permission: 'system:read' },
     ],
   },
 ]

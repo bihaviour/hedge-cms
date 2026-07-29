@@ -7,7 +7,6 @@ import { useSites } from '@/hooks/use-site'
 import { AboutPage } from '@/pages/about'
 import { AcceptInvitePage } from '@/pages/accept-invite'
 import { AccountPage } from '@/pages/account'
-import { AdminPage } from '@/pages/admin'
 import { CollectionSettingsPage } from '@/pages/collection-settings'
 import { CollectionsPage } from '@/pages/collections'
 import { ConfigurationPage } from '@/pages/configuration'
@@ -107,7 +106,6 @@ export function App() {
         <Route path="/settings/sites" element={<SitesPage />} />
         <Route path="/settings/users" element={<UsersPage />} />
         <Route path="/settings/roles" element={<RolesPage />} />
-        <Route path="/settings/admin" element={<AdminPage />} />
         <Route path="/settings/email/templates" element={<EmailTemplatesPage />} />
         <Route path="/settings/email/log" element={<EmailLogPage />} />
         <Route path="/settings/account" element={<AccountPage />} />
