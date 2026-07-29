@@ -76,7 +76,7 @@ describe('splitSqlStatements — synthetic edge cases', () => {
  * multi-line inserts and the constrained-comment rules, so agreement here is broad coverage.
  */
 describe('splitSqlStatements — committed migrations', () => {
-  const dir = join(import.meta.dir, '..', '..', 'migrations')
+  const dir = join(import.meta.dir, '..', '..', '..', 'apps', 'api', 'migrations')
   const files = readdirSync(dir).filter((name) => name.endsWith('.sql'))
 
   test('there are migrations to check', () => {

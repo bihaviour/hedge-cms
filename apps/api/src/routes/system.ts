@@ -2,6 +2,7 @@ import {
   HEDGE_REPO,
   HEDGE_VERSION,
   isUpdateAvailable,
+  parseInstallMethod,
   type SystemVersion,
   systemUpdateSchema,
 } from '@hedge/core'
@@ -89,8 +90,12 @@ app.get('/version', requirePermission('system:read'), async (c) => {
     notesUrl: release?.html_url ?? null,
     publishedAt: release?.published_at ?? null,
     checkedAt: new Date().toISOString(),
-    // The deployment's own fork, if it told us — so the admin can deep-link its "Sync fork" page.
+    // The deployment's own repository, if it told us — so the admin can deep-link it.
     repoUrl: c.env.REPO_URL?.trim() || null,
+    // How it was installed, so the About page offers the update path that exists for it (#39).
+    // Anything unrecognised — including the empty default every older deployment has — resolves to
+    // null, which the admin reads as "show both paths, claim no repository".
+    installedBy: parseInstallMethod(c.env.INSTALLED_BY),
   }
   return c.json({ data: payload })
 })
@@ -109,7 +114,9 @@ app.post('/update', requirePermission('system:update'), async (c) => {
   await throttle(c, 'system-update', { window: 300, max: 5 })
 
   const input = await validate(c, systemUpdateSchema)
-  const result = await runUpdate(input)
+  // A Worker is not told its own script name, so an installer deployment records the one it was
+  // uploaded under (#38). Empty for a button or CLI deploy, which is always `hedge-cms`.
+  const result = await runUpdate(input, { scriptName: c.env.WORKER_NAME })
   return c.json({ data: result })
 })
 

@@ -1,13 +1,15 @@
 import { type HedgeManifest, hedgeManifestSchema } from '@hedge/core'
 
 /**
- * Reads a release artifact — `hedge-<version>.tar.gz` — from inside the Worker: verify its checksum,
- * expand it with `DecompressionStream('gzip')` and a tar reader, and expose the files by path plus
- * the parsed `hedge.json`. This is the input the deploy client (`lib/cloudflare/`) works from.
+ * Reads a release artifact — `hedge-<version>.tar.gz`: verify its checksum, expand it with
+ * `DecompressionStream('gzip')` and a tar reader, and expose the files by path plus the parsed
+ * `hedge.json`. This is the input the deploy client (`./cloudflare/`) works from, for the updater
+ * moving a deployment forward and for the installer creating one.
  *
- * Memory is the real constraint (128 MB, and a careless read holds the artifact compressed *and*
- * expanded): the compressed bytes are dropped as soon as they are decompressed, and the tar reader
- * slices the single expanded buffer rather than copying each file out.
+ * Memory is the real constraint, set by the tighter of the two callers: the Worker has 128 MB, and a
+ * careless read holds the artifact compressed *and* expanded. So the compressed bytes are dropped as
+ * soon as they are decompressed, and the tar reader slices the single expanded buffer rather than
+ * copying each file out.
  */
 
 /** The three kinds of thing the artifact carries, over the flat file map the tar reader produces. */
@@ -90,7 +92,12 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 }
 
 async function gunzip(gzBytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([gzBytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  // The assertion is a types-only concession to this package having two homes: lib.dom narrows a
+  // blob part to `ArrayBufferView<ArrayBuffer>`, which a `Uint8Array` generic over `ArrayBufferLike`
+  // does not satisfy, while workerd's own types accept it. Both accept the value at run time.
+  const stream = new Blob([gzBytes as ArrayBufferView<ArrayBuffer>])
+    .stream()
+    .pipeThrough(new DecompressionStream('gzip'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Both halves live here: `server.ts` and `src/install.ts` run on Bun, `src/client.ts` runs in
+    // the operator's browser. One `lib` covers both — the split is enforced by which file imports
+    // what, not by the compiler.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["bun"],
+    "paths": {
+      "@hedge/core": ["../../packages/core/src/index.ts"],
+      "@hedge/deploy": ["../../packages/deploy/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "server.ts"]
+}

@@ -4,7 +4,7 @@ import { z } from 'zod'
  * The self-update surface, shared between three places that must agree on it:
  *
  * - the CI job (`scripts/build-artifact.ts`) that writes `hedge.json` into a release tarball,
- * - the Worker's artifact reader (`apps/api/src/lib/artifact.ts`) that parses it back,
+ * - the artifact reader (`packages/deploy/src/artifact.ts`) that parses it back,
  * - the update route (`POST /api/v1/system/update`) and the admin dialog that drive an update.
  *
  * Keeping the shapes here means the artifact a release publishes and the code that unpacks it are
@@ -41,7 +41,7 @@ export const hedgeAssetSchema = z.object({
    * The 32-character hex hash the assets-upload-session manifest is keyed on. This is wrangler's
    * algorithm — `sha256(base64(contents) + extension).slice(0, 32)` — not a plain content hash, so
    * an upload session compares like-for-like and re-uploads only what changed. Getting it wrong
-   * re-uploads every asset on every update, silently. See `lib/cloudflare/assets.ts`.
+   * re-uploads every asset on every update, silently. See `packages/deploy/src/cloudflare/assets.ts`.
    */
   hash: z.string().length(32),
   /** The `Content-Type` Cloudflare should serve the asset with — derived from the path in CI. */

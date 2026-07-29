@@ -19,6 +19,7 @@
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.25",
     "@hedge/core": "workspace:*",
+    "@hedge/deploy": "workspace:*",
     "better-auth": "1.6.25",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.32",

@@ -46,10 +46,31 @@ export function isUpdateAvailable(current: string, latest: string | null): boole
 }
 
 /**
+ * How a deployment came to exist. There are three ways after Stage 2 of issue #31, and they do not
+ * share an update path — an installer deployment has no repository at all, so offering it the git
+ * fallback sends the operator somewhere that does not exist.
+ */
+export const INSTALL_METHODS = ['button', 'installer', 'cli'] as const
+export const installMethodSchema = z.enum(INSTALL_METHODS)
+export type InstallMethod = z.infer<typeof installMethodSchema>
+
+/**
+ * Read the `INSTALLED_BY` var, tolerating anything.
+ *
+ * **Unknown has to degrade to something safe and true**, because every deployment that existed
+ * before this var will never have it set, and they must keep seeing correct instructions. `null`
+ * means "show the dashboard update *and* the git fallback, claiming no relationship to a
+ * repository" — which is exactly what the admin did before this existed.
+ */
+export function parseInstallMethod(value: string | undefined | null): InstallMethod | null {
+  const parsed = installMethodSchema.safeParse(value?.trim().toLowerCase())
+  return parsed.success ? parsed.data : null
+}
+
+/**
  * What `GET /api/v1/system/version` reports: the running version, the latest upstream release if
  * the check could reach GitHub (`null` if it couldn't — the admin treats that as "no update"
- * rather than an error), and enough to link the operator to the release notes and their own fork's
- * sync page.
+ * rather than an error), and enough to show the operator an update path that exists for them.
  */
 export const systemVersionSchema = z.object({
   current: z.string(),
@@ -59,8 +80,14 @@ export const systemVersionSchema = z.object({
   notesUrl: z.string().nullable(),
   publishedAt: z.string().nullable(),
   checkedAt: z.string(),
-  /** The deployment's own repo (`REPO_URL`) if set, so the admin can deep-link the fork sync. */
+  /** The deployment's own repo (`REPO_URL`) if set, so the admin can deep-link it. */
   repoUrl: z.string().nullable(),
+  /**
+   * How this deployment was installed, or `null` when it never said. A **display value only** —
+   * it decides which instructions the About page renders and nothing else, and nothing trusts it.
+   * A wrong value costs an unhelpful instruction, never access.
+   */
+  installedBy: installMethodSchema.nullable(),
 })
 
 export type SystemVersion = z.infer<typeof systemVersionSchema>

@@ -11,11 +11,32 @@ export interface Bindings {
   APP_NAME: string
   PUBLIC_URL: string
   /**
-   * The deployment's own GitHub/GitLab repository — the fork the deploy button created. Empty by
-   * default; when set, the admin's update notice can deep-link its "Sync fork" page. It changes
-   * nothing about how the Worker runs, only where the "how do I update" link points.
+   * The deployment's own GitHub/GitLab repository — the repository the deploy button cloned. Empty
+   * by default; when set, the admin's update notice can deep-link it. It changes nothing about how
+   * the Worker runs, only where the "how do I update" link points.
    */
   REPO_URL: string
+  /**
+   * How this deployment came to exist: `button`, `installer`, `cli`, or empty.
+   *
+   * A **display value only** — nothing about how the Worker runs reads it, and nothing trusts it. It
+   * exists because the three install paths do not share an update path: an installer deployment has
+   * no repository, so offering it the git fallback sends the operator somewhere that does not exist.
+   * Empty is the honest default for every deployment that predates this, and means "show the
+   * dashboard update and the git fallback, claiming no relationship to a repository". A wrong value
+   * costs an unhelpful instruction, never access. See issue #39.
+   */
+  INSTALLED_BY: string
+  /**
+   * The Cloudflare script name this Worker was uploaded under, when it isn't the `hedge-cms` in
+   * `wrangler.jsonc`. Empty for a button or CLI deployment; set by the installer, which lets the
+   * operator name the deployment.
+   *
+   * The runtime is not told its own script name, and the dashboard updater (#35) has to address the
+   * script it is running as. Without this, a deployment installed under any other name could not
+   * update itself.
+   */
+  WORKER_NAME: string
   EMAIL_FROM: string
   EMAIL_FROM_NAME: string
 

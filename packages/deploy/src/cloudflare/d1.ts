@@ -45,3 +45,32 @@ export async function findDatabaseId(
   )
   return result.find((db) => db.name === name)?.uuid ?? null
 }
+
+/**
+ * Create a database, or return the id of the one already carrying this name.
+ *
+ * The installer (#38) is resumable, and that hinges on this being safe to call twice: a retry after
+ * a half-finished install must find the database it already made rather than creating a second one
+ * the operator then pays for and cannot identify. So the name is looked up first, and a creation
+ * that loses a race is resolved by looking it up again rather than failing.
+ */
+export async function createDatabase(
+  client: CloudflareClient,
+  name: string,
+): Promise<{ id: string; created: boolean }> {
+  const existing = await findDatabaseId(client, name)
+  if (existing) return { id: existing, created: false }
+
+  try {
+    const result = await client.request<{ uuid: string }>(
+      'POST',
+      `/accounts/${client.accountId}/d1/database`,
+      { name },
+    )
+    return { id: result.uuid, created: true }
+  } catch (error) {
+    const raced = await findDatabaseId(client, name)
+    if (raced) return { id: raced, created: false }
+    throw error
+  }
+}
