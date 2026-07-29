@@ -1,24 +1,32 @@
-import { HEDGE_VERSION } from '@hedge/core'
+import { HEDGE_REPO, HEDGE_VERSION } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { UpdateDialog } from '@/components/update-dialog'
 import { useSession } from '@/hooks/use-session'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/i18n'
 
+const UPSTREAM_URL = `https://github.com/${HEDGE_REPO}`
+
 /**
- * The running version, and — for instance admins — whether a newer Hedge release exists upstream
- * and how to move to it. Updating is deliberately guided rather than automatic: a deployment is the
- * operator's own fork that Cloudflare Workers Builds redeploys on push, so the update happens on
- * GitHub (or GitLab), not from inside a Worker that holds no deploy credentials.
+ * The running version, and — for instance admins — whether a newer Hedge release exists upstream and
+ * how to move to it. An owner can update from here directly (`POST /api/v1/system/update`); everyone
+ * else, and anyone who prefers it, gets a manual path that is correct for a cloned repository — the
+ * deploy button creates a *clone*, not a fork, so there is no "Sync fork" button to point at.
  */
 export function AboutPage() {
   const session = useSession()
   const { formatDateTime } = useFormatters()
-  const isAdmin = session.data?.permissions.includes('system:read') ?? false
+  const permissions = session.data?.permissions ?? []
+  const isAdmin = permissions.includes('system:read')
+  const canUpdate = permissions.includes('system:update')
+
+  const [updateOpen, setUpdateOpen] = useState(false)
 
   const version = useQuery({
     queryKey: ['system-version'],
@@ -87,25 +95,46 @@ export function AboutPage() {
                     )}
                   </p>
 
-                  {/* The deploy model is fork → Workers Builds → redeploy, so updating is a sync on
-                      the operator's own repository. Migrations run in the deploy script, so there
-                      is no separate database step to remember. */}
-                  <ol className="ml-4 list-decimal space-y-1 text-muted-foreground text-sm">
-                    <li>Open your Hedge fork on GitHub or GitLab.</li>
-                    <li>
-                      Use <strong>Sync fork → Update branch</strong> to pull in the new release.
-                    </li>
-                    <li>
+                  {/* The dashboard update: owner-only, gated with the same permission the server
+                      enforces (UI gating is cosmetic — the server check in #35 is the real one). */}
+                  {canUpdate && data.latest && (
+                    <div className="space-y-2">
+                      <Button size="sm" onClick={() => setUpdateOpen(true)}>
+                        <ArrowUpCircle className="size-4" /> Update now
+                      </Button>
+                      <p className="text-muted-foreground text-xs">
+                        Deploys the new release from here using a Cloudflare API token you paste
+                        once. The token is never stored.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* The manual path, always available and correct for a clone. A Cloudflare-created
+                      repository has no upstream, so it is added explicitly before merging. */}
+                  <div className="space-y-2">
+                    <p className="text-muted-foreground text-sm">
+                      {canUpdate
+                        ? 'Or update manually:'
+                        : 'To update, from a checkout of your repository:'}
+                    </p>
+                    <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs">
+                      <code>
+                        {`git remote add upstream ${UPSTREAM_URL}\n`}
+                        {'git fetch upstream && git merge upstream/main && git push'}
+                      </code>
+                    </pre>
+                    <p className="text-muted-foreground text-xs">
                       Cloudflare Workers Builds redeploys on the push and runs pending database
-                      migrations automatically.
-                    </li>
-                  </ol>
+                      migrations automatically. Skip the first line if you have already added the
+                      upstream remote.
+                    </p>
+                  </div>
 
                   <div className="flex flex-wrap gap-2">
                     {repoUrl && (
-                      <Button asChild size="sm">
+                      <Button asChild size="sm" variant="outline">
                         <a href={repoUrl} target="_blank" rel="noreferrer">
-                          Open your fork to sync <ExternalLink className="size-3.5" />
+                          Open your repository <ExternalLink className="size-3.5" />
                         </a>
                       </Button>
                     )}
@@ -129,6 +158,10 @@ export function AboutPage() {
           )}
         </Card>
       </div>
+
+      {data?.latest && (
+        <UpdateDialog open={updateOpen} onOpenChange={setUpdateOpen} targetVersion={data.latest} />
+      )}
     </>
   )
 }

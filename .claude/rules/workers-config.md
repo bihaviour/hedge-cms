@@ -72,14 +72,26 @@ The running version lives in **one** place, `HEDGE_VERSION` in `packages/core/sr
 the API health route, the MCP `serverInfo` and the admin all import. `GET /api/v1/system/version`
 (admin-only) compares it against the latest GitHub Release of `HEDGE_REPO` — cached in the edge Cache
 API, because the unauthenticated GitHub API is rate-limited per shared egress IP — and the admin
-surfaces "an update is available" from that. A deployment updates by syncing its fork, which Workers
-Builds redeploys; the Worker never redeploys itself.
+surfaces "an update is available" from that.
+
+**The Worker can now redeploy itself** (`POST /api/v1/system/update`, issue #35) — this reverses the
+invariant that used to sit here, "the Worker never redeploys itself". It still holds *at rest*: the
+Worker never stores a Cloudflare token. The token that carries `Workers Scripts:Edit` arrives in the
+request body, is used once by `lib/update.ts`, and is discarded — never written to D1, logged, or
+returned. Syncing the fork (Workers Builds redeploys) remains a valid path; the dashboard update is
+the one for a deployment with no upstream to sync from. Both apply the same migrations to the same
+`d1_migrations` table, so they don't fight.
 
 Cutting a release (SemVer):
 
 1. Bump `HEDGE_VERSION` and the `version` in the root and workspace `package.json` files together.
 2. Commit, tag `vX.Y.Z`, and cut a **GitHub Release** on that tag — the update check reads the
    latest non-draft, non-prerelease release, so a plain tag with no release is invisible to it.
+3. The `Release artifact` workflow (`.github/workflows/release.yml`) builds `hedge-<version>.tar.gz`
+   and its `.sha256` and attaches them to the release. The in-Worker updater deploys from that
+   artifact, so a release without it can be *seen* by the update check but not *applied* — confirm
+   the two assets are attached before announcing the release. `bun run build:artifact` reproduces
+   them locally from a clean tree if the workflow needs re-running.
 
 The check ignores drafts and prereleases, so work-in-progress tags don't nudge self-hosters.
 

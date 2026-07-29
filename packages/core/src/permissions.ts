@@ -23,6 +23,7 @@ export const INSTANCE_PERMISSIONS = [
   'email:manage',
   'roles:manage',
   'system:read',
+  'system:update',
 ] as const
 
 export type InstancePermission = (typeof INSTANCE_PERMISSIONS)[number]
@@ -37,6 +38,7 @@ export const INSTANCE_PERMISSION_LABELS: Record<InstancePermission, string> = {
   'email:manage': 'Manage deployment email settings, templates and the send log',
   'roles:manage': 'Define roles and the permissions they carry',
   'system:read': 'See the deployment version and whether an update is available',
+  'system:update': 'Update the deployment to a newer release from the dashboard',
 }
 
 export function isInstancePermission(value: string): value is InstancePermission {

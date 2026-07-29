@@ -6,9 +6,9 @@ import { api } from '@/lib/api'
 
 /**
  * A one-line nudge, shown only to instance admins when the upstream project has cut a newer release
- * than this deployment runs. It links to the About page where the how-to-update steps live: the
- * Worker can't redeploy itself, so this points at the person who can rather than pretending to be a
- * button that updates in place.
+ * than this deployment runs. It links to the About page, where an owner can update from the
+ * dashboard and everyone else finds the manual steps — the banner itself stays a link, not a button,
+ * so the actual update (and its Cloudflare token) is confined to the page built for it.
  */
 export function UpdateBanner({ user }: { user: User }) {
   const isAdmin = user.permissions.includes('system:read')

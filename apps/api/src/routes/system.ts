@@ -1,7 +1,16 @@
-import { HEDGE_REPO, HEDGE_VERSION, isUpdateAvailable, type SystemVersion } from '@hedge/core'
+import {
+  HEDGE_REPO,
+  HEDGE_VERSION,
+  isUpdateAvailable,
+  type SystemVersion,
+  systemUpdateSchema,
+} from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
 import { requirePermission } from '../lib/auth'
+import { throttle } from '../lib/throttle'
+import { runUpdate } from '../lib/update'
+import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
@@ -84,6 +93,24 @@ app.get('/version', requirePermission('system:read'), async (c) => {
     repoUrl: c.env.REPO_URL?.trim() || null,
   }
   return c.json({ data: payload })
+})
+
+/**
+ * Update the deployment to a newer release. `system:update` is owner-only (the built-in `admin` role
+ * doesn't carry it) — one step above the `system:read` gate on `/version`, because this rewrites the
+ * deployment rather than reporting on it.
+ *
+ * The token in the body is the operator's Cloudflare API token, presented once and never persisted:
+ * it lives only for this request, inside the deploy client. `/api/v1/system` is in `ADMIN_PREFIXES`,
+ * so only an admin session reaches here at all; the `system:update` permission narrows that to owner.
+ */
+app.post('/update', requirePermission('system:update'), async (c) => {
+  // A retried update is expensive for the Cloudflare API and for the deployment. Rate-limit it.
+  await throttle(c, 'system-update', { window: 300, max: 5 })
+
+  const input = await validate(c, systemUpdateSchema)
+  const result = await runUpdate(input)
+  return c.json({ data: result })
 })
 
 export default app
