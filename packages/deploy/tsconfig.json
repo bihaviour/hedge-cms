@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // No `rootDir`: `artifact.test.ts` reaches into `scripts/artifact-lib` to round-trip the writer
+    // through the reader, which is the point of that test and is outside `src` by design.
+    // `DOM` for `fetch`, `FormData`, `Blob` and the compression streams: this package runs in the
+    // Worker *and* in the installer's local runner, so it targets what both have rather than either
+    // one's runtime types.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "bun"],
+    "paths": {
+      "@hedge/core": ["../../packages/core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

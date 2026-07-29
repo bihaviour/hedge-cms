@@ -66,6 +66,7 @@
     "dev": "bun run --filter '*' dev",
     "dev:api": "bun run --cwd apps/api dev",
     "dev:admin": "bun run --cwd apps/admin dev",
+    "installer": "bun run --cwd apps/installer start",
     "build": "bun run --cwd packages/core build && bun run --cwd apps/admin build && bun run --cwd apps/api build",
     "build:artifact": "bun run scripts/build-artifact.ts",
     "deploy": "bun run build && bun run db:migrate:remote && bun run --cwd apps/api deploy",

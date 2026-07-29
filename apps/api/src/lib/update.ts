@@ -6,23 +6,29 @@ import {
   type SystemUpdateInput,
   type SystemUpdateResult,
 } from '@hedge/core'
-import type { Artifact } from './artifact'
-import { fetchArtifact } from './artifact'
-import { createAssetUploadSession, uploadAssets } from './cloudflare/assets'
-import { type CloudflareClient, CloudflareError, cloudflareClient } from './cloudflare/client'
-import { d1Query, findDatabaseId } from './cloudflare/d1'
 import {
+  type Artifact,
   type CloudflareBinding,
+  type CloudflareClient,
+  CloudflareError,
+  cloudflareClient,
+  createAssetUploadSession,
   createDeployment,
   currentVersionId,
+  d1Query,
+  fetchReleaseArtifact,
+  findDatabaseId,
   findVersionByTag,
+  type GithubRelease,
   inheritBindings,
   readScriptSettings,
+  releaseByTag,
+  runMigrations,
+  uploadAssets,
   uploadVersion,
-} from './cloudflare/scripts'
-import { verifyToken } from './cloudflare/tokens'
+  verifyToken,
+} from '@hedge/deploy'
 import { ApiError } from './errors'
-import { runMigrations } from './migrate'
 
 /**
  * Moves a deployment from the running version to a newer release (#35).
@@ -37,9 +43,14 @@ import { runMigrations } from './migrate'
  */
 
 /**
- * The Worker's script name on Cloudflare — the `name` in `wrangler.jsonc`. The runtime is not told
- * its own script name, so this is the one assumption the updater makes about the deployment; a
- * renamed script is reported as "not found" rather than mutating the wrong Worker.
+ * The Worker's script name on Cloudflare — the `name` in `wrangler.jsonc`, which is what a button or
+ * CLI deployment is always called. The runtime is not told its own script name, so this is the one
+ * assumption the updater makes about the deployment, and a script that doesn't answer to it is
+ * reported as "not found" rather than having the wrong Worker mutated in its place.
+ *
+ * An installer deployment (#38) may be named anything, so it writes its own name into the
+ * `WORKER_NAME` var and the caller passes that in. Without it, a deployment installed under any
+ * other name could never update itself — while the About page told it that it could.
  */
 const WORKER_NAME = 'hedge-cms'
 const D1_DATABASE_NAME = 'hedge-db'
@@ -53,8 +64,11 @@ interface Preflight {
   tag: string
 }
 
-export async function runUpdate(input: SystemUpdateInput): Promise<SystemUpdateResult> {
-  const pre = await preflight(input)
+export async function runUpdate(
+  input: SystemUpdateInput,
+  options: { scriptName?: string } = {},
+): Promise<SystemUpdateResult> {
+  const pre = await preflight(input, options.scriptName?.trim() || WORKER_NAME)
   const { client, scriptName, databaseId, artifact, tag } = pre
   const manifest = artifact.manifest
 
@@ -134,7 +148,7 @@ export async function runUpdate(input: SystemUpdateInput): Promise<SystemUpdateR
  * Verify everything before mutating anything. A missing token permission fails here, naming what is
  * missing — never half-way through an update.
  */
-async function preflight(input: SystemUpdateInput): Promise<Preflight> {
+async function preflight(input: SystemUpdateInput, scriptName: string): Promise<Preflight> {
   const client = cloudflareClient(input.accountId, input.token)
 
   // The token is live at all.
@@ -156,7 +170,7 @@ async function preflight(input: SystemUpdateInput): Promise<Preflight> {
   // forward, and proves Workers Scripts access — a 403 here names the missing permission.
   let settings: Awaited<ReturnType<typeof readScriptSettings>>
   try {
-    settings = await readScriptSettings(client, WORKER_NAME)
+    settings = await readScriptSettings(client, scriptName)
   } catch (error) {
     if (error instanceof CloudflareError && error.isAuthFailure) {
       throw ApiError.badRequest(
@@ -164,9 +178,7 @@ async function preflight(input: SystemUpdateInput): Promise<Preflight> {
       )
     }
     if (error instanceof CloudflareError && error.status === 404) {
-      throw ApiError.badRequest(
-        `No Worker named "${WORKER_NAME}" was found on this account. A renamed deployment can't be updated from here yet.`,
-      )
+      throw ApiError.badRequest(`No Worker named "${scriptName}" was found on this account.`)
     }
     throw error
   }
@@ -216,7 +228,7 @@ async function preflight(input: SystemUpdateInput): Promise<Preflight> {
 
   return {
     client,
-    scriptName: WORKER_NAME,
+    scriptName,
     databaseId,
     currentBindings: settings.bindings,
     artifact,
@@ -277,38 +289,25 @@ function mergeBindings(current: CloudflareBinding[], manifest: HedgeManifest): C
   return [...inherited, ...added]
 }
 
+/**
+ * Resolve the target release and verify its artifact. The mechanics live in `@hedge/deploy` because
+ * the installer resolves a release the same way; what stays here is turning each failure into the
+ * `ApiError` the route renders, so an operator sees "the release has no artifact" rather than a
+ * stack trace.
+ */
 async function fetchTargetArtifact(tag: string): Promise<Artifact> {
-  const release = await githubReleaseByTag(tag)
-  const tarball = release.assets.find((a) => a.name.endsWith('.tar.gz'))
-  const checksum = release.assets.find((a) => a.name.endsWith('.tar.gz.sha256'))
-  if (!tarball || !checksum) {
-    throw ApiError.badRequest(`Release ${tag} has no Hedge update artifact attached.`)
+  let release: GithubRelease
+  try {
+    release = await releaseByTag(HEDGE_REPO, tag)
+  } catch (error) {
+    throw ApiError.badRequest(`${describe(error)}.`)
   }
 
-  const checksumBody = await (await fetch(checksum.browser_download_url)).text()
-  const expected = checksumBody.trim().split(/\s+/)[0] ?? ''
   try {
-    return await fetchArtifact(tarball.browser_download_url, expected)
+    return await fetchReleaseArtifact(release)
   } catch (error) {
     throw ApiError.badRequest(`Could not verify the release artifact: ${describe(error)}`)
   }
-}
-
-interface GithubRelease {
-  assets: Array<{ name: string; browser_download_url: string }>
-}
-
-async function githubReleaseByTag(tag: string): Promise<GithubRelease> {
-  const response = await fetch(`https://api.github.com/repos/${HEDGE_REPO}/releases/tags/${tag}`, {
-    headers: {
-      accept: 'application/vnd.github+json',
-      'user-agent': `hedge-cms/${HEDGE_VERSION}`,
-    },
-  })
-  if (!response.ok) {
-    throw ApiError.badRequest(`Could not find release ${tag} upstream (HTTP ${response.status}).`)
-  }
-  return (await response.json()) as GithubRelease
 }
 
 function describe(error: unknown): string {

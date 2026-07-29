@@ -109,7 +109,9 @@ app.post('/update', requirePermission('system:update'), async (c) => {
   await throttle(c, 'system-update', { window: 300, max: 5 })
 
   const input = await validate(c, systemUpdateSchema)
-  const result = await runUpdate(input)
+  // A Worker is not told its own script name, so an installer deployment records the one it was
+  // uploaded under (#38). Empty for a button or CLI deploy, which is always `hedge-cms`.
+  const result = await runUpdate(input, { scriptName: c.env.WORKER_NAME })
   return c.json({ data: result })
 })
 

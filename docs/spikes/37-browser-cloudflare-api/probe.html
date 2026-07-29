@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike #37 — Cloudflare API from a browser</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        max-width: 46rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+      }
+      code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+      label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+      input { width: 100%; padding: 0.5rem; font: inherit; box-sizing: border-box; }
+      button { margin-top: 1rem; padding: 0.6rem 1.1rem; font: inherit; cursor: pointer; }
+      li { margin: 0.4rem 0; }
+      .blocked { color: #b00; }
+      .allowed { color: #060; }
+      .note { color: #555; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike #37 — can a browser call the Cloudflare API?</h1>
+
+    <p>
+      Runs the six calls the Hedge installer needs, from whatever origin this page is loaded from.
+      Open it twice — once over <code>http(s)://</code>, once straight from disk as
+      <code>file://</code> — because they are different origins and
+      <a href="https://github.com/bihaviour/hedge-cms/issues/37">#37</a> asks about both. A
+      <code>file://</code> page has an <em>opaque</em> origin and sends <code>Origin: null</code>; it
+      is not exempt from the check.
+    </p>
+
+    <p class="note">
+      Your token is used only by the <code>fetch</code> calls on this page and is never sent
+      anywhere else. Use a throwaway token scoped to <code>Workers Scripts:Edit</code>,
+      <code>D1:Edit</code> and <code>Workers R2 Storage:Edit</code>, and delete it when you are done.
+      Nothing here creates a resource: every call is either read-only or deliberately malformed, so a
+      request that gets past CORS still fails at Cloudflare rather than provisioning anything.
+    </p>
+
+    <label for="account">Cloudflare account id</label>
+    <input id="account" placeholder="32 hex characters" autocomplete="off" />
+
+    <label for="token">API token</label>
+    <input id="token" type="password" placeholder="Cloudflare API token" autocomplete="off" />
+
+    <button id="run" type="button">Run the probes</button>
+
+    <h2>Result</h2>
+    <p id="origin" class="note"></p>
+    <ul id="results"></ul>
+    <p id="verdict"></p>
+
+    <script type="module">
+      const API_BASE = 'https://api.cloudflare.com/client/v4'
+      const SCRIPT = 'hedge-cms'
+
+      // Every one of these carries an Authorization header, which is not CORS-safelisted, so every
+      // one is preflighted — including the plain GET. There is no "simple request" path here.
+      const probes = (account) => [
+        { label: 'token verify', method: 'GET', path: '/user/tokens/verify' },
+        {
+          label: 'create D1 database',
+          method: 'POST',
+          path: `/accounts/${account}/d1/database`,
+          json: {},
+        },
+        {
+          label: 'create R2 bucket',
+          method: 'POST',
+          path: `/accounts/${account}/r2/buckets`,
+          json: {},
+        },
+        {
+          label: 'assets upload session',
+          method: 'POST',
+          path: `/accounts/${account}/workers/scripts/${SCRIPT}/assets-upload-session`,
+          json: { manifest: {} },
+        },
+        {
+          // multipart/form-data is itself a safelisted Content-Type; the bearer header is what
+          // preflights this, exactly as on every other row.
+          label: 'assets upload (multipart + JWT)',
+          method: 'POST',
+          path: `/accounts/${account}/workers/assets/upload?base64=true`,
+          form: true,
+        },
+        {
+          label: 'upload + deploy Worker',
+          method: 'PUT',
+          path: `/accounts/${account}/workers/scripts/${SCRIPT}`,
+          form: true,
+        },
+      ]
+
+      const $ = (id) => document.getElementById(id)
+
+      document.getElementById('run').addEventListener('click', async () => {
+        const account = $('account').value.trim() || '0'.repeat(32)
+        const token = $('token').value.trim()
+        const list = $('results')
+        list.textContent = ''
+        $('verdict').textContent = ''
+        $('origin').textContent = `Origin: ${window.location.origin} — ${window.location.protocol}`
+
+        let allowed = 0
+        for (const probe of probes(account)) {
+          const item = document.createElement('li')
+          item.textContent = `${probe.label}: running…`
+          list.append(item)
+
+          try {
+            const body = probe.form ? new FormData() : probe.json && JSON.stringify(probe.json)
+            if (probe.form) body.append('metadata', new Blob(['{}'], { type: 'application/json' }))
+
+            const response = await fetch(`${API_BASE}${probe.path}`, {
+              method: probe.method,
+              headers: {
+                authorization: `Bearer ${token}`,
+                // Set only for the JSON calls: adding it to a FormData request would override the
+                // multipart boundary the runtime generates.
+                ...(probe.json ? { 'content-type': 'application/json' } : {}),
+              },
+              ...(body ? { body } : {}),
+            })
+
+            // Reaching here at all means CORS permitted the request. A 4xx from Cloudflare is a
+            // *pass* for this probe: the browser let it through and the API answered.
+            allowed++
+            item.className = 'allowed'
+            item.textContent = `ALLOWED — ${probe.label} (HTTP ${response.status}; CORS did not block it)`
+          } catch (error) {
+            // A CORS failure is indistinguishable from a network failure by design — the browser
+            // withholds the detail. The console shows the real reason.
+            item.className = 'blocked'
+            item.textContent = `BLOCKED — ${probe.label} (${error}) — see the console for the CORS message`
+          }
+        }
+
+        const total = probes(account).length
+        $('verdict').textContent =
+          allowed === total
+            ? `All ${total} calls were permitted. CORS is supported from this origin — the installer could be a static page, and spike #37 needs revisiting.`
+            : `${allowed}/${total} calls were permitted. The installer needs a same-origin proxy, which is what #37 concluded.`
+      })
+    </script>
+  </body>
+</html>

@@ -69,10 +69,21 @@
     // in the admin under Settings → Email, which is the easier place to change it after the fact.
     "EMAIL_FROM": "",
     "EMAIL_FROM_NAME": "Hedge CMS",
-    // The fork this deployment was created from. Left empty: the update notice works without it
-    // (it links to the upstream release notes), and with it the admin can deep-link the fork's
-    // "Sync fork" page. It changes nothing about how the Worker runs.
-    "REPO_URL": ""
+    // The repository this deployment was created from. Left empty: the update notice works without
+    // it (it links to the upstream release notes), and with it the admin can deep-link the
+    // repository. It changes nothing about how the Worker runs.
+    "REPO_URL": "",
+    // How the deployment was installed — `button`, `installer` or `cli` — so the About page offers
+    // the update path that actually exists for it. A deploy-button setup page prompts for this; the
+    // installer sets it itself. Empty is safe and true for anything that predates it: the admin
+    // then shows the dashboard update *and* the git fallback, claiming no repository relationship.
+    // Display only. Nothing about how the Worker runs reads it. See issue #39.
+    "INSTALLED_BY": "",
+    // The Cloudflare script name, when it is not the `name` at the top of this file. A Worker is
+    // not told its own script name at run time and the dashboard updater has to address itself, so
+    // the installer — which lets the operator name the deployment — records the name here. Leave
+    // empty for a button or CLI deploy: those are always `hedge-cms`.
+    "WORKER_NAME": ""
   }
 
   // AUTH_SECRET is the only secret. Locally it goes in `.dev.vars`; in a deployment it is set

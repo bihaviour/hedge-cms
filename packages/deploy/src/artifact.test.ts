@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import type { HedgeManifest } from '@hedge/core'
-import { assetEntry, createTar, type TarEntry } from '../../../../scripts/artifact-lib'
+import { assetEntry, createTar, type TarEntry } from '../../../scripts/artifact-lib'
 import { readArtifact } from './artifact'
 
 /**
- * Round-trips the writer (`scripts/artifact-lib`) through the reader (`lib/artifact`): what CI packs
+ * Round-trips the writer (`scripts/artifact-lib`) through the reader (`@hedge/deploy`): what CI packs
  * is exactly what the Worker unpacks. Uses recorded, in-memory bytes — CI never touches Cloudflare.
  */
 

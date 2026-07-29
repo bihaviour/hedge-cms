@@ -1,4 +1,4 @@
-import type { CloudflareClient } from './client'
+import { type CloudflareClient, CloudflareError } from './client'
 
 /**
  * The Workers Scripts endpoints an update walks: read the running script's settings (to carry its
@@ -112,7 +112,11 @@ export async function uploadVersion(
   for (const mod of input.modules) {
     form.append(
       mod.name,
-      new Blob([mod.content], { type: 'application/javascript+module' }),
+      // Asserted for the same reason as the blob in `artifact.ts` — lib.dom and workerd disagree
+      // on which `Uint8Array` is a valid blob part, and only one of the two is this package's home.
+      new Blob([mod.content as string | ArrayBufferView<ArrayBuffer>], {
+        type: 'application/javascript+module',
+      }),
       mod.name,
     )
   }
@@ -168,6 +172,64 @@ export async function currentVersionId(
   if (!latest) return null
   // A simple single-version deployment is the only shape Hedge ever creates.
   return latest.versions.find((v) => v.percentage === 100)?.version_id ?? null
+}
+
+/**
+ * Whether a script of this name already exists on the account.
+ *
+ * The installer asks before naming a deployment: writing a version to a name someone else's Worker
+ * already occupies would overwrite it, and the operator would find out afterwards. A 404 is the
+ * answer we want here, not a failure — anything else is a real error and is re-thrown.
+ */
+export async function scriptExists(client: CloudflareClient, scriptName: string): Promise<boolean> {
+  try {
+    await client.request(
+      'GET',
+      `/accounts/${client.accountId}/workers/scripts/${scriptName}/settings`,
+    )
+    return true
+  } catch (error) {
+    if (error instanceof CloudflareError && error.status === 404) return false
+    throw error
+  }
+}
+
+/**
+ * The account's `workers.dev` subdomain — the `<name>` in `<script>.<name>.workers.dev`.
+ *
+ * `null` when the account has never claimed one. The installer cannot claim it on the operator's
+ * behalf (the name is a one-time, account-wide choice), so it says so and links the dashboard rather
+ * than guessing a URL that will not resolve.
+ */
+export async function workersDevSubdomain(client: CloudflareClient): Promise<string | null> {
+  try {
+    const result = await client.request<{ subdomain?: string }>(
+      'GET',
+      `/accounts/${client.accountId}/workers/subdomain`,
+    )
+    return result.subdomain ?? null
+  } catch (error) {
+    if (error instanceof CloudflareError && error.status === 404) return null
+    throw error
+  }
+}
+
+/**
+ * Serve the script on `<script>.<subdomain>.workers.dev`.
+ *
+ * A freshly uploaded Worker is not routable until this is enabled, so an installer that skipped it
+ * would finish by handing over a URL that 404s. Preview URLs are left off: they are a per-version
+ * hostname that a deployment with no CI has no use for.
+ */
+export async function enableWorkersDevSubdomain(
+  client: CloudflareClient,
+  scriptName: string,
+): Promise<void> {
+  await client.request(
+    'POST',
+    `/accounts/${client.accountId}/workers/scripts/${scriptName}/subdomain`,
+    { enabled: true, previews_enabled: false },
+  )
 }
 
 /** Point a new deployment at a version — the step that actually moves traffic. Also used to roll back. */
