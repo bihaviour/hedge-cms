@@ -74,13 +74,11 @@ the API health route, the MCP `serverInfo` and the admin all import. `GET /api/v
 API, because the unauthenticated GitHub API is rate-limited per shared egress IP — and the admin
 surfaces "an update is available" from that.
 
-**The Worker can now redeploy itself** (`POST /api/v1/system/update`, issue #35) — this reverses the
-invariant that used to sit here, "the Worker never redeploys itself". It still holds *at rest*: the
-Worker never stores a Cloudflare token. The token that carries `Workers Scripts:Edit` arrives in the
-request body, is used once by `lib/update.ts`, and is discarded — never written to D1, logged, or
-returned. Syncing the fork (Workers Builds redeploys) remains a valid path; the dashboard update is
-the one for a deployment with no upstream to sync from. Both apply the same migrations to the same
-`d1_migrations` table, so they don't fight.
+**The Worker can now redeploy itself** (`POST /api/v1/system/update`, issue #35). See the section
+below for what that reverses and what replaced it. Merging the upstream into a button or CLI
+deployment's repository (Workers Builds redeploys) remains a valid path; the dashboard update is the
+one that works for every deployment, including one installed with no repository at all. Both apply
+the same migrations to the same `d1_migrations` table, so they don't fight.
 
 Cutting a release (SemVer):
 
@@ -94,6 +92,69 @@ Cutting a release (SemVer):
    them locally from a clean tree if the workflow needs re-running.
 
 The check ignores drafts and prereleases, so work-in-progress tags don't nudge self-hosters.
+
+## The reversed invariant, and the token policy that replaced it
+
+This file used to say **"the Worker never redeploys itself"**. Issue #31 reversed it deliberately,
+and the replacement is narrower and worth stating in full, because the old rule was doing real work
+and something has to keep doing it.
+
+**The Worker can redeploy itself, but only with a credential the operator presents at that moment,
+and it never stores one.**
+
+The reasoning, not just the rule. A token that can update a Worker carries `Workers Scripts:Edit`,
+which is arbitrary code execution on the whole Cloudflare account. If Hedge held one at rest, then
+"an attacker reached CMS admin" would become "an attacker executes arbitrary code on the Cloudflare
+account" — a much larger blast radius than the CMS itself, bought for the convenience of not pasting
+a token. So the token arrives in the request body, lives only in the `CloudflareClient` closure for
+that one request, and is gone when it returns.
+
+Concretely, and none of these are incidental:
+
+- **Never persisted.** Not to D1, not to R2, not to a KV, not to a var or a secret binding.
+- **Never logged**, including inside an error. `CloudflareError` carries the API's own error codes
+  and nothing from the request.
+- **Never returned.** `SystemUpdateResult` has no field it could travel in, which is why it reports
+  per-step statuses rather than echoing anything back.
+- **Never accepted from a machine.** `system:update` is owner-only and `/api/v1/system` is in
+  `ADMIN_PREFIXES`, so an API key or a delegated MCP client cannot reach the route at all.
+- **Rate-limited**, because a route that spends someone else's Cloudflare quota should be.
+
+The same policy governs the installer (`apps/installer`, #38), which faces the same question from
+the other end and answers it the same way: the operator's token is posted to a process on *their*
+machine, used, and dropped when that process exits. It reaches no infrastructure of ours — and that
+is a decision with a written reason behind it, not an accident of hosting. Spike #37
+(`docs/spikes/37-browser-cloudflare-api/`) has the finding that forced it: Cloudflare's API serves no
+CORS headers, so the alternative was a proxy we run, through which every operator's token would pass.
+
+Every path is operator-initiated. Nothing self-updates on a schedule and nothing deploys without
+someone presenting a credential at that moment.
+
+## Three install paths
+
+A deployment can exist three ways, and `wrangler.jsonc` is only directly involved in two of them.
+
+| Path | How it deploys | Config it reads |
+| --- | --- | --- |
+| Deploy button | Workers Builds runs the root `deploy` script on every push | `wrangler.jsonc` |
+| CLI | `bun run deploy` | `wrangler.jsonc` |
+| Installer | `apps/installer` calls the Cloudflare API directly | the artifact's `hedge.json` |
+
+The installer never reads `wrangler.jsonc` — it reads `hedge.json` from the release artifact, which
+`scripts/build-artifact.ts` generates *from* `wrangler.jsonc` at release time. So a change here still
+reaches an installed deployment, one release later, and the installer needs no release of its own to
+learn about a new binding.
+
+**`INSTALLED_BY` records which path made a deployment** (`button` | `installer` | `cli`), so the
+admin's About page offers instructions that exist for it. Display only: nothing about how the Worker
+runs reads it. Unset must keep meaning "show the dashboard update and the git fallback, claiming no
+repository" — every deployment made before it existed has it unset forever.
+
+**`WORKER_NAME` is the one var here that is functional.** A Worker is not told its own script name at
+run time, and the updater has to address the script it is running as. A button or CLI deployment is
+always the `name` at the top of `wrangler.jsonc`, so this stays empty for them; the installer lets
+the operator choose a name and records it here. Without it, a deployment installed under any other
+name could not update itself while the About page told it that it could.
 
 ## Assets and routing
 
@@ -121,8 +182,24 @@ Deploying is the user's call. Don't run `deploy` or `db:migrate:remote` without 
 
 ## The deploy button
 
+The button is **one** of the three install paths, not the model the rest of the project assumes. It
+is the right one for someone who wants CI, preview URLs and a repository to work in — and it is the
+only one that requires a Git account, which is why the installer exists. Don't write documentation or
+error copy that treats a repository as a given: `apps/installer` deployments have none, and after
+issue #39 the admin knows the difference and says so.
+
 `README.md` carries a Deploy to Cloudflare button pointing at the repository root. It reads
 `wrangler.jsonc` for the resources to provision, `.dev.vars.example` for the secrets to prompt for,
 and the root `package.json` for the `build` and `deploy` commands and the `cloudflare.bindings`
 descriptions shown on the setup page. Changing any of those four changes what someone clicking the
 button gets.
+
+The button **clones** the repository; it does not fork it. A clone has no upstream relationship, so
+there is no "Sync fork" button on it — instructions that mention one are wrong, and were, until #36.
+`REPO_URL` points at that clone when the operator sets it.
+
+**Three places describe a var and must stay in step**: the field descriptions in the root
+`package.json`, the comments in `wrangler.jsonc`, and the README. `INSTALLED_BY` and `WORKER_NAME`
+are in that set now, and the installer is a fourth reader of the second one — it fills these in
+itself, from `hedge.json`, so a var whose meaning changes here has to be checked against
+`apps/installer/src/install.ts` too.

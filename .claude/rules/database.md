@@ -44,15 +44,19 @@ opening a compound statement that closes only on `END` followed by whitespace or
 END,` swallows every later semicolon and the rest of the file becomes one statement. Prefer a bare
 comparison (`x IS NOT NULL` is already 1/0) or `IIF()`.
 
-**None of the above is relaxed by the in-Worker migration runner** (`lib/migrate.ts`, issue #34).
-That runner owns a comment- and compound-aware splitter (`lib/sql-split.ts`) and submits one
-statement at a time, so the dashboard update path is immune to all three failure modes — but
-`db:migrate:remote` still exists and still posts the whole file to D1's parser verbatim, so a
-migration must keep obeying the constraints above regardless. The runner is compatible with wrangler
-by construction: same `d1_migrations` table, same names (the filename *with* `.sql`), same ordering,
-so a deployment updated once from the dashboard and once with `db:migrate:remote` never re-runs or
-skips a migration. Migrations are still not transactional across files on D1, so the runner reports a
-partial application honestly (which migration failed) rather than pretending the file rolled back.
+**None of the above is relaxed by the migration runner** (`packages/deploy/src/migrate.ts`, issue
+#34). That runner owns a comment- and compound-aware splitter (`packages/deploy/src/sql-split.ts`)
+and submits one statement at a time, so it is immune to all three failure modes above — and it is now
+what runs migrations on **two** of the three install paths: the in-Worker dashboard update (#35) and
+the installer (#38). But `db:migrate:remote` still exists and still posts the whole file to D1's
+parser verbatim, so **a migration must keep obeying the constraints above regardless**. Do not read
+"the runner handles it" as permission to write a migration the third path chokes on.
+
+The runner is compatible with wrangler by construction: same `d1_migrations` table, same names (the
+filename *with* `.sql`), same ordering. So a deployment migrated once from the dashboard, once by the
+installer and once with `db:migrate:remote` never re-runs or skips a migration. Migrations are still
+not transactional across files on D1, so the runner reports a partial application honestly (which
+migration failed) rather than pretending the file rolled back.
 
 ## Conventions
 
