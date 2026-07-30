@@ -93,8 +93,20 @@ R2 must be enabled on the account whichever you pick, since media lives there.
 
 The button **clones** this repository into your GitHub or GitLab account — a clone, not a fork, so it
 has no upstream relationship to this one — then creates the D1 database and R2 bucket it needs,
-builds the Worker and deploys it. The only thing to type is `AUTH_SECRET`, a long random string that
-`openssl rand -base64 32` will produce. Every later push to your copy redeploys.
+builds the Worker and deploys it. The only thing you must type is `AUTH_SECRET`, a long random
+string that `openssl rand -base64 32` will produce. Every later push to your copy redeploys.
+
+The setup page also lists a few optional variables. Each has a hint written for it, but the
+dashboard currently drops the hint for any variable whose committed default is empty — which is
+exactly the ones you might type into. Until that is fixed, here is what those fields want:
+
+| Field | What to enter |
+| --- | --- |
+| `PUBLIC_URL` | Leave empty until you add a custom domain. Then it must be the **full origin, scheme included, no trailing slash** — `https://cms.example.com` — as covered under [next steps](#next-steps-whichever-path-you-took). |
+| `EMAIL_FROM` | Leave empty. Set it later under **Settings → Email**, once a domain of yours is onboarded for sending. |
+| `REPO_URL` | The URL of the clone the button is about to create for you, e.g. `https://github.com/you/hedge-cms`. Optional — it only lets the update notice deep-link your repository. |
+| `INSTALLED_BY` | `button` — so **Settings → About & updates** shows the update instructions that exist for this deployment. |
+| `WORKER_NAME` | Leave empty. Only the installer sets it; a button deployment is always `hedge-cms`. |
 
 You land on `https://hedge-cms.<your-subdomain>.workers.dev`, in the onboarding wizard, where you
 create the owner account and the first site. Nothing else is required to start writing content.
