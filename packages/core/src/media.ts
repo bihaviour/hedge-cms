@@ -24,6 +24,26 @@ export const updateMediaSchema = z.object({
 export type UpdateMediaInput = z.infer<typeof updateMediaSchema>
 
 /**
+ * What a `media` field's stored key becomes on the delivery API.
+ *
+ * Content stores the key, not the URL: a stored URL bakes the deployment's origin into every
+ * entry and is wrong the day the CMS moves domain, with no migration that can reliably find
+ * them all. The key is the portable value — so the URL is built at the boundary, where the
+ * origin is known, and handed over alongside the alt text and dimensions the CMS already holds.
+ *
+ * `key` is null when the field held an absolute URL to begin with, which is passed through.
+ */
+export const resolvedMediaSchema = z.object({
+  key: z.string().nullable(),
+  url: z.string(),
+  alt: z.string().nullable(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+})
+
+export type ResolvedMedia = z.infer<typeof resolvedMediaSchema>
+
+/**
  * How a media listing is narrowed by kind. `document` is defined as "neither image nor video" —
  * the long tail of PDFs, CSVs and JSON — so a new allowed upload type lands in it automatically
  * instead of falling out of every filter.
