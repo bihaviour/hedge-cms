@@ -61,6 +61,14 @@ export const sites = sqliteTable(
     emailFrom: text('email_from'),
     emailFromName: text('email_from_name'),
     emailReplyTo: text('email_reply_to'),
+    /**
+     * Base URL of this website's own preview endpoint, and whether the admin may frame it. Null and
+     * false mean "no preview configured" — see `previewUrlSchema` in `@hedge/core`. Explicit rather
+     * than derived from `domain`: a preview needs a route that knows how to *accept* a token, and
+     * guessing one would produce a Preview button that mostly 404s.
+     */
+    previewUrl: text('preview_url'),
+    previewEmbed: integer('preview_embed', { mode: 'boolean' }).notNull().default(false),
     ...timestamps,
   },
   (t) => [uniqueIndex('sites_slug_idx').on(t.slug), uniqueIndex('sites_domain_idx').on(t.domain)],
@@ -477,6 +485,11 @@ export const collections = sqliteTable(
      * switches the workflow off entirely, so the epic ships inert.
      */
     approvalLevels: integer('approval_levels').notNull().default(0),
+    /**
+     * Path template appended to the site's `previewUrl` for one entry of this collection, with
+     * `{collection}`, `{slug}` and `{locale}` placeholders. Null falls back to the default shape.
+     */
+    previewPath: text('preview_path'),
     ...timestamps,
   },
   // Slugs are unique per site, not per deployment — every site gets its own namespace.

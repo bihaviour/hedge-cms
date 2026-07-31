@@ -44,6 +44,8 @@ export function toSite(row: SiteRow): Site {
       fromName: row.emailFromName,
       replyTo: row.emailReplyTo,
     },
+    previewUrl: row.previewUrl,
+    previewEmbed: row.previewEmbed,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -163,6 +165,8 @@ export async function updateSiteConfig(
             emailReplyTo: input.emailSender.replyTo,
           }
         : {}),
+      ...(input.previewUrl !== undefined ? { previewUrl: input.previewUrl } : {}),
+      ...(input.previewEmbed !== undefined ? { previewEmbed: input.previewEmbed } : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(eq(sites.id, siteId))

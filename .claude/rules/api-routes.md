@@ -37,8 +37,32 @@ rejects API keys outright whatever that role says, so a key can never gain autho
 deployment by way of a route added later.
 
 Then `resolveSite` (an API key is bound to the site it was issued for, so the actor comes first),
-then `resolveMember` for delivery and member routes only. All three set `null` rather than
-rejecting; `requireSite` / `requireActor` do the rejecting.
+then `resolveMember` for delivery and member routes only, then `resolvePreview` for delivery routes
+only. All of them set `null` rather than rejecting; `requireSite` / `requireActor` do the rejecting.
+
+## Preview tokens (`lib/preview.ts`)
+
+The fourth credential type, and it obeys the same separation-by-prefix rule as the other three —
+`resolvePreview` runs on `/api/v1/content/*` and nowhere else, so a token that unlocks a draft can
+never be presented at a management route. It is stateless: base64url claims signed with
+`AUTH_SECRET`, the construction delivery keys and invite tokens already use.
+
+Three things about it are load-bearing:
+
+- **It is not a credential on its own.** It sets `preview`, never `actor`. A preview request still
+  needs the site's delivery key to resolve an actor at all; the token only widens what that key may
+  see, for one entry.
+- **It names one entry, not a site.** `resolvePreview` checks the token's site against the resolved
+  tenant, and `previewFor(c, collection, slug, locale)` checks the entry — a token that matched a
+  *site* would, pasted into a public page or leaked in a referrer, expose the whole draft pipeline.
+  Only the single-entry delivery handler honours one; list endpoints deliberately do not.
+- **Minting is `requireUserActor`.** `POST /collections/:c/entries/:slug/preview-token` sits under
+  `KEY_MANAGED_PREFIXES`, so a write-scoped key resolves on that prefix and the route has to refuse
+  it explicitly. "Only a signed-in CMS user can produce a link to unpublished content" is the whole
+  requirement, and that call is where it lives.
+
+Every preview response is `private, no-store` with the header in `vary`, for the reason member-gated
+content already is: correctness cannot depend on every hop honouring `Vary`.
 
 Order matters at the bottom too: the hedge auth facade (`routes/auth.ts`) is mounted *before* Better
 Auth's catch-all, so shared paths answer in our error format.

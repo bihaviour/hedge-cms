@@ -6,6 +6,7 @@ import {
   fieldsSchema,
   localeCodeSchema,
   MEMBER_TOKEN_HEADER,
+  PREVIEW_TOKEN_HEADER,
   type SiteMetadata,
   siteMetadataSchema,
 } from '@hedge/core'
@@ -34,6 +35,7 @@ import {
   type ResolvedMediaFields,
   resolveMediaFields,
 } from '../lib/media-fields'
+import { previewFor } from '../lib/preview'
 import { requireSite } from '../lib/site'
 import { validateQuery } from '../lib/validate'
 
@@ -45,11 +47,18 @@ import { validateQuery } from '../lib/validate'
  * Entries marked `members` are withheld unless the request also carries a member token for the
  * same site. Any response shaped by a member token is `private, no-store`: gated content must
  * never land in a shared cache where the next anonymous reader would be handed it.
+ *
+ * The single-entry handler is also where a **preview token** is honoured (`lib/preview.ts`): a
+ * signed, short-lived token naming one entry lifts the published-only filter for that entry alone,
+ * so a website can render a draft in its real layout. The list handler deliberately does not honour
+ * one — preview is a single-page act, and a list that leaked drafts would be exactly the site-wide
+ * exposure the token's per-entry scoping exists to prevent.
  */
 const app = new Hono<AppEnv>()
 
 const PUBLIC_CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=86400'
-const MEMBER_CACHE_CONTROL = 'private, no-store'
+/** Used for anything a member token or a preview token shaped — neither may be shared. */
+const PRIVATE_CACHE_CONTROL = 'private, no-store'
 
 const listQuery = z.object({
   // Optional, not defaulted: when omitted the site's own `defaultLocale` is used, so an
@@ -128,12 +137,14 @@ function resolveDeliveryMetadata(
 }
 
 /**
- * Responses differ by member token, so say so — and when one was supplied, keep the answer out
- * of shared caches entirely rather than trusting every hop in front of us to honour `Vary`.
+ * Responses differ by member token and by preview token, so say so — and when either shaped the
+ * answer, keep it out of shared caches entirely rather than trusting every hop in front of us to
+ * honour `Vary`. A preview is per-token, short-lived and shows unpublished content: there is no
+ * `s-maxage` that would be correct for it.
  */
-function setCacheHeaders(c: Context<AppEnv>, unlocked: boolean) {
-  c.header('vary', MEMBER_TOKEN_HEADER)
-  c.header('cache-control', unlocked ? MEMBER_CACHE_CONTROL : PUBLIC_CACHE_CONTROL)
+function setCacheHeaders(c: Context<AppEnv>, personal: boolean) {
+  c.header('vary', `${MEMBER_TOKEN_HEADER}, ${PREVIEW_TOKEN_HEADER}`)
+  c.header('cache-control', personal ? PRIVATE_CACHE_CONTROL : PUBLIC_CACHE_CONTROL)
 }
 
 /**
@@ -292,8 +303,14 @@ app.get('/:collection/_schema', async (c) => {
 
 app.get('/:collection/:slug', async (c) => {
   const site = requireSite(c)
+  const collectionSlug = c.req.param('collection')
+  const slug = c.req.param('slug')
   const locale = c.req.query('locale') ?? site.defaultLocale
   const isMember = c.get('member') !== null
+
+  // Only a token minted for *this* collection, slug and locale counts. Anything else — including a
+  // valid token for the entry next door — leaves the published-only view exactly as it was.
+  const preview = previewFor(c, collectionSlug, slug, locale)
 
   const [row] = await getDb(c.env)
     // The collection's fields come along for the ride: resolving media needs to know which of
@@ -304,18 +321,23 @@ app.get('/:collection/:slug', async (c) => {
     .where(
       and(
         eq(collections.siteId, site.id),
-        eq(collections.slug, c.req.param('collection')),
-        eq(entries.slug, c.req.param('slug')),
+        eq(collections.slug, collectionSlug),
+        eq(entries.slug, slug),
         eq(entries.locale, locale),
-        eq(entries.status, 'published'),
+        // The one filter a preview lifts: draft and archived rows become readable, for this entry.
+        ...(preview ? [] : [eq(entries.status, 'published')]),
       ),
     )
     .limit(1)
 
   if (!row) throw ApiError.notFound('Entry')
 
+  // A preview token unlocks `members` content too: the previewer is a CMS user looking at an
+  // article on their own site, and being shown a paywall instead of the page is not a preview.
+  const unlocked = isMember || preview !== null
+
   // 403 rather than 404: the entry exists, and the site needs to know to render its paywall.
-  if (row.visibility === 'members' && !isMember) {
+  if (row.visibility === 'members' && !unlocked) {
     throw ApiError.forbidden('This entry is for members only')
   }
 
@@ -324,8 +346,8 @@ app.get('/:collection/:slug', async (c) => {
     row.data,
   ])
 
-  setCacheHeaders(c, isMember)
-  return c.json({ data: toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, resolved?.[0]) })
+  setCacheHeaders(c, unlocked)
+  return c.json({ data: toDelivery(row, unlocked, siteMeta, c.env.PUBLIC_URL, resolved?.[0]) })
 })
 
 export default app

@@ -1,4 +1,4 @@
-import { HEDGE_VERSION, MEMBER_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
+import { HEDGE_VERSION, MEMBER_TOKEN_HEADER, PREVIEW_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from 'better-auth/plugins'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -12,6 +12,7 @@ import { resolveDeliveryActor, resolveSessionOrKeyActor } from './lib/delivery-a
 import { errorResponse } from './lib/errors'
 import { newId } from './lib/id'
 import { resolveMember } from './lib/member-auth'
+import { resolvePreview } from './lib/preview'
 import { resolveSite } from './lib/site'
 import apiKeys from './routes/api-keys'
 import auth from './routes/auth'
@@ -110,7 +111,13 @@ app.use(
   cors({
     origin: '*',
     allowMethods: ['GET', 'OPTIONS'],
-    allowHeaders: ['authorization', 'content-type', SITE_HEADER, MEMBER_TOKEN_HEADER],
+    allowHeaders: [
+      'authorization',
+      'content-type',
+      SITE_HEADER,
+      MEMBER_TOKEN_HEADER,
+      PREVIEW_TOKEN_HEADER,
+    ],
     maxAge: 86400,
   }),
 )
@@ -191,6 +198,18 @@ app.use('/api/*', async (c, next) => {
   }
 
   c.set('member', null)
+  await next()
+})
+
+/**
+ * Preview tokens resolve on the delivery API and nowhere else — the same separation-by-prefix that
+ * keeps a delivery key out of the management API, applied to the credential that unlocks drafts.
+ * It runs after `resolveSite` so the token's own site can be checked against the resolved tenant.
+ */
+app.use('/api/*', async (c, next) => {
+  if (startsWithPrefix(c.req.path, DELIVERY_PREFIX)) return resolvePreview(c, next)
+
+  c.set('preview', null)
   await next()
 })
 

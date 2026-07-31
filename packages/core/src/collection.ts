@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { fieldsSchema } from './fields'
+import { previewPathSchema } from './preview'
 
 export const slugSchema = z
   .string()
@@ -32,6 +33,12 @@ export const collectionSchema = z.object({
    * stays the single `PATCH` it has always been.
    */
   approvalLevels: approvalLevelsSchema,
+  /**
+   * Path template appended to the site's `previewUrl` to reach one entry of this collection — see
+   * `preview.ts`. Null falls back to `DEFAULT_PREVIEW_PATH`; it lives on the collection because a
+   * blog and a docs site on one deployment preview at different shapes.
+   */
+  previewPath: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -47,6 +54,7 @@ export const createCollectionSchema = z.object({
   // Optional rather than defaulted, like `fields`: a caller that says nothing gets the column's own
   // default of 0, and the create form does not have to carry a value it has no control for.
   approvalLevels: approvalLevelsSchema.optional(),
+  previewPath: previewPathSchema.nullable().optional(),
 })
 
 export type CreateCollectionInput = z.infer<typeof createCollectionSchema>
@@ -58,6 +66,7 @@ export const updateCollectionSchema = z.object({
   kind: z.enum(['multiple', 'single']).optional(),
   fields: fieldsSchema.optional(),
   approvalLevels: approvalLevelsSchema.optional(),
+  previewPath: previewPathSchema.nullable().optional(),
 })
 
 export type UpdateCollectionInput = z.infer<typeof updateCollectionSchema>

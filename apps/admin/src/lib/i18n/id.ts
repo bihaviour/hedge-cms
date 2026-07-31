@@ -169,6 +169,15 @@ export const id: Catalog = {
   'editor.localeHint': 'Varian bahasa entri ini yang sedang Anda ubah.',
   'editor.translationMissing': 'Belum ada terjemahan {locale} — menyimpan akan membuatnya.',
 
+  'preview.action': 'Pratinjau',
+  'preview.opening': 'Membuka…',
+  'preview.title': 'Pratinjau',
+  'preview.setUp': 'Siapkan pratinjau',
+  'preview.notConfigured': 'Situs ini belum punya URL pratinjau — tambahkan di pengaturan situs.',
+  'preview.openTab': 'Buka di tab baru',
+  'preview.framedHint':
+    'Menampilkan yang sudah disimpan, bukan perubahan yang belum disimpan. Jika panel ini tetap kosong, situs Anda menolak dibingkai — buka di tab baru saja.',
+
   'collections.title': 'Koleksi',
   'collections.subtitle': 'Tipe konten di situs ini.',
   'collections.new': 'Koleksi baru',
