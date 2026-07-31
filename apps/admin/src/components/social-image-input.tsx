@@ -3,6 +3,7 @@ import { MediaPicker } from '@/components/media-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useMediaPreviewUrl } from '@/hooks/use-media-url'
 import { useT } from '@/lib/i18n'
 
 /**
@@ -23,15 +24,17 @@ export function SocialImageInput({
   onChange: (value: string | undefined) => void
 }) {
   const t = useT()
+  const previewUrl = useMediaPreviewUrl()
   const [picking, setPicking] = useState(false)
+  const src = value ? previewUrl(value) : null
 
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{t('meta.socialImage')}</Label>
       <div className="flex items-start gap-2">
-        {value && (
+        {src && (
           <img
-            src={/^https?:\/\//i.test(value) ? value : `/media/${encodeURI(value)}`}
+            src={src}
             alt=""
             className="size-9 shrink-0 rounded border bg-muted object-cover"
             loading="lazy"

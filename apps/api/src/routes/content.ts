@@ -9,6 +9,7 @@ import {
   PREVIEW_TOKEN_HEADER,
   type SiteMetadata,
   siteMetadataSchema,
+  websiteOrigin,
 } from '@hedge/core'
 import { and, eq, inArray, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
@@ -116,6 +117,7 @@ function resolveDeliveryMetadata(
   entryMeta: EntryMetadata,
   data: Record<string, unknown>,
   publicUrl: string,
+  websiteUrl: string | null,
 ) {
   const title = typeof data.title === 'string' ? data.title : undefined
   return {
@@ -127,7 +129,7 @@ function resolveDeliveryMetadata(
     canonicalUrl: entryMeta.canonicalUrl,
     // Absolute, always: this lands in `<meta property="og:image">`, where a relative value is
     // invalid and fails silently in every social preview. See `absoluteMediaUrl`.
-    ogImage: absoluteMediaUrl(entryMeta.ogImage ?? siteMeta.ogImage, publicUrl),
+    ogImage: absoluteMediaUrl(entryMeta.ogImage ?? siteMeta.ogImage, publicUrl, websiteUrl),
     keywords: siteMeta.keywords,
     twitterHandle: siteMeta.twitterHandle,
     noIndex: entryMeta.noIndex,
@@ -157,6 +159,7 @@ function toDelivery(
   isMember: boolean,
   siteMeta: SiteMetadata,
   publicUrl: string,
+  websiteUrl: string | null,
   resolved?: ResolvedMediaFields,
 ) {
   const locked = row.visibility === 'members' && !isMember
@@ -172,7 +175,7 @@ function toDelivery(
     // `data` when the entry is locked; a resolved URL is still the content. Metadata is not,
     // deliberately: a paywalled page still needs its social tags.
     ...(locked || !resolved ? {} : { media: resolved }),
-    metadata: resolveDeliveryMetadata(siteMeta, entryMeta, row.data, publicUrl),
+    metadata: resolveDeliveryMetadata(siteMeta, entryMeta, row.data, publicUrl, websiteUrl),
     publishedAt: row.publishedAt,
     updatedAt: row.updatedAt,
   }
@@ -216,11 +219,12 @@ async function resolvePageMedia(
   siteId: string,
   fields: Field[],
   datas: Record<string, unknown>[],
+  websiteUrl: string | null,
 ): Promise<ResolvedMediaFields[] | null> {
   if (mediaFieldsOf(fields).length === 0) return null
 
   const rows = await loadMediaRows(env, siteId, collectMediaKeys(fields, datas))
-  return datas.map((data) => resolveMediaFields(fields, data, rows, env.PUBLIC_URL))
+  return datas.map((data) => resolveMediaFields(fields, data, rows, env.PUBLIC_URL, websiteUrl))
 }
 
 // A user browsing the delivery API still needs to be able to see the site it belongs to.
@@ -269,12 +273,13 @@ app.get('/:collection', async (c) => {
     site.id,
     fields,
     page.map((row) => (row.visibility === 'members' && !isMember ? {} : row.data)),
+    websiteOrigin(site),
   )
 
   setCacheHeaders(c, isMember)
   return c.json({
     data: page.map((row, index) =>
-      toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, resolved?.[index]),
+      toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, websiteOrigin(site), resolved?.[index]),
     ),
     nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   })
@@ -342,12 +347,18 @@ app.get('/:collection/:slug', async (c) => {
   }
 
   const siteMeta = siteMetadataSchema.parse(site.metadata ?? {})
-  const resolved = await resolvePageMedia(c.env, site.id, fieldsSchema.parse(row.fields), [
-    row.data,
-  ])
+  const resolved = await resolvePageMedia(
+    c.env,
+    site.id,
+    fieldsSchema.parse(row.fields),
+    [row.data],
+    websiteOrigin(site),
+  )
 
   setCacheHeaders(c, unlocked)
-  return c.json({ data: toDelivery(row, unlocked, siteMeta, c.env.PUBLIC_URL, resolved?.[0]) })
+  return c.json({
+    data: toDelivery(row, unlocked, siteMeta, c.env.PUBLIC_URL, websiteOrigin(site), resolved?.[0]),
+  })
 })
 
 export default app

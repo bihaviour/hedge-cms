@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { listMediaQuerySchema, matchesAccept } from './index'
+import {
+  listMediaQuerySchema,
+  matchesAccept,
+  mediaValueOrigin,
+  mediaValueUrl,
+  websiteOrigin,
+} from './index'
 
 describe('matchesAccept', () => {
   test('an empty accept list accepts anything', () => {
@@ -38,5 +44,72 @@ describe('listMediaQuerySchema', () => {
   test('rejects a type filter it has no query for', () => {
     expect(listMediaQuerySchema.parse({ type: 'image' }).type).toBe('image')
     expect(listMediaQuerySchema.safeParse({ type: 'audio' }).success).toBe(false)
+  })
+})
+
+/**
+ * The three origins a stored media value can have. The middle one is the reason this exists: a
+ * site migrating a plain text field into a `media` field is holding `/public` paths, and reading
+ * one as an R2 key silently produces a URL that resolves nowhere.
+ */
+describe('mediaValueOrigin', () => {
+  test('an absolute URL is already resolvable', () => {
+    expect(mediaValueOrigin('https://cdn.example.com/hero.png')).toBe('url')
+    expect(mediaValueOrigin('HTTP://cdn.example.com/hero.png')).toBe('url')
+  })
+
+  test('a leading slash is a path into the website, not a key', () => {
+    expect(mediaValueOrigin('/covers/agent-runtime.png')).toBe('site-path')
+    expect(mediaValueOrigin('/hero.png')).toBe('site-path')
+  })
+
+  test('anything else is an object key, including one that looks path-like', () => {
+    expect(mediaValueOrigin('blog/2026/07/photo.jpg')).toBe('key')
+    expect(mediaValueOrigin('photo.jpg')).toBe('key')
+  })
+})
+
+describe('mediaValueUrl', () => {
+  const CMS = 'https://cms.example.com'
+  const SITE = 'https://example.com'
+
+  test('a key is served by this deployment', () => {
+    expect(mediaValueUrl('blog/photo.jpg', CMS, SITE)).toBe(
+      'https://cms.example.com/media/blog/photo.jpg',
+    )
+  })
+
+  test('an absolute URL is never rewritten, whatever the origins are', () => {
+    expect(mediaValueUrl('https://cdn.example.com/hero.png', CMS, SITE)).toBe(
+      'https://cdn.example.com/hero.png',
+    )
+  })
+
+  test('a site path resolves against the website, not against /media', () => {
+    expect(mediaValueUrl('/covers/hero.png', CMS, SITE)).toBe('https://example.com/covers/hero.png')
+  })
+
+  test('a site path is left relative when the site records no website origin', () => {
+    // Still correct for anything rendering on that website, and honestly relative for anything
+    // else — where the old behaviour handed out a confidently wrong `…/media//covers/hero.png`.
+    expect(mediaValueUrl('/covers/hero.png', CMS, null)).toBe('/covers/hero.png')
+    expect(mediaValueUrl('/covers/hero.png', CMS)).toBe('/covers/hero.png')
+  })
+})
+
+describe('websiteOrigin', () => {
+  test('prefers the explicit preview origin over the matched hostname', () => {
+    expect(
+      websiteOrigin({ domain: 'example.com', previewUrl: 'https://staging.example.com' }),
+    ).toBe('https://staging.example.com')
+  })
+
+  test("falls back to the site's own domain, which is the website by definition", () => {
+    expect(websiteOrigin({ domain: 'example.com', previewUrl: null })).toBe('https://example.com')
+  })
+
+  test('invents no origin for a site that has recorded neither', () => {
+    expect(websiteOrigin({ domain: null, previewUrl: null })).toBeNull()
+    expect(websiteOrigin({})).toBeNull()
   })
 })
