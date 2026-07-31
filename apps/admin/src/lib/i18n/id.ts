@@ -307,6 +307,99 @@ export const id: Catalog = {
   'account.uiLanguageHint':
     'Bahasa tampilan antarmuka admin ini. Preferensi untuk Anda, bukan untuk situs.',
 
+  'nav.overview': 'Ringkasan',
+  'nav.dashboard': 'Dasbor',
+  'nav.analytics': 'Analitik',
+  'label.dashboard': 'Dasbor',
+  'label.analytics': 'Analitik',
+
+  'dash.title': 'Dasbor',
+  'dash.subtitle': 'Bagaimana {site} berjalan, selama 30 hari terakhir.',
+  'dash.viewAnalytics': 'Semua analitik',
+  'dash.topArticles': 'Artikel teratas',
+  'dash.topArticlesEmpty': 'Belum ada artikel yang dibaca pada periode ini.',
+  'dash.recentlyUpdated': 'Baru diperbarui',
+  'dash.recentlyUpdatedEmpty': 'Belum ada yang disunting.',
+  'dash.lastNewsletter': 'Buletin terakhir',
+  'dash.lastNewsletterEmpty': 'Belum ada buletin yang dikirim dari situs ini.',
+  'dash.newsletterSent': 'Dikirim {date} ke {count} penerima',
+
+  'analytics.notCollectingTitle': 'Belum ada trafik situs',
+  'analytics.notCollectingBody':
+    'Hedge tidak pernah melihat pembaca Anda sendiri — situslah yang harus melaporkan tampilan halaman. Tambahkan potongan kode satu baris ke situs Anda, lalu angkanya mulai muncul di sini.',
+  'analytics.notCollectingAction': 'Cara menambahkannya',
+  'analytics.snippetTitle': 'Potongan kode',
+  'analytics.snippetHint':
+    'Tempel sekali saja, di templat situs Anda. Tidak memasang cookie, tidak membaca penyimpanan, dan menghormati Do Not Track.',
+  'analytics.copySnippet': 'Salin potongan kode',
+  'analytics.snippetCopied': 'Potongan kode disalin ke papan klip',
+
+  'analytics.title': 'Analitik',
+  'analytics.subtitle': 'Apa yang dilakukan pembaca di {site}.',
+  'analytics.rangeLabel': 'Rentang',
+  'analytics.range7': '7 hari terakhir',
+  'analytics.range30': '30 hari terakhir',
+  'analytics.range90': '90 hari terakhir',
+  'analytics.range365': '12 bulan terakhir',
+  'analytics.comparedTo': 'vs periode sebelumnya',
+  'analytics.timezoneNote': 'Hari dihitung menurut zona waktu situs ({timezone}).',
+  'analytics.startsOn':
+    'Rentang ini menjangkau sebelum pelacakan dimulai pada {date}. Hari-hari sebelumnya kosong karena tidak ada yang diukur, bukan karena tidak ada yang membaca.',
+
+  'analytics.views': 'Tampilan',
+  'analytics.pages': 'Halaman dibaca',
+  'analytics.referrals': 'Dari situs lain',
+  'analytics.shareIntents': 'Klik bagikan',
+  'analytics.previousPeriod': 'Periode sebelumnya',
+  'analytics.trafficTitle': 'Trafik',
+
+  'analytics.entriesTitle': 'Semua artikel',
+  'analytics.colArticle': 'Artikel',
+  'analytics.colViews': 'Tampilan',
+  'analytics.colTrend': 'Perubahan',
+  'analytics.colShares': 'Klik bagikan',
+  'analytics.sortViews': 'Paling banyak dilihat',
+  'analytics.sortTrend': 'Perubahan terbesar',
+  'analytics.sortShares': 'Paling banyak dibagikan',
+  'analytics.noEntryMatch': 'bukan entri',
+  'analytics.entriesEmpty': 'Tidak ada yang dibaca pada periode ini.',
+
+  'analytics.referrersTitle': 'Dari mana pembaca datang',
+  'analytics.referrersCaveat':
+    'Porsi “langsung” yang besar sebagian besar adalah peramban yang tidak mengirim perujuk sama sekali — bukan pembaca yang mengetik URL Anda.',
+  'analytics.groupSearch': 'Pencarian',
+  'analytics.groupSocial': 'Sosial',
+  'analytics.groupDirect': 'Langsung',
+  'analytics.groupOther': 'Lainnya',
+  'analytics.referrersEmpty': 'Tidak ada trafik masuk yang tercatat pada periode ini.',
+
+  'analytics.sharesTitle': 'Berbagi',
+  'analytics.sharesCaveat':
+    'Ini adalah klik pada tombol bagikan dan salin tautan milik Anda sendiri, bukan hitungan dari platform mana pun — X, Facebook dan LinkedIn sudah berhenti menerbitkannya. Bacalah sebagai niat berbagi, bukan sebagai “dibagikan sekian kali”.',
+  'analytics.sharesEmpty':
+    'Tidak ada klik bagikan yang tercatat. Panggil hedge(‘share’, ‘x’) dari tombol bagikan Anda untuk menghitungnya.',
+
+  'analytics.newslettersTitle': 'Buletin',
+  'analytics.newslettersEmpty': 'Tidak ada buletin yang dikirim pada periode ini.',
+  'analytics.subscribers': 'Pelanggan',
+  'analytics.subscribersGained': 'Bergabung',
+  'analytics.subscribersLost': 'Keluar',
+  'analytics.audienceTitle': 'Audiens',
+  'analytics.colCampaign': 'Kampanye',
+  'analytics.colSent': 'Dikirim',
+  'analytics.colAccepted': 'Diterima',
+  'analytics.colFailed': 'Gagal',
+  'analytics.acceptedNote':
+    '“Diterima” berarti penyedia email menerima pesannya. Cloudflare Email Sending tidak melaporkan pentalan maupun pembukaan, jadi tidak ada angka di sini yang mengklaim pesan sampai ke kotak masuk.',
+  'analytics.noOpensNote':
+    'Pembukaan email tidak dilacak. Apple Mail memuat gambar lebih dulu, sehingga angka pembukaan menghitung Apple, bukan pembaca.',
+
+  'analytics.entryTitle': 'Trafik untuk “{title}”',
+  'analytics.entryViews': 'Tampilan pada periode ini',
+  'analytics.entryShares': 'Klik bagikan',
+  'analytics.viewAnalytics': 'Analitik',
+  'analytics.backToAll': 'Semua artikel',
+
   'login.title': 'Masuk',
   'login.subtitle': 'Masuk ke admin Hedge.',
   'login.email': 'Email',

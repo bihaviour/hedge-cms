@@ -79,6 +79,13 @@ const NAV: {
   items: { title: MessageKey; url: string; permission?: InstancePermission }[]
 }[] = [
   {
+    title: 'nav.overview',
+    items: [
+      { title: 'nav.dashboard', url: '/' },
+      { title: 'nav.analytics', url: '/analytics' },
+    ],
+  },
+  {
     title: 'nav.content',
     items: [
       { title: 'nav.collections', url: '/collections' },

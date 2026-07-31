@@ -1,7 +1,7 @@
 import type { EntryMetadata, EntryStatus, EntryVisibility } from '@hedge/core'
 import { localeLabel, slugify } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChartLine, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -190,6 +190,15 @@ export function EntryEditorPage() {
                 <ArrowLeft className="size-4" />
               </Link>
             </Button>
+            {/* How this piece actually did, for the person who wrote it. */}
+            {!creating && entry.data && (
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/analytics/${entry.data.id}`}>
+                  <ChartLine className="size-4" />
+                  {t('analytics.viewAnalytics')}
+                </Link>
+              </Button>
+            )}
             {!creating && (
               <Button
                 variant="outline"

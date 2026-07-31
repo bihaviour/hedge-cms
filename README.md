@@ -44,6 +44,11 @@ cached read-only delivery API.
   cache headers so repeat hits never touch the bucket.
 - **Delivery API** — `/api/v1/content/*`, published content only, `s-maxage` cached at the edge,
   authenticated with scoped per-site API keys.
+- **Analytics** — a dashboard on `/` and a detail page on `/analytics`: which articles were read,
+  where readers came from, share clicks, and newsletter delivery. Fed by a first-party snippet your
+  website embeds, because the Worker sits behind the edge cache and never sees your readers. No
+  cookies, no visitor identity, Do Not Track honoured — see
+  [docs/website-analytics.md](docs/website-analytics.md). Entirely optional.
 - **MCP** — an AI assistant can run the whole CMS over OAuth 2.1: collections, entries, media,
   newsletters, sites, users and keys, bounded by scopes you approve *and* your own role.
 
@@ -286,6 +291,30 @@ from `media` entirely. A value that was already an absolute URL is passed throug
 URL. Open Graph rejects a relative one, and the tag has a single slot, so there is no additive
 version of that fix. Metadata is served for locked entries too, so a paywalled page still
 previews correctly when it is shared.
+
+## Seeing what readers did
+
+The admin opens on a dashboard, and `/analytics` breaks it down: articles ranked by views with their
+trend, where readers arrived from, share clicks, and how each newsletter was delivered.
+
+Hedge cannot measure any of it on its own. Your website is a separate frontend on its own origin, and
+its delivery API calls are absorbed by Cloudflare's cache — so **delivery request counts are not
+pageviews**, and nothing here pretends otherwise. Your pages report a view directly:
+
+```html
+<script src="https://your-worker.workers.dev/api/v1/collect/script.js" data-site="blog" defer></script>
+```
+
+That is the whole integration. The script sets no cookie, stores no identifier, counts no unique
+visitors, and honours Do Not Track and Global Privacy Control by not sending. Share clicks need one
+more line, because no platform publishes share counts any more and only your own click handler can
+see one: `hedge('share', 'x')`.
+
+Newsletter delivery and subscriber growth need nothing embedded — they come from rows the CMS
+already writes.
+
+Full integration notes, including what the numbers deliberately do not claim and a privacy-policy
+paragraph you can adapt: [docs/website-analytics.md](docs/website-analytics.md).
 
 ## Writing content from a script
 

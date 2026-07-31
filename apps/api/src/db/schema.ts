@@ -584,6 +584,16 @@ export const emailLog = sqliteTable(
     subject: text('subject').notNull(),
     /** The template that produced it, or null for a one-off. */
     templateKey: text('template_key', { enum: EMAIL_TEMPLATE_KEYS }),
+    /**
+     * The campaign this send belongs to, for anything sent by `sendNewsletter`.
+     *
+     * Without it the only link from a log row back to its campaign was a matching subject line,
+     * which breaks the first time two campaigns share one — so per-campaign delivery was not a query
+     * anybody could write. `set null` rather than cascade: deleting a campaign should not erase the
+     * record that it was sent. Rows written before this column existed keep null, which honestly
+     * means "sent before this was recorded" rather than "not a newsletter".
+     */
+    newsletterId: text('newsletter_id').references(() => newsletters.id, { onDelete: 'set null' }),
     status: text('status', { enum: EMAIL_STATUSES }).notNull(),
     error: text('error'),
     // Ids are timestamp-prefixed, so paginating by id desc is newest-first without a second index.
@@ -591,7 +601,10 @@ export const emailLog = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [index('email_log_created_at_idx').on(t.createdAt)],
+  (t) => [
+    index('email_log_created_at_idx').on(t.createdAt),
+    index('email_log_newsletter_idx').on(t.newsletterId),
+  ],
 )
 
 /**
@@ -683,6 +696,74 @@ export const newsletterTemplates = sqliteTable(
   (t) => [index('newsletter_templates_site_idx').on(t.siteId, t.createdAt)],
 )
 
+/* ------------------------------------------------------------------ *
+ * Website analytics. Per-site, like everything else content-shaped.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Pre-aggregated daily counters — there is deliberately **no raw event table**.
+ *
+ * D1 is SQLite at the edge and has no TTL: a row per pageview turns a modest website into a database
+ * nobody can query, and the rows stay until something deletes them. The collector UPSERTs into these
+ * buckets instead, so the row count is bounded by `sites × days × dimensions` and a traffic spike
+ * touches the same rows harder rather than adding new ones. A million hits on one article on one day
+ * is one row. The dimension caps in `@hedge/core`'s `analytics.ts` are what bound the last term,
+ * because the collector is a public write path and an attacker posting invented paths must not be
+ * able to grow the table.
+ *
+ * `date` is `YYYY-MM-DD` **in the site's timezone**. `sites.timezone` exists for exactly this: a day
+ * cut in UTC would file an Indonesian site's evening traffic under the following day, and the
+ * operator reading the chart would have no way to tell.
+ *
+ * v1 does not count unique visitors. Doing so needs per-visitor state — a row per visitor per day,
+ * even hashed and salted — which is precisely the unbounded growth this shape exists to avoid, and
+ * it turns a deployment with nothing to explain in a privacy policy into one with something to
+ * explain. Views, share intents and referrers are what a CMS dashboard actually acts on.
+ */
+export const analyticsDaily = sqliteTable(
+  'analytics_daily',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD` in the site's timezone. Sorts and compares lexicographically. */
+    date: text('date').notNull(),
+    /**
+     * The entry this bucket's path resolved to when it was first written, or null for a path that
+     * matches no entry (a listing page, a landing page, a 404 somebody linked). `set null` rather
+     * than cascade: deleting an article should not silently erase the traffic it earned.
+     */
+    entryId: text('entry_id').references(() => entries.id, { onDelete: 'set null' }),
+    /** The normalised URL path, or `''` for a site-wide bucket such as a referral. */
+    path: text('path').notNull().default(''),
+    metric: text('metric', { enum: ['view', 'share_intent', 'referral'] }).notNull(),
+    /** The metric's dimension: the share target, the referrer host. Empty for a plain view. */
+    key: text('key').notNull().default(''),
+    count: integer('count').notNull().default(0),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    /**
+     * The bucket identity, and what the collector's UPSERT conflicts on.
+     *
+     * `entryId` is **not** in it, though it is part of what a bucket describes. SQLite treats NULLs
+     * as distinct inside a unique index, so a nullable column here would mean every view of a
+     * non-entry path conflicted with nothing and inserted a new row — the exact unbounded growth
+     * this table is shaped to prevent, and it would look fine until a site had a page without an
+     * entry. It costs nothing to leave out: `entryId` is resolved *from* the path, so two rows with
+     * the same path on the same day always agree on it.
+     */
+    uniqueIndex('analytics_daily_bucket_idx').on(t.siteId, t.date, t.path, t.metric, t.key),
+    /** Every dashboard and reporting query starts here. */
+    index('analytics_daily_site_date_idx').on(t.siteId, t.date),
+    /** One article's traffic since publication — the per-entry view. */
+    index('analytics_daily_site_entry_idx').on(t.siteId, t.entryId, t.date),
+  ],
+)
+
 export type SiteRow = typeof sites.$inferSelect
 export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
@@ -701,3 +782,4 @@ export type EmailConfigRow = typeof emailConfig.$inferSelect
 export type NewsletterSubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type NewsletterRow = typeof newsletters.$inferSelect
 export type NewsletterTemplateRow = typeof newsletterTemplates.$inferSelect
+export type AnalyticsDailyRow = typeof analyticsDaily.$inferSelect

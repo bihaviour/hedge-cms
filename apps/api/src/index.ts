@@ -6,15 +6,18 @@ import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { CMS_AUTH_BASE_PATH, getCmsAuth } from './auth/cms'
 import { getMemberAuth, MEMBER_AUTH_BASE_PATH } from './auth/member'
-import type { AppEnv } from './env'
+import type { AppEnv, Bindings } from './env'
+import { pruneAnalytics } from './lib/analytics'
 import { resolveSessionActor } from './lib/auth'
 import { resolveDeliveryActor, resolveSessionOrKeyActor } from './lib/delivery-auth'
 import { errorResponse } from './lib/errors'
 import { newId } from './lib/id'
 import { resolveMember } from './lib/member-auth'
 import { resolveSite } from './lib/site'
+import analytics from './routes/analytics'
 import apiKeys from './routes/api-keys'
 import auth from './routes/auth'
+import collect from './routes/collect'
 import collections from './routes/collections'
 import content from './routes/content'
 import email from './routes/email'
@@ -49,6 +52,10 @@ const ADMIN_PREFIXES = [
   '/api/v1/newsletter-templates',
   '/api/v1/subscribers',
   '/api/v1/system',
+  // Website analytics *reporting*. The collector that writes these numbers is a public endpoint on
+  // its own prefix (`/api/v1/collect`) and resolves no actor — see `routes/collect.ts`. Analytics is
+  // not an authoring surface a machine needs, so it is here rather than in `KEY_MANAGED_PREFIXES`.
+  '/api/v1/analytics',
 ]
 
 /**
@@ -116,6 +123,26 @@ app.use(
     origin: '*',
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['content-type', SITE_HEADER, MEMBER_TOKEN_HEADER],
+    maxAge: 86400,
+  }),
+)
+// The analytics beacon is sent from every reader's browser on someone else's origin, and the script
+// is fetched from a page there too. Nothing is read back — the endpoint answers 204 to everything.
+app.use(
+  '/api/v1/collect/*',
+  cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['content-type', SITE_HEADER],
+    maxAge: 86400,
+  }),
+)
+app.use(
+  '/api/v1/collect',
+  cors({
+    origin: '*',
+    allowMethods: ['POST', 'OPTIONS'],
+    allowHeaders: ['content-type', SITE_HEADER],
     maxAge: 86400,
   }),
 )
@@ -252,6 +279,10 @@ app.route('/api/v1/newsletter-templates', newsletterTemplates)
 app.route('/api/v1/subscribers', subscribers)
 // Deployment-level version and update awareness — admin-only, like everything under /system.
 app.route('/api/v1/system', system)
+// Reading website analytics: session-only, like everything else that manages a deployment.
+app.route('/api/v1/analytics', analytics)
+// Writing them: public and unauthenticated, which is why it is not under the prefix above.
+app.route('/api/v1/collect', collect)
 // Public newsletter signup and unsubscribe — resolves no actor, like the member auth facade.
 app.route('/api/v1/newsletter', newsletterPublic)
 app.route('/api/v1/content', content)
@@ -290,4 +321,23 @@ app.notFound((c) =>
 
 app.onError((err, c) => errorResponse(c, err))
 
-export default app
+/**
+ * The Worker's two entry points.
+ *
+ * `scheduled` exists for exactly one job — trimming website-analytics rollups past their retention
+ * window, because D1 has no TTL and nothing else would ever delete them. It is not a general
+ * background-work hook: nothing in this deployment self-updates or self-deploys on a schedule, and
+ * the reasoning for that is in `.claude/rules/workers-config.md`. Adding a second cron job means
+ * meeting that argument first.
+ */
+export default {
+  fetch: app.fetch,
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      pruneAnalytics(env).catch((error) => {
+        // A failed prune is a table that stays a day larger. Never worth an unhandled rejection.
+        console.error('[analytics] prune failed', error)
+      }),
+    )
+  },
+} satisfies ExportedHandler<Bindings>

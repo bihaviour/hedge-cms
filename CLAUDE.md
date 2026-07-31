@@ -15,7 +15,7 @@ this document short and the detail close to the code it governs.
 | `.claude/rules/api-routes.md` | Adding or changing a Worker route: the credential-by-prefix pipeline, the two authorization levels, errors, validation, pagination, caching |
 | `.claude/rules/auth.md` | Sessions, invites, members, or the MCP OAuth server: the two Better Auth instances and the policy that must not drift |
 | `.claude/rules/database.md` | Touching `schema.ts` or writing a query: the migration workflow, SQLite limits, tenancy, timestamp formats |
-| `.claude/rules/admin-ui.md` | Changing the React admin: the API client, active-site handling, shadcn, adding a field kind |
+| `.claude/rules/admin-ui.md` | Changing the React admin: the API client, active-site handling, shadcn, adding a field kind, charts |
 | `.claude/rules/workers-config.md` | Editing `wrangler.jsonc`, adding a binding, deploying, the three install paths, or anything touching a Cloudflare API token |
 
 When something in a rule file turns out to be wrong or incomplete, fix that file — don't move the
@@ -90,6 +90,14 @@ Details are in the rule files; these are the ones worth knowing before you read 
   tiers: the delivery API takes any key, `KEY_MANAGED_PREFIXES` (content and media) takes a session
   or a *write-scoped* key, `ADMIN_PREFIXES` takes a session only. **A new management route must be
   added to one of the two lists** — pick `ADMIN_PREFIXES` unless a machine is meant to reach it.
+  A *public* route is a fourth thing and gets its own prefix rather than an exception inside the
+  middleware: `/api/v1/newsletter` and `/api/v1/collect` are the two.
+- **The Worker cannot see website traffic, and analytics does not pretend otherwise.** Readers never
+  touch this deployment, and the delivery API's `s-maxage` means one request can serve a month of
+  them — so request counts are not pageviews. Numbers come from a first-party beacon the website
+  embeds (`/api/v1/collect`), aggregated into daily buckets that are bounded by construction. No
+  cookies, no visitor identity, no uniques. Anything that would present a request count as traffic
+  is wrong however convenient it is.
 - **Operators and website members are two Better Auth instances over separate tables.** A member
   token isn't rejected by the admin API, it's unresolvable there.
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role

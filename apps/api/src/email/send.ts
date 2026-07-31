@@ -21,6 +21,12 @@ export interface SendOptions {
    * invite or password reset is not a site's to relabel.
    */
   site?: SiteRow | null
+  /**
+   * The campaign this send belongs to, recorded on the log row. Set by `sendNewsletter` and by
+   * nothing else — it is what turns the log into per-campaign delivery numbers instead of a pile of
+   * rows whose only link back is a subject line two campaigns can share.
+   */
+  newsletterId?: string
 }
 
 /**
@@ -45,7 +51,7 @@ export async function sendEmail(
   // Sending switched off in the config: compose and log, but never hand it to the provider.
   if (config?.enabled === false) {
     console.log(`[email] disabled — skipped to=${message.to} subject=${message.subject}`)
-    await logEmail(env, message, options.templateKey, 'skipped', 'Sending disabled in email config')
+    await logEmail(env, message, options, 'skipped', 'Sending disabled in email config')
     return
   }
 
@@ -56,7 +62,7 @@ export async function sendEmail(
     console.log(
       `[email] from=${from.name} <${from.email}> to=${message.to} subject=${message.subject}\n${message.text}`,
     )
-    await logEmail(env, message, options.templateKey, 'skipped', 'Not sent in development')
+    await logEmail(env, message, options, 'skipped', 'Not sent in development')
     return
   }
 
@@ -69,10 +75,13 @@ export async function sendEmail(
       html: message.html,
       text: message.text,
     })
-    await logEmail(env, message, options.templateKey, 'sent', null)
+    // `sent` means the binding accepted it, not that it reached an inbox. Cloudflare Email Sending
+    // surfaces no bounce or delivery callback, so this is the ceiling of what can be claimed — which
+    // is why the newsletter stats read it as "accepted".
+    await logEmail(env, message, options, 'sent', null)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    await logEmail(env, message, options.templateKey, 'failed', detail)
+    await logEmail(env, message, options, 'failed', detail)
     throw error
   }
 }
@@ -84,7 +93,7 @@ export async function sendEmail(
 async function logEmail(
   env: Bindings,
   message: EmailMessage,
-  templateKey: EmailTemplateKey | undefined,
+  options: SendOptions,
   status: EmailStatus,
   error: string | null,
 ): Promise<void> {
@@ -95,7 +104,8 @@ async function logEmail(
         id: newId('elog'),
         to: message.to,
         subject: message.subject,
-        templateKey: templateKey ?? null,
+        templateKey: options.templateKey ?? null,
+        newsletterId: options.newsletterId ?? null,
         status,
         error,
       })

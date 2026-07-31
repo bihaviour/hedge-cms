@@ -337,6 +337,101 @@ export const en = {
   'account.uiLanguageHint':
     'The language this admin interface is shown in. A preference for you, not the site.',
 
+  // Dashboard and analytics.
+  'nav.overview': 'Overview',
+  'nav.dashboard': 'Dashboard',
+  'nav.analytics': 'Analytics',
+  'label.dashboard': 'Dashboard',
+  'label.analytics': 'Analytics',
+
+  'dash.title': 'Dashboard',
+  'dash.subtitle': 'How {site} is doing, over the last 30 days.',
+  'dash.viewAnalytics': 'All analytics',
+  'dash.topArticles': 'Top articles',
+  'dash.topArticlesEmpty': 'No article has been read in this period yet.',
+  'dash.recentlyUpdated': 'Recently updated',
+  'dash.recentlyUpdatedEmpty': 'Nothing has been edited yet.',
+  'dash.lastNewsletter': 'Last newsletter',
+  'dash.lastNewsletterEmpty': 'No newsletter has been sent from this site.',
+  'dash.newsletterSent': 'Sent {date} to {count} recipients',
+
+  // The empty state that matters most: no data because nothing is reporting any.
+  'analytics.notCollectingTitle': 'No website traffic yet',
+  'analytics.notCollectingBody':
+    'Hedge never sees your readers on its own — the website has to report a pageview. Add the one-line snippet to your site and numbers start appearing here.',
+  'analytics.notCollectingAction': 'How to add it',
+  'analytics.snippetTitle': 'The snippet',
+  'analytics.snippetHint':
+    'Paste this once, in your site’s template. It sets no cookie, reads no storage, and honours Do Not Track.',
+  'analytics.copySnippet': 'Copy snippet',
+  'analytics.snippetCopied': 'Snippet copied to clipboard',
+
+  'analytics.title': 'Analytics',
+  'analytics.subtitle': 'What readers did on {site}.',
+  'analytics.rangeLabel': 'Range',
+  'analytics.range7': 'Last 7 days',
+  'analytics.range30': 'Last 30 days',
+  'analytics.range90': 'Last 90 days',
+  'analytics.range365': 'Last 12 months',
+  'analytics.comparedTo': 'vs previous period',
+  'analytics.timezoneNote': 'Days are counted in the site timezone ({timezone}).',
+  'analytics.startsOn':
+    'This range reaches back before tracking started on {date}. Earlier days are empty because nothing was measured, not because nobody read anything.',
+
+  'analytics.views': 'Views',
+  'analytics.pages': 'Pages read',
+  'analytics.referrals': 'From other sites',
+  'analytics.shareIntents': 'Share clicks',
+  'analytics.previousPeriod': 'Previous period',
+  'analytics.trafficTitle': 'Traffic',
+
+  'analytics.entriesTitle': 'Every article',
+  'analytics.colArticle': 'Article',
+  'analytics.colViews': 'Views',
+  'analytics.colTrend': 'Trend',
+  'analytics.colShares': 'Share clicks',
+  'analytics.sortViews': 'Most viewed',
+  'analytics.sortTrend': 'Biggest change',
+  'analytics.sortShares': 'Most shared',
+  'analytics.noEntryMatch': 'not an entry',
+  'analytics.entriesEmpty': 'Nothing was read in this period.',
+
+  'analytics.referrersTitle': 'Where readers come from',
+  'analytics.referrersCaveat':
+    'A large “direct” share is mostly browsers that sent no referrer at all — not readers typing your URL.',
+  'analytics.groupSearch': 'Search',
+  'analytics.groupSocial': 'Social',
+  'analytics.groupDirect': 'Direct',
+  'analytics.groupOther': 'Other',
+  'analytics.referrersEmpty': 'No inbound traffic recorded in this period.',
+
+  'analytics.sharesTitle': 'Shares',
+  'analytics.sharesCaveat':
+    'These are clicks on your own share and copy-link buttons, not counts reported by any platform — X, Facebook and LinkedIn all stopped publishing those. Read it as intent to share, never as “shared this many times”.',
+  'analytics.sharesEmpty':
+    'No share clicks recorded. Call hedge(‘share’, ‘x’) from your share buttons to count them.',
+
+  'analytics.newslettersTitle': 'Newsletter',
+  'analytics.newslettersEmpty': 'No newsletter was sent in this period.',
+  'analytics.subscribers': 'Subscribers',
+  'analytics.subscribersGained': 'Joined',
+  'analytics.subscribersLost': 'Left',
+  'analytics.audienceTitle': 'Audience',
+  'analytics.colCampaign': 'Campaign',
+  'analytics.colSent': 'Sent',
+  'analytics.colAccepted': 'Accepted',
+  'analytics.colFailed': 'Failed',
+  'analytics.acceptedNote':
+    '“Accepted” means the mail provider took the message. Cloudflare Email Sending reports no bounces or opens, so nothing here claims a message reached an inbox.',
+  'analytics.noOpensNote':
+    'Opens are not tracked. Apple Mail prefetches images, so an open rate counts Apple rather than readers.',
+
+  'analytics.entryTitle': 'Traffic for “{title}”',
+  'analytics.entryViews': 'Views in this period',
+  'analytics.entryShares': 'Share clicks',
+  'analytics.viewAnalytics': 'Analytics',
+  'analytics.backToAll': 'All articles',
+
   // Login page.
   'login.title': 'Sign in',
   'login.subtitle': 'Sign in to the Hedge admin.',
