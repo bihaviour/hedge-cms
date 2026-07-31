@@ -12,6 +12,13 @@ export type ApiErrorCode =
    */
   | 'unknown_site'
   | 'conflict'
+  /**
+   * The collection requires approvals this write has not got: publishing an entry directly where
+   * the workflow is switched on, or publishing a version that has not cleared every level. A
+   * conflict by status, but its own code because the admin acts on it — it steers the author to
+   * the version they should be opening instead of just reporting a failure.
+   */
+  | 'approval_required'
   | 'payload_too_large'
   | 'unsupported_media_type'
   | 'rate_limited'
@@ -39,6 +46,7 @@ export const HTTP_STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   not_found: 404,
   unknown_site: 404,
   conflict: 409,
+  approval_required: 409,
   payload_too_large: 413,
   unsupported_media_type: 415,
   rate_limited: 429,

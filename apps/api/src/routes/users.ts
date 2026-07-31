@@ -43,8 +43,14 @@ app.get('/:id/sites', requirePermission('users:manage'), async (c) => {
 })
 
 app.put('/:id/sites/:siteId', requirePermission('users:manage'), async (c) => {
-  const { role } = await validate(c, setSiteRoleSchema)
-  const data = await setUserSiteRole(c.env, c.req.param('id'), c.req.param('siteId'), role)
+  const { role, approvalLevel } = await validate(c, setSiteRoleSchema)
+  const data = await setUserSiteRole(
+    c.env,
+    c.req.param('id'),
+    c.req.param('siteId'),
+    role,
+    approvalLevel,
+  )
   return c.json({ data })
 })
 

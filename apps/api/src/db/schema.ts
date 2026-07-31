@@ -139,6 +139,13 @@ export const siteUsers = sqliteTable(
     role: text('role', { enum: ['admin', 'editor', 'viewer'] })
       .notNull()
       .default('editor'),
+    /**
+     * What this user may approve on this site — see `entry_versions` below. Null means "derive it
+     * from the site role", which is what keeps every grant that predates the workflow behaving as
+     * it always did. It lives here rather than in a table of its own because approval is a site
+     * power and this row already *is* someone's site access, resolved on every request anyway.
+     */
+    approvalLevel: integer('approval_level'),
     createdAt: text('created_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -473,6 +480,12 @@ export const collections = sqliteTable(
     /** JSON array of field definitions — see `@hedge/core`'s `fieldsSchema`. */
     fields: text('fields', { mode: 'json' }).notNull().$type<unknown[]>(),
     /**
+     * How many approvals a version of one of this collection's entries must clear before it can be
+     * published. `0` — the default, and what every collection that predates this column has —
+     * switches the workflow off entirely, so the epic ships inert.
+     */
+    approvalLevels: integer('approval_levels').notNull().default(0),
+    /**
      * Path template appended to the site's `previewUrl` for one entry of this collection, with
      * `{collection}`, `{slug}` and `{locale}` placeholders. Null falls back to the default shape.
      */
@@ -533,6 +546,79 @@ export const entryRevisions = sqliteTable(
       .$defaultFn(() => new Date().toISOString()),
   },
   (t) => [index('entry_revisions_entry_idx').on(t.entryId, t.createdAt)],
+)
+
+/**
+ * A proposed *future* state of an entry — the forward-looking counterpart to `entry_revisions`
+ * above, which records what an entry was. Several may be open on one entry at once, which is what
+ * lets two people write the same article without the second write erasing the first.
+ *
+ * Publishing a version is what writes the live row; until then the delivery API cannot see it at all.
+ */
+export const entryVersions = sqliteTable(
+  'entry_versions',
+  {
+    id: text('id').primaryKey(),
+    /**
+     * Carried rather than reached by joining `entry_versions → entries → collections`. The review
+     * queue is a per-site query and `siteId` is the tenant boundary every content query filters on,
+     * so making it two hops away would be paying for the join on the one query that matters most.
+     */
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => entries.id, { onDelete: 'cascade' }),
+    /** The author's own summary — "added the interview section". What makes a list of three legible. */
+    title: text('title').notNull(),
+    data: text('data', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
+    /** Nullable for the same reason as a revision's: null publishes without touching the entry's. */
+    metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
+    status: text('status', {
+      enum: ['draft', 'in_review', 'changes_requested', 'approved', 'published', 'discarded'],
+    })
+      .notNull()
+      .default('draft'),
+    /** The live entry's `updatedAt` when this version forked. Behind it now means a stale base. */
+    baseUpdatedAt: text('base_updated_at').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    submittedAt: text('submitted_at'),
+    publishedAt: text('published_at'),
+    ...timestamps,
+  },
+  (t) => [
+    index('entry_versions_entry_idx').on(t.entryId, t.createdAt),
+    // The review queue: one site's versions in one status, without touching another tenant's rows.
+    index('entry_versions_site_status_idx').on(t.siteId, t.status),
+  ],
+)
+
+/**
+ * One recorded decision on a version, never updated in place. A version's progress is *derived*
+ * from these rows (`clearedLevels` in `@hedge/core`) rather than duplicated into a counter column,
+ * so the audit trail and the state cannot drift apart.
+ *
+ * Two rules this table cannot express live in the write path instead, with tests: an approver may
+ * not be the version's author, and one person may not satisfy both levels.
+ */
+export const entryVersionApprovals = sqliteTable(
+  'entry_version_approvals',
+  {
+    id: text('id').primaryKey(),
+    versionId: text('version_id')
+      .notNull()
+      .references(() => entryVersions.id, { onDelete: 'cascade' }),
+    /** 1 or 2 — the level this decision satisfies. Levels are cleared in order. */
+    level: integer('level').notNull(),
+    decision: text('decision', { enum: ['approved', 'rejected'] }).notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    comment: text('comment'),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [index('entry_version_approvals_version_idx').on(t.versionId, t.createdAt)],
 )
 
 export const media = sqliteTable(
@@ -705,6 +791,8 @@ export type MemberRow = typeof members.$inferSelect
 export type MemberSiteRow = typeof memberSites.$inferSelect
 export type CollectionRow = typeof collections.$inferSelect
 export type EntryRow = typeof entries.$inferSelect
+export type EntryVersionRow = typeof entryVersions.$inferSelect
+export type EntryVersionApprovalRow = typeof entryVersionApprovals.$inferSelect
 export type MediaRow = typeof media.$inferSelect
 export type ApiKeyRow = typeof apiKeys.$inferSelect
 export type OAuthApplicationRow = typeof oauthApplications.$inferSelect

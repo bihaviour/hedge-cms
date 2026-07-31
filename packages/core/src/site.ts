@@ -34,11 +34,23 @@ export const siteAccessSchema = z.object({
   siteSlug: z.string(),
   siteName: z.string(),
   role: z.enum(SITE_ROLES),
+  /**
+   * What this user may approve on this site, or `null` to derive it from their site role. Kept as a
+   * column on the grant rather than a table of its own: approval is a *site* power, and this row
+   * already is somebody's site access — one that every request resolves anyway.
+   */
+  approvalLevel: z.number().int().min(0).max(2).nullable(),
+  /** The level actually in force — the override above, or the site role's default. */
+  effectiveApprovalLevel: z.number().int().min(0).max(2),
 })
 
 export type SiteAccess = z.infer<typeof siteAccessSchema>
 
-export const setSiteRoleSchema = z.object({ role: z.enum(SITE_ROLES) })
+export const setSiteRoleSchema = z.object({
+  role: z.enum(SITE_ROLES),
+  /** Omitted leaves any existing override alone; `null` clears it back to the role's default. */
+  approvalLevel: z.number().int().min(0).max(2).nullable().optional(),
+})
 
 export type SetSiteRoleInput = z.infer<typeof setSiteRoleSchema>
 

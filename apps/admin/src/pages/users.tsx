@@ -1,4 +1,4 @@
-import { SITE_ROLES, type SiteRole, type User } from '@hedge/core'
+import { approvalLevelForSiteRole, SITE_ROLES, type SiteRole, type User } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeySquare, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
@@ -193,6 +193,7 @@ function SiteAccessDialog({
   user: User | null
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const { sites } = useActiveSite()
 
@@ -202,10 +203,18 @@ function SiteAccessDialog({
     enabled: Boolean(user),
   })
 
-  const setRole = useMutation({
-    mutationFn: async ({ siteId, role }: { siteId: string; role: SiteRole | 'none' }) => {
+  const update = useMutation({
+    mutationFn: async ({
+      siteId,
+      role,
+      approvalLevel,
+    }: {
+      siteId: string
+      role: SiteRole | 'none'
+      approvalLevel?: number | null
+    }) => {
       if (role === 'none') await api.users.revokeSite(user!.id, siteId)
-      else await api.users.grantSite(user!.id, siteId, role)
+      else await api.users.grantSite(user!.id, siteId, role, approvalLevel)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-site-access', user?.id] })
@@ -215,8 +224,7 @@ function SiteAccessDialog({
     onError: (error) => toast.error(error.message),
   })
 
-  const roleFor = (siteId: string) =>
-    access.data?.find((grant) => grant.siteId === siteId)?.role ?? 'none'
+  const grantFor = (siteId: string) => access.data?.find((grant) => grant.siteId === siteId)
 
   return (
     <Dialog open={user !== null} onOpenChange={onOpenChange}>
@@ -224,46 +232,96 @@ function SiteAccessDialog({
         <DialogHeader>
           <DialogTitle>Site access</DialogTitle>
           <DialogDescription>
-            Which sites {user?.name} can reach, and as what. A site with no access does not appear
-            in their site switcher at all.
+            Which sites {user?.name} can reach, as what, and what they may approve. A site with no
+            access does not appear in their site switcher at all.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-4">
+        <div className="space-y-4 py-4">
           {access.isLoading && <Skeleton className="h-24 w-full" />}
 
           {access.data &&
-            sites.map((site) => (
-              <div key={site.id} className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{site.name}</p>
-                  <p className="truncate font-mono text-muted-foreground text-xs">{site.slug}</p>
+            sites.map((site) => {
+              const grant = grantFor(site.id)
+              return (
+                <div key={site.id} className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-sm">{site.name}</p>
+                      <p className="truncate font-mono text-muted-foreground text-xs">
+                        {site.slug}
+                      </p>
+                    </div>
+                    <Select
+                      value={grant?.role ?? 'none'}
+                      disabled={update.isPending}
+                      onValueChange={(role) =>
+                        update.mutate({ siteId: site.id, role: role as SiteRole | 'none' })
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No access</SelectItem>
+                        {SITE_ROLES.map((role) => (
+                          <SelectItem key={role} value={role} className="capitalize">
+                            {role}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Approval authority sits beside the role it defaults from, so "this is managed
+                      per user" has one obvious home. Only meaningful where a grant exists. */}
+                  {grant && (
+                    <div className="flex items-center justify-between gap-3 pl-3">
+                      <p className="text-muted-foreground text-xs">{t('users.approvalLevel')}</p>
+                      <Select
+                        value={
+                          grant.approvalLevel === null ? 'inherit' : String(grant.approvalLevel)
+                        }
+                        disabled={update.isPending}
+                        onValueChange={(value) =>
+                          update.mutate({
+                            siteId: site.id,
+                            role: grant.role,
+                            approvalLevel: value === 'inherit' ? null : Number(value),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="inherit">
+                            {t('users.approvalInherit', {
+                              level: approvalLevelForSiteRole(grant.role),
+                            })}
+                          </SelectItem>
+                          <SelectItem value="0">{t('users.approvalNone')}</SelectItem>
+                          <SelectItem value="1">{t('users.approvalLevel1')}</SelectItem>
+                          <SelectItem value="2">{t('users.approvalLevel2')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
-                <Select
-                  value={roleFor(site.id)}
-                  disabled={setRole.isPending}
-                  onValueChange={(role) =>
-                    setRole.mutate({ siteId: site.id, role: role as SiteRole | 'none' })
-                  }
-                >
-                  <SelectTrigger className="h-8 w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No access</SelectItem>
-                    {SITE_ROLES.map((role) => (
-                      <SelectItem key={role} value={role} className="capitalize">
-                        {role}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
+              )
+            })}
+
+          {/* A role carrying `sites:access_all` has no `site_users` row to write to, so its level is
+              shown as what it derives to rather than as a control that would save nothing. */}
+          {user?.permissions.includes('sites:access_all') && (
+            <p className="text-muted-foreground text-sm">{t('users.approvalAllSites')}</p>
+          )}
+
+          <p className="text-muted-foreground text-xs">{t('users.approvalHint')}</p>
         </div>
 
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Done</Button>
+          <Button onClick={() => onOpenChange(false)}>{t('common.done')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

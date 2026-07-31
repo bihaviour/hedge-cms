@@ -322,4 +322,107 @@ export const id: Catalog = {
   'login.password': 'Kata sandi',
   'login.submit': 'Masuk',
   'login.forgot': 'Lupa kata sandi?',
+
+  'common.error': 'Terjadi kesalahan',
+  'common.done': 'Selesai',
+
+  // Pre-existing gaps, filled so the catalogs can be gated by a test rather than by attention.
+  'nav.roles': 'Peran',
+  'nav.about': 'Tentang & pembaruan',
+  'label.about': 'Tentang',
+
+  'editor.approvalNotice':
+    'Koleksi ini membutuhkan {levels} persetujuan sebelum entri dapat diterbitkan. Simpan pekerjaan Anda sebagai versi dan ajukan untuk ditinjau.',
+
+  'revisions.title': 'Riwayat',
+  'revisions.previewTitle': 'Pratinjau revisi',
+  'revisions.restore': 'Pulihkan revisi ini',
+  'revisions.restored': 'Revisi dipulihkan',
+  'revisions.diffHint': 'Bidang yang berbeda dari entri saat ini:',
+
+  'versions.title': 'Versi',
+  'versions.start': 'Baru',
+  'versions.startAction': 'Mulai versi',
+  'versions.empty':
+    'Belum ada versi. Mulai satu untuk mengusulkan perubahan tanpa menyentuh yang tayang.',
+  'versions.created': 'Versi dibuat',
+  'versions.newTitle': 'Mulai versi baru',
+  'versions.newDescription':
+    'Versi mencabangkan entri ini apa adanya sekarang. Mengubahnya tidak mengubah apa pun yang tayang sampai diterbitkan.',
+  'versions.summary': 'Apa yang dilakukan versi ini?',
+  'versions.summaryPlaceholder': 'Menambahkan bagian wawancara',
+  'versions.summaryHint':
+    'Satu baris. Inilah cara peninjau membedakan beberapa versi yang terbuka.',
+  'versions.unknownAuthor': 'Tidak diketahui',
+  'versions.cleared': '{cleared}/{required} disetujui',
+  'versions.stale': 'Usang',
+  'versions.staleHint':
+    'Versi ini ditulis atas salinan entri yang lebih lama, yang sudah berubah sejak itu. Menerbitkannya akan menggantikan perubahan tersebut.',
+  'versions.statusDraft': 'Draf',
+  'versions.statusInReview': 'Sedang ditinjau',
+  'versions.statusChangesRequested': 'Perlu perubahan',
+  'versions.statusApproved': 'Disetujui',
+  'versions.statusPublished': 'Diterbitkan',
+  'versions.statusDiscarded': 'Dibuang',
+  'versions.compareAgainst': 'Bandingkan dengan',
+  'versions.compareLive': 'Entri yang tayang',
+  'versions.diffIdentical': 'Tidak ada perbedaan di antara keduanya.',
+  'versions.diffBefore': 'Sebelum',
+  'versions.diffAfter': 'Versi ini',
+  'versions.change.changed': 'diubah',
+  'versions.change.added': 'ditambah',
+  'versions.change.removed': 'dihapus',
+  'versions.trail': 'Jejak tinjauan',
+  'versions.trailEntry': '{name} pada tingkat {level}',
+  'versions.comment': 'Catatan untuk penulis',
+  'versions.commentPlaceholder': 'Apa yang perlu diubah, atau mengapa ini sudah siap',
+  'versions.submit': 'Ajukan untuk ditinjau',
+  'versions.discard': 'Buang',
+  'versions.approve': 'Setujui',
+  'versions.reject': 'Minta perubahan',
+  'versions.publish': 'Terbitkan versi ini',
+  'versions.cannotReviewOwn': 'Anda yang menulis versi ini, jadi orang lain harus meninjaunya.',
+  'versions.alreadyDecided':
+    'Anda sudah meninjau versi ini — tingkat berikutnya membutuhkan orang lain.',
+  'versions.levelTooLow':
+    'Menyetujui pada tingkat {level} membutuhkan tingkat persetujuan yang lebih tinggi dari milik Anda.',
+  'versions.done.submit': 'Diajukan untuk ditinjau',
+  'versions.done.approve': 'Versi disetujui',
+  'versions.done.reject': 'Dikembalikan ke penulis',
+  'versions.done.publish': 'Versi diterbitkan',
+  'versions.done.discard': 'Versi dibuang',
+
+  'review.title': 'Tinjauan',
+  'review.subtitle': 'Versi yang menunggu Anda, di seluruh situs ini.',
+  'review.emptyTitle': 'Tidak ada yang menunggu',
+  'review.emptyDescription':
+    'Tidak ada versi di situs ini yang menunggu persetujuan Anda saat ini.',
+  'review.colVersion': 'Versi',
+  'review.colEntry': 'Entri',
+  'review.colAuthor': 'Penulis',
+  'review.colSubmitted': 'Diajukan',
+  'review.open': 'Buka',
+  'review.loadMore': 'Muat lagi',
+  'review.noAuthority':
+    'Anda tidak menyetujui versi di situs ini. Admin dapat mengubahnya dari Pengguna → Akses situs.',
+  'nav.review': 'Tinjauan',
+  'label.review': 'Tinjauan',
+
+  'users.approvalLevel': 'Persetujuan',
+  'users.approvalInherit': 'Dari peran ({level})',
+  'users.approvalNone': 'Tidak ada',
+  'users.approvalLevel1': 'Tingkat 1',
+  'users.approvalLevel2': 'Tingkat 1 dan 2',
+  'users.approvalAllSites': 'Tingkat 2 di setiap situs',
+  'users.approvalHint':
+    'Tingkat tinjauan yang dapat disetujui orang ini untuk situs ini. "Dari peran" mengikuti peran situs mereka — editor menyetujui tingkat 1, admin keduanya.',
+
+  'collections.approvalTitle': 'Penerbitan',
+  'collections.approvalLabel': 'Persetujuan sebelum penerbitan',
+  'collections.approvalOff': 'Nonaktif — siapa pun yang dapat mengubah dapat menerbitkan',
+  'collections.approvalOne': 'Satu persetujuan',
+  'collections.approvalTwo': 'Dua persetujuan',
+  'collections.approvalHint':
+    'Dengan persetujuan aktif, entri di koleksi ini tidak lagi dapat diterbitkan dengan mengubahnya langsung. Perubahan ditulis sebagai versi, ditinjau oleh orang selain penulisnya, lalu diterbitkan dari sana.',
+  'collections.fieldsTitle': 'Bidang',
 }
