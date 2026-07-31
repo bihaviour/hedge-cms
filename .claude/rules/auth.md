@@ -26,11 +26,16 @@ server. **Authorization is ours** and nothing in `auth/` reads `users.role` or `
 | Delivery API key (`content:read` only) | `Authorization: Bearer hdg_…` | `resolveDeliveryActor` | `/api/v1/content/*` only |
 | Authoring API key (any `:write` scope) | `Authorization: Bearer hdg_…` | `resolveSessionOrKeyActor` | the above, plus `/collections/*` and `/media/*` |
 | Member token | `X-Member-Token` | `resolveMember` | gated delivery content; never the admin API |
+| Preview token | `X-Hedge-Preview` | `resolvePreview` | one unpublished entry, on `/api/v1/content/*` only |
 | MCP OAuth token | `Authorization: Bearer` | inside `routes/mcp.ts` | `/api/v1/mcp` only |
 
 The two key rows are the *same credential type* separated by what it was issued to do. A key with
 no write scope never leaves the delivery API, so the credential a public website holds still cannot
 see a draft. Neither kind reaches users, sites, members, email, or the key routes themselves.
+
+A preview token resolves no actor at all — it sets `preview`, not `actor`, so it widens what an
+already-authenticated delivery request may see rather than authenticating one. Minting it is
+`requireUserActor` only; see `api-routes.md`.
 
 `Actor.kind` is *who* is acting; `Actor.via` is what they presented. Both matter — `requireUserActor`
 rejects keys and delegated clients even when the role would allow the action.

@@ -190,6 +190,16 @@ export const en = {
   'editor.localeHint': 'Which language variant of this entry you are editing.',
   'editor.translationMissing': 'No {locale} translation yet — saving creates one.',
 
+  // Authenticated preview — seeing a saved but unpublished entry in the website's own layout.
+  'preview.action': 'Preview',
+  'preview.opening': 'Opening…',
+  'preview.title': 'Preview',
+  'preview.setUp': 'Set up preview',
+  'preview.notConfigured': 'This site has no preview URL yet — add one in site settings.',
+  'preview.openTab': 'Open in a new tab',
+  'preview.framedHint':
+    'Showing what is saved, not unsaved edits. If this pane stays blank, your website is refusing to be framed — open it in a tab instead.',
+
   // Collections page.
   'collections.title': 'Collections',
   'collections.subtitle': 'Content types on this site.',

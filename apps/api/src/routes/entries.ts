@@ -1,7 +1,12 @@
-import { createEntrySchema, listEntriesQuerySchema, updateEntrySchema } from '@hedge/core'
+import {
+  createEntrySchema,
+  createPreviewTokenSchema,
+  listEntriesQuerySchema,
+  updateEntrySchema,
+} from '@hedge/core'
 import { Hono } from 'hono'
 import type { Actor, AppEnv } from '../env'
-import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
+import { requireActor, requireScope, requireSiteRole, requireUserActor } from '../lib/auth'
 import {
   createEntry,
   deleteEntry,
@@ -11,6 +16,7 @@ import {
   restoreEntryRevision,
   updateEntry,
 } from '../lib/entries'
+import { mintPreviewToken } from '../lib/preview'
 import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
 
@@ -107,5 +113,33 @@ app.post(
     return c.json({ data })
   },
 )
+
+/**
+ * Mints a short-lived token that lets the website render this one entry unpublished, in its own
+ * layout (`lib/preview.ts`).
+ *
+ * `viewer` because anyone who can already read the draft through the management API can already
+ * read it — this endpoint changes *where* it can be read, not *who* may.
+ *
+ * `requireUserActor` is the load-bearing part, and it is a call rather than the usual middleware
+ * because that is the shape the helper has. This prefix is in `KEY_MANAGED_PREFIXES`, so a
+ * write-scoped API key resolves on it — and the whole requirement of authenticated preview is that
+ * only a signed-in CMS user can produce a link to unpublished content. A key living in a website's
+ * environment variables, or an MCP client acting on someone's behalf, must not be able to
+ * manufacture one.
+ */
+app.post('/:slug/preview-token', requireSiteRole('viewer'), async (c) => {
+  const actor = requireUserActor(c)
+  const input = await validate(c, createPreviewTokenSchema)
+  const data = await mintPreviewToken(
+    c.env,
+    requireSite(c),
+    c.req.param('collection')!,
+    c.req.param('slug'),
+    input,
+    actor.id,
+  )
+  return c.json({ data }, 201)
+})
 
 export default app

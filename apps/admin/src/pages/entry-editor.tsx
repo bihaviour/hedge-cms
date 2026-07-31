@@ -5,6 +5,7 @@ import { ArrowLeft, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
+import { EntryPreview } from '@/components/entry-preview'
 import { EntryRevisions } from '@/components/entry-revisions'
 import { FieldInput } from '@/components/field-input'
 import { PageHeader } from '@/components/page-header'
@@ -190,6 +191,15 @@ export function EntryEditorPage() {
                 <ArrowLeft className="size-4" />
               </Link>
             </Button>
+            {/* Preview renders what is *saved*, so it only makes sense once the entry exists. */}
+            {!creating && (
+              <EntryPreview
+                collection={collectionSlug}
+                slug={entry.data?.slug ?? slug!}
+                locale={locale}
+                disabled={save.isPending}
+              />
+            )}
             {!creating && (
               <Button
                 variant="outline"

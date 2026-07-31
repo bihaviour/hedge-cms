@@ -28,6 +28,7 @@ import type {
   NewsletterAudience,
   NewsletterPreview,
   NewsletterTemplate,
+  PreviewToken,
   RoleDefinition,
   SendResult,
   Site,
@@ -274,6 +275,16 @@ export const api = {
         `/collections/${collection}/entries/${slug}/revisions/${revisionId}/restore?locale=${locale}`,
         { method: 'POST' },
       ),
+    /**
+     * Mints a short-lived link that renders this entry, unpublished, in the website's own layout.
+     * The response carries a ready-built `url` — the server owns the template expansion so the
+     * admin and any other client point at the same place. Null when the site has no preview URL.
+     */
+    previewToken: (collection: string, slug: string, locale = 'en') =>
+      request<PreviewToken>(`/collections/${collection}/entries/${slug}/preview-token`, {
+        method: 'POST',
+        ...json({ locale }),
+      }),
   },
 
   media: {

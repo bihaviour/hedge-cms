@@ -1,5 +1,6 @@
 import type { Role } from '@hedge/core'
 import type { MemberRow, SiteRow } from './db/schema'
+import type { PreviewClaims } from './lib/preview'
 
 export interface Bindings {
   DB: D1Database
@@ -88,6 +89,11 @@ export interface Variables {
   site: SiteRow | null
   /** A signed-in website member. Never grants access to anything under the admin API. */
   member: MemberRow | null
+  /**
+   * A valid preview token for this tenant, or null. Set on the delivery API only — see
+   * `lib/preview.ts`. Being set says nothing about *which* entry it unlocks; `previewFor` decides.
+   */
+  preview: PreviewClaims | null
   /** The actor's role on `site`, memoised per request. `null` means no access; unset means
    * it has not been looked up yet. */
   siteRole?: Role | null
