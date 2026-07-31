@@ -48,8 +48,13 @@ Never open a PR from `main`. If `git branch --show-current` is `main`, stop and 
 2. Draft the title and body from the commits on the branch — a short summary of what changed and
    why, and what was actually verified (commands run, behaviour exercised). Claims like "tested"
    with nothing behind them are worse than silence.
-3. `gh pr create --base main --title "…" --body-file <tmp>` (add `--draft` when asked)
-4. Print the URL that comes back.
+3. **If the branch implements an issue, the body carries `Closes #N`** — one line per issue, a
+   closing keyword rather than a bare `#N`. Work out which from the branch name, the task as it was
+   given, or `gh issue list`. Only a closing keyword makes the merge close the issue and shows the
+   link on both sides; without it the issue stays open and the squash commit loses the one place its
+   rationale is written down. An epic branch closing several closes each of them.
+4. `gh pr create --base main --title "…" --body-file <tmp>` (add `--draft` when asked)
+5. Print the URL that comes back.
 
 ## Merging
 
@@ -58,7 +63,10 @@ Never open a PR from `main`. If `git branch --show-current` is `main`, stop and 
    - `state` must be `OPEN` and `isDraft` false
    - `mergeStateStatus`: `CLEAN` and `UNSTABLE` are fine; `BLOCKED`, `BEHIND`, `DIRTY`, `DRAFT` are not
    - `gh pr checks <N>` — report a failing check, do not race it
-3. Squash by default, and clean up the branch:
+3. **Last chance for the issue link.** If the PR implements an issue and the body has no
+   `Closes #N`, add it now — `gh pr edit <N> --body-file <tmp>` — because after the squash lands
+   there is nothing left to attach it to but a comment nobody reads.
+4. Squash by default, and clean up the branch:
 
    ```bash
    gh pr merge <N> --squash --delete-branch
