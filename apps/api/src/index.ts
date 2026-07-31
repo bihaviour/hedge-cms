@@ -25,6 +25,7 @@ import members, { memberAuth } from './routes/members'
 import newsletterPublic from './routes/newsletter-public'
 import newsletterTemplates from './routes/newsletter-templates'
 import newsletters, { subscribers } from './routes/newsletters'
+import review from './routes/review'
 import roles from './routes/roles'
 import sites from './routes/sites'
 import system from './routes/system'
@@ -49,6 +50,9 @@ const ADMIN_PREFIXES = [
   '/api/v1/newsletter-templates',
   '/api/v1/subscribers',
   '/api/v1/system',
+  // The review inbox — one person's queue of decisions. A machine never makes one, so no key is
+  // resolved here even though the versions it lists are authored on the key-managed routes below.
+  '/api/v1/review',
 ]
 
 /**
@@ -246,6 +250,8 @@ app.route('/api/v1/api-keys', apiKeys)
 app.route('/api/v1/collections', collections)
 app.route('/api/v1/collections/:collection/entries', entries)
 app.route('/api/v1/media', media)
+// Entry versions waiting on the signed-in person, for the active site.
+app.route('/api/v1/review', review)
 app.route('/api/v1/email', email)
 app.route('/api/v1/newsletters', newsletters)
 app.route('/api/v1/newsletter-templates', newsletterTemplates)

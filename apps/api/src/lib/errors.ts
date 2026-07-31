@@ -55,6 +55,14 @@ export class ApiError extends Error {
     return new ApiError('conflict', message)
   }
 
+  /**
+   * A publish blocked by the collection's approval workflow. A conflict by status, but its own code
+   * so the admin can steer the author to the version route rather than only reporting a failure.
+   */
+  static approvalRequired(message: string) {
+    return new ApiError('approval_required', message)
+  }
+
   static rateLimited(message = 'Too many requests — try again shortly') {
     return new ApiError('rate_limited', message)
   }

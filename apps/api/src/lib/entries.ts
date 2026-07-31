@@ -109,8 +109,31 @@ async function snapshotRevision(
   })
 }
 
+/**
+ * Refuses to publish through the ordinary write path when the collection requires approvals.
+ *
+ * This lives in the service rather than in the route because *both* surfaces go through here: the
+ * REST `PATCH` and the MCP `update_entry` tool. A gate on the route alone would have a hole wide
+ * enough to drive the entire MCP surface through. `viaApprovedVersion` is how `publishEntryVersion`
+ * — the one path that has actually collected the approvals — comes back in.
+ */
+export function assertPublishAllowed(
+  collection: CollectionRow,
+  status: string,
+  wasPublished: boolean,
+  viaApprovedVersion: boolean,
+) {
+  if (status !== 'published' || wasPublished || viaApprovedVersion) return
+  if (collection.approvalLevels === 0) return
+
+  throw ApiError.approvalRequired(
+    `"${collection.slug}" requires ${collection.approvalLevels} approval(s) before an entry can be published. ` +
+      'Create a version, submit it for review, and publish that instead.',
+  )
+}
+
 /** Validates `data` against the collection's field definitions. */
-function validateData(collection: CollectionRow, data: Record<string, unknown>) {
+export function validateData(collection: CollectionRow, data: Record<string, unknown>) {
   const fields = fieldsSchema.parse(collection.fields)
   const result = buildEntryValidator(fields).safeParse(data)
   if (!result.success) throw ApiError.fromZod(result.error)
@@ -123,7 +146,7 @@ function validateData(collection: CollectionRow, data: Record<string, unknown>) 
  * `metadata.<field>` so the admin can attach them to the right input without clashing with a
  * collection data field of the same name.
  */
-function resolveMetadata(site: SiteRow, input: EntryMetadata | undefined): EntryMetadata {
+export function resolveMetadata(site: SiteRow, input: EntryMetadata | undefined): EntryMetadata {
   const meta = entryMetadataSchema.parse(input ?? {})
   const customFields = fieldsSchema.parse(site.customFields ?? [])
   const result = buildEntryValidator(customFields).safeParse(meta.custom)
@@ -139,7 +162,7 @@ function resolveMetadata(site: SiteRow, input: EntryMetadata | undefined): Entry
 }
 
 /** Locates one entry within a collection, in a single locale. Entries are keyed by both. */
-async function findEntry(
+export async function findEntry(
   env: Bindings,
   collection: CollectionRow,
   slug: string,
@@ -236,6 +259,10 @@ export async function createEntry(
   const metadata = resolveMetadata(site, input.metadata)
   const slug = input.slug ?? (slugify(String(data.title ?? '')) || newId())
 
+  // Creating an entry already published would sidestep the workflow as completely as a `PATCH`
+  // would — versions hang off an entry that exists, so the first save has to land as a draft.
+  assertPublishAllowed(collection, input.status, false, false)
+
   if (collection.kind === 'single') {
     const [existing] = await db
       .select({ id: entries.id })
@@ -280,6 +307,12 @@ export async function updateEntry(
   input: UpdateEntryInput,
   actorId: string | null,
   locale?: string,
+  /**
+   * Set only by `publishEntryVersion`, which has already collected every approval the collection
+   * requires. Publishing through the version routes still lands here so the pre-publish state is
+   * snapshotted as a revision and `publishedAt` keeps being decided in exactly one place.
+   */
+  options: { viaApprovedVersion?: boolean } = {},
 ): Promise<Entry> {
   const collection = await findCollection(env, site.id, collectionSlug)
   const db = getDb(env)
@@ -297,6 +330,13 @@ export async function updateEntry(
     input.metadata !== undefined ? resolveMetadata(site, input.metadata) : existing.metadata
   const status = input.status ?? existing.status
   const now = new Date().toISOString()
+
+  assertPublishAllowed(
+    collection,
+    status,
+    existing.status === 'published',
+    options.viaApprovedVersion ?? false,
+  )
 
   // Snapshot the pre-update state so edits are always recoverable.
   await snapshotRevision(db, existing, actorId)
@@ -383,11 +423,15 @@ export async function restoreEntryRevision(
 
   if (!revision) throw ApiError.notFound('Revision')
 
-  // Restoring is itself an edit: snapshot the current state first, so the restore is undoable too.
-  await snapshotRevision(db, existing, actorId)
-
   const status = revision.status as EntryRow['status']
   const now = new Date().toISOString()
+
+  // Rolling back to a revision that was published would publish a draft entry, which is the same
+  // bypass by another door. Checked before the snapshot below, so a refused restore leaves no trace.
+  assertPublishAllowed(collection, status, existing.status === 'published', false)
+
+  // Restoring is itself an edit: snapshot the current state first, so the restore is undoable too.
+  await snapshotRevision(db, existing, actorId)
 
   const [row] = await db
     .update(entries)
