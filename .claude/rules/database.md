@@ -81,7 +81,7 @@ migration failed) rather than pretending the file rolled back.
 | Operators (Better Auth CMS instance) | `users`, `sessions`, `accounts`, `verifications`, `rate_limits`, `auth_tokens` |
 | MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents` |
 | Members (Better Auth member instance) | `members`, `member_sites`, `member_sessions`, `member_accounts`, `member_verifications` |
-| Content | `collections`, `entries`, `entry_revisions`, `media`, `api_keys` |
+| Content | `collections`, `entries`, `entry_revisions`, `entry_versions`, `entry_version_approvals`, `media`, `api_keys` |
 
 Row types are exported at the bottom of `schema.ts` (`SiteRow`, `EntryRow`, …) — use those rather
 than re-deriving `$inferSelect` at the call site.
@@ -91,3 +91,26 @@ than re-deriving `$inferSelect` at the call site.
 Entries are keyed by (site, collection, slug, **locale**) — every read and write takes a locale,
 defaulting to `en`. An update writes a revision snapshot into `entry_revisions` first. Status
 transitions set `publishedAt`. Uniqueness collisions surface as `ApiError.conflict`.
+
+## Revisions and versions are two sets, not one
+
+`entry_revisions` is **backward-looking**: what an entry *was*, written automatically before every
+update. `entry_versions` is **forward-looking** (#59): what it *may become*, written deliberately,
+several open at once. Conflating them would make "restore" ambiguous, so they stay separate tables
+with separate meanings — don't merge them or reuse one for the other.
+
+Two things about `entry_versions` are load-bearing:
+
+- **`siteId` is on the row**, not reached through `entries → collections`. The review queue is a
+  per-site query and `siteId` is the boundary every content query filters on; two joins away is the
+  wrong place for it. `(siteId, status)` is indexed for exactly that query.
+- **A version's progress is derived, never stored.** `entry_version_approvals` holds one row per
+  decision and is never updated in place; `clearedLevels` in `@hedge/core` counts them, and a
+  rejection resets the count. There is deliberately no counter column for the two to disagree with.
+
+`collections.approvalLevels` (0/1/2) is what switches the workflow on, and `0` is the default every
+pre-existing collection carries — the feature ships inert. When it is non-zero, `updateEntry`,
+`createEntry` and `restoreEntryRevision` all refuse a transition to `published`
+(`assertPublishAllowed`), so the gate holds for the MCP tools as well as the REST routes. The one way
+through is `publishEntryVersion`, which passes `viaApprovedVersion` and still goes out via
+`updateEntry` so a revision is snapshotted like any other edit.

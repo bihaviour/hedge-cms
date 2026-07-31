@@ -24,6 +24,13 @@ The write-scope condition on the second tier is load-bearing, not a nicety. A `c
 key is the delivery credential; resolving it there would hand it `GET /collections/:c/entries`,
 which returns **drafts** — something the delivery API deliberately never serves.
 
+**A prefix decides what is *resolved*, not what is *allowed*.** The entry-version routes
+(`routes/entry-versions.ts`, #62) sit under `/collections`, so a write-scoped key resolves on all of
+them — right for authoring a version, wrong for approving one. The approve, reject and publish
+handlers therefore carry `requireUserActor` themselves rather than trusting where they live, and a
+test pins it. When a route inside an existing prefix needs a narrower credential than the prefix
+grants, say so in the route; do not move the whole prefix.
+
 A key's role comes from its scopes (`roleForScopes` in `lib/delivery-auth.ts`): `collections:write`
 → `admin`, any other `:write` → `editor`, otherwise `viewer`. `requireRole` — instance level —
 rejects API keys outright whatever that role says, so a key can never gain authority over the
@@ -70,7 +77,9 @@ code to forget a deleted site.
 ## Errors and validation
 
 - Throw `ApiError` (`lib/errors.ts`); `app.onError` renders it. Codes and their HTTP statuses are
-  defined once in `packages/core/src/api.ts` — add there, not inline.
+  defined once in `packages/core/src/api.ts` — add there, not inline. A code earns its own entry when
+  a *client* acts on it differently: `unknown_site` makes the admin forget a deleted site,
+  `approval_required` makes it point an author at the version route. Otherwise use `conflict`.
 - Response bodies are `{ data }`, `{ data, nextCursor }`, or `{ error: { code, message, details? } }`.
 - Parse input with `validate(c, schema)` / `validateQuery(c, schema)` using a schema from
   `@hedge/core`. Zod failures become a 400 with per-field details keyed by dot-path.
