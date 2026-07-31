@@ -1,12 +1,17 @@
-import { isAllowedUploadType, MAX_UPLOAD_BYTES, updateMediaSchema } from '@hedge/core'
+import {
+  isAllowedUploadType,
+  listMediaQuerySchema,
+  MAX_UPLOAD_BYTES,
+  updateMediaSchema,
+} from '@hedge/core'
 import { Hono } from 'hono'
-import { z } from 'zod'
 import { getDb } from '../db/client'
 import { media } from '../db/schema'
 import type { AppEnv } from '../env'
 import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { IMAGE_HEAD_BYTES, readImageSize } from '../lib/image-size'
 import { deleteMedia, listMedia, toMedia, updateMedia } from '../lib/media'
 import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
@@ -26,13 +31,7 @@ function buildKey(siteSlug: string, filename: string): string {
 }
 
 app.get('/', requireSiteRole('viewer'), requireScope('media:read'), async (c) => {
-  const query = validateQuery(
-    c,
-    z.object({
-      limit: z.coerce.number().int().min(1).max(100).default(24),
-      cursor: z.string().optional(),
-    }),
-  )
+  const query = validateQuery(c, listMediaQuerySchema)
   return c.json(await listMedia(c.env, requireSite(c).id, query))
 })
 
@@ -58,6 +57,11 @@ app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) 
     throw new ApiError('unsupported_media_type', `Files of type "${contentType}" are not allowed`)
   }
 
+  // Dimensions come from the file's head, not the file: `slice` is a view over the blob, so this
+  // reads 64 KB whatever the upload weighs, and the body still streams into R2 untouched below.
+  const head = new Uint8Array(await file.slice(0, IMAGE_HEAD_BYTES).arrayBuffer())
+  const size = readImageSize(head)
+
   const key = buildKey(site.slug, file.name || 'file')
   await c.env.MEDIA.put(key, file.stream(), {
     httpMetadata: {
@@ -76,6 +80,9 @@ app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) 
       filename: file.name || 'file',
       contentType,
       size: file.size,
+      // Null for anything the reader does not recognise, which is what these columns already mean.
+      width: size?.width ?? null,
+      height: size?.height ?? null,
       alt: (form.get('alt') as string | null) || null,
       uploadedBy: actor.kind === 'user' ? actor.id : null,
     })

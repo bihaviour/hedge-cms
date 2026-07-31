@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { type FieldRow, FieldsEditor, toFieldRows } from '@/components/fields-editor'
 import { PageHeader } from '@/components/page-header'
+import { SocialImageInput } from '@/components/social-image-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -143,15 +144,11 @@ export function SiteSettingsPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="meta-og">Social image</Label>
-              <Input
-                id="meta-og"
-                placeholder="Media key or URL"
-                value={meta.ogImage ?? ''}
-                onChange={(event) => patchMeta({ ogImage: event.target.value || undefined })}
-              />
-            </div>
+            <SocialImageInput
+              id="meta-og"
+              value={meta.ogImage}
+              onChange={(ogImage) => patchMeta({ ogImage })}
+            />
             <div className="space-y-2">
               <Label htmlFor="meta-twitter">Twitter handle</Label>
               <Input

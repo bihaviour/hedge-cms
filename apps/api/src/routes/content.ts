@@ -2,18 +2,19 @@ import {
   type EntryMetadata,
   type EntryVisibility,
   entryMetadataSchema,
+  type Field,
   fieldsSchema,
   localeCodeSchema,
   MEMBER_TOKEN_HEADER,
   type SiteMetadata,
   siteMetadataSchema,
 } from '@hedge/core'
-import { and, eq, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
-import { collections, entries } from '../db/schema'
-import type { AppEnv } from '../env'
+import { collections, entries, media } from '../db/schema'
+import type { AppEnv, Bindings } from '../env'
 import { requireScope, requireSiteRole } from '../lib/auth'
 import {
   cursorCondition,
@@ -25,6 +26,14 @@ import {
   whereConditions,
 } from '../lib/entry-query'
 import { ApiError } from '../lib/errors'
+import {
+  absoluteMediaUrl,
+  collectMediaKeys,
+  type MediaLookup,
+  mediaFieldsOf,
+  type ResolvedMediaFields,
+  resolveMediaFields,
+} from '../lib/media-fields'
 import { requireSite } from '../lib/site'
 import { validateQuery } from '../lib/validate'
 
@@ -97,6 +106,7 @@ function resolveDeliveryMetadata(
   siteMeta: SiteMetadata,
   entryMeta: EntryMetadata,
   data: Record<string, unknown>,
+  publicUrl: string,
 ) {
   const title = typeof data.title === 'string' ? data.title : undefined
   return {
@@ -106,7 +116,9 @@ function resolveDeliveryMetadata(
       siteMeta.metaTitle,
     description: entryMeta.description ?? siteMeta.description,
     canonicalUrl: entryMeta.canonicalUrl,
-    ogImage: entryMeta.ogImage ?? siteMeta.ogImage,
+    // Absolute, always: this lands in `<meta property="og:image">`, where a relative value is
+    // invalid and fails silently in every social preview. See `absoluteMediaUrl`.
+    ogImage: absoluteMediaUrl(entryMeta.ogImage ?? siteMeta.ogImage, publicUrl),
     keywords: siteMeta.keywords,
     twitterHandle: siteMeta.twitterHandle,
     noIndex: entryMeta.noIndex,
@@ -129,7 +141,13 @@ function setCacheHeaders(c: Context<AppEnv>, unlocked: boolean) {
  * Metadata is kept even when locked — a paywalled page still needs its title, description and
  * social tags to be indexed and to render in a link preview.
  */
-function toDelivery(row: DeliveryRow, isMember: boolean, siteMeta: SiteMetadata) {
+function toDelivery(
+  row: DeliveryRow,
+  isMember: boolean,
+  siteMeta: SiteMetadata,
+  publicUrl: string,
+  resolved?: ResolvedMediaFields,
+) {
   const locked = row.visibility === 'members' && !isMember
   const entryMeta = entryMetadataSchema.parse(row.metadata ?? {})
   return {
@@ -138,10 +156,60 @@ function toDelivery(row: DeliveryRow, isMember: boolean, siteMeta: SiteMetadata)
     visibility: row.visibility,
     locked,
     ...(locked ? {} : { data: row.data }),
-    metadata: resolveDeliveryMetadata(siteMeta, entryMeta, row.data),
+    // A sibling of `data`, present only for collections that declare a media field — so the
+    // payload of a collection without one is byte-for-byte what it was. Withheld along with
+    // `data` when the entry is locked; a resolved URL is still the content. Metadata is not,
+    // deliberately: a paywalled page still needs its social tags.
+    ...(locked || !resolved ? {} : { media: resolved }),
+    metadata: resolveDeliveryMetadata(siteMeta, entryMeta, row.data, publicUrl),
     publishedAt: row.publishedAt,
     updatedAt: row.updatedAt,
   }
+}
+
+/** D1 is SQLite: a query's parameters are bounded, so a large page is asked for in batches. */
+const KEY_BATCH = 90
+
+/**
+ * One lookup for a whole page of entries, keyed by R2 object key. Skipped entirely — no query at
+ * all — when the collection declares no media fields or none of its entries filled one in.
+ */
+async function loadMediaRows(
+  env: Bindings,
+  siteId: string,
+  keys: string[],
+): Promise<Map<string, MediaLookup>> {
+  const rows = new Map<string, MediaLookup>()
+  if (keys.length === 0) return rows
+
+  const db = getDb(env)
+  for (let i = 0; i < keys.length; i += KEY_BATCH) {
+    const batch = keys.slice(i, i + KEY_BATCH)
+    const found = await db
+      .select({ key: media.key, alt: media.alt, width: media.width, height: media.height })
+      .from(media)
+      // The tenant filter matters as much here as anywhere: a key is only this site's to resolve.
+      .where(and(eq(media.siteId, siteId), inArray(media.key, batch)))
+    for (const row of found) rows.set(row.key, row)
+  }
+
+  return rows
+}
+
+/**
+ * Resolves the media fields of every row in a page, positionally. Returns null — and runs no
+ * query — for a collection that declares no media field.
+ */
+async function resolvePageMedia(
+  env: Bindings,
+  siteId: string,
+  fields: Field[],
+  datas: Record<string, unknown>[],
+): Promise<ResolvedMediaFields[] | null> {
+  if (mediaFieldsOf(fields).length === 0) return null
+
+  const rows = await loadMediaRows(env, siteId, collectMediaKeys(fields, datas))
+  return datas.map((data) => resolveMediaFields(fields, data, rows, env.PUBLIC_URL))
 }
 
 // A user browsing the delivery API still needs to be able to see the site it belongs to.
@@ -184,9 +252,19 @@ app.get('/:collection', async (c) => {
   const last = page.at(-1)
   const siteMeta = siteMetadataSchema.parse(site.metadata ?? {})
 
+  // A locked row contributes no data to resolve — its keys are content the caller has not bought.
+  const resolved = await resolvePageMedia(
+    c.env,
+    site.id,
+    fields,
+    page.map((row) => (row.visibility === 'members' && !isMember ? {} : row.data)),
+  )
+
   setCacheHeaders(c, isMember)
   return c.json({
-    data: page.map((row) => toDelivery(row, isMember, siteMeta)),
+    data: page.map((row, index) =>
+      toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, resolved?.[index]),
+    ),
     nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   })
 })
@@ -218,7 +296,9 @@ app.get('/:collection/:slug', async (c) => {
   const isMember = c.get('member') !== null
 
   const [row] = await getDb(c.env)
-    .select(DELIVERY_COLUMNS)
+    // The collection's fields come along for the ride: resolving media needs to know which of
+    // this entry's values are keys, and the join is already here.
+    .select({ ...DELIVERY_COLUMNS, fields: collections.fields })
     .from(entries)
     .innerJoin(collections, eq(collections.id, entries.collectionId))
     .where(
@@ -240,8 +320,12 @@ app.get('/:collection/:slug', async (c) => {
   }
 
   const siteMeta = siteMetadataSchema.parse(site.metadata ?? {})
+  const resolved = await resolvePageMedia(c.env, site.id, fieldsSchema.parse(row.fields), [
+    row.data,
+  ])
+
   setCacheHeaders(c, isMember)
-  return c.json({ data: toDelivery(row, isMember, siteMeta) })
+  return c.json({ data: toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, resolved?.[0]) })
 })
 
 export default app

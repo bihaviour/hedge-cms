@@ -248,6 +248,45 @@ Query parameters: `locale`, `limit`, `cursor`, `sort`, `order`.
 A key belongs to the site it was created on and can only read that site's content, so nothing
 extra is needed to pick a tenant.
 
+### Images
+
+A `media` field stores an R2 object key, not a URL — a stored URL bakes this deployment's origin
+into your content and is wrong the day the CMS moves domain. So `data.cover` is
+`blog/2026/07/k1a2-photo.jpg`, which a browser would resolve against *your* website's origin.
+
+Entries in a collection that declares a media field therefore carry a resolved `media` sibling
+alongside `data`, built per request from the CMS's own origin:
+
+```jsonc
+{
+  "slug": "hello-world",
+  "data": { "title": "Hello", "cover": "blog/2026/07/k1a2-photo.jpg" },
+  "media": {
+    "cover": {
+      "key": "blog/2026/07/k1a2-photo.jpg",
+      "url": "https://your-worker.workers.dev/media/blog/2026/07/k1a2-photo.jpg",
+      "alt": "A cat asleep on a keyboard",
+      "width": 1600,
+      "height": 900
+    }
+  }
+}
+```
+
+```jsx
+<img src={entry.media.cover.url} alt={entry.media.cover.alt ?? ''} />
+```
+
+`data` is unchanged, so nothing that reads the key today breaks. A field declared `multiple`
+resolves to an array in stored order, a single one to an object, and a field left empty is absent
+from `media` entirely. A value that was already an absolute URL is passed through with a null
+`key`. Members-only entries withhold `media` exactly as they withhold `data`.
+
+`metadata.ogImage` is different: it is **always** an absolute URL, whether you stored a key or a
+URL. Open Graph rejects a relative one, and the tag has a single slot, so there is no additive
+version of that fix. Metadata is served for locked entries too, so a paywalled page still
+previews correctly when it is shared.
+
 ## Writing content from a script
 
 A key with a **write** scope also reaches the authoring routes, so an import or another service can

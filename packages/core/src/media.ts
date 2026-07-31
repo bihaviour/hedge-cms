@@ -23,6 +23,67 @@ export const updateMediaSchema = z.object({
 
 export type UpdateMediaInput = z.infer<typeof updateMediaSchema>
 
+/**
+ * What a `media` field's stored key becomes on the delivery API.
+ *
+ * Content stores the key, not the URL: a stored URL bakes the deployment's origin into every
+ * entry and is wrong the day the CMS moves domain, with no migration that can reliably find
+ * them all. The key is the portable value — so the URL is built at the boundary, where the
+ * origin is known, and handed over alongside the alt text and dimensions the CMS already holds.
+ *
+ * `key` is null when the field held an absolute URL to begin with, which is passed through.
+ */
+export const resolvedMediaSchema = z.object({
+  key: z.string().nullable(),
+  url: z.string(),
+  alt: z.string().nullable(),
+  width: z.number().int().positive().nullable(),
+  height: z.number().int().positive().nullable(),
+})
+
+export type ResolvedMedia = z.infer<typeof resolvedMediaSchema>
+
+/**
+ * How a media listing is narrowed by kind. `document` is defined as "neither image nor video" —
+ * the long tail of PDFs, CSVs and JSON — so a new allowed upload type lands in it automatically
+ * instead of falling out of every filter.
+ */
+export const MEDIA_TYPE_FILTERS = ['image', 'video', 'document'] as const
+export type MediaTypeFilter = (typeof MEDIA_TYPE_FILTERS)[number]
+
+/**
+ * Mirrors `listEntriesQuerySchema`'s shape so the two listings behave alike, and is shared by the
+ * REST route and the `list_media` MCP tool so the two surfaces cannot drift.
+ */
+export const listMediaQuerySchema = z.object({
+  /** Matches filename and alt text — alt is often the only human-written description a file has. */
+  q: z.string().max(200).optional(),
+  type: z.enum(MEDIA_TYPE_FILTERS).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(24),
+  cursor: z.string().optional(),
+})
+
+export type ListMediaQuery = z.infer<typeof listMediaQuerySchema>
+
+/**
+ * Does a file's content type satisfy a media field's `accept` list? An empty list accepts
+ * everything. Entries are either a full type (`image/png`), a wildcard (`image/*`), or a bare
+ * extension (`.pdf`) — the three things a person writing a field definition actually types.
+ */
+export function matchesAccept(contentType: string, accept: string[], filename = ''): boolean {
+  if (accept.length === 0) return true
+  const type = contentType.split(';')[0]!.trim().toLowerCase()
+  const name = filename.toLowerCase()
+
+  return accept.some((raw) => {
+    const pattern = raw.trim().toLowerCase()
+    if (!pattern) return false
+    if (pattern.startsWith('.')) return name.endsWith(pattern)
+    if (pattern.endsWith('/*')) return type.startsWith(pattern.slice(0, -1))
+    return type === pattern
+  })
+}
+
 /** Upper bound for a single upload. Workers cap request bodies at 100 MB on paid plans. */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 

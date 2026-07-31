@@ -21,6 +21,7 @@ import type {
   Entry,
   EntryRevision,
   ListEntriesQuery,
+  ListMediaQuery,
   Media,
   Member,
   Newsletter,
@@ -276,8 +277,14 @@ export const api = {
   },
 
   media: {
-    list: (cursor?: string) =>
-      requestPage<Media>(`/media${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+    list: (query: Partial<ListMediaQuery> = {}) => {
+      const params = new URLSearchParams(
+        Object.entries(query)
+          .filter(([, value]) => value !== undefined && value !== '')
+          .map(([key, value]) => [key, String(value)]),
+      )
+      return requestPage<Media>(`/media?${params}`)
+    },
     upload: (file: File, alt?: string) => {
       const form = new FormData()
       form.set('file', file)

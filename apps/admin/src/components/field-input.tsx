@@ -1,7 +1,10 @@
 import type { Field } from '@hedge/core'
-import { X } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronLeft, ChevronRight, ImageIcon, Link2, Plus, X } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
+import { EntryPicker } from '@/components/entry-picker'
+import { MediaPicker } from '@/components/media-picker'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -13,6 +16,8 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { type TranslateFn, useT } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 const unique = (values: string[]) => [...new Set(values)]
 
@@ -26,6 +31,7 @@ export function FieldInput({
   onChange,
   error,
   suggestions,
+  locale = 'en',
 }: {
   field: Field
   value: unknown
@@ -33,6 +39,8 @@ export function FieldInput({
   error?: string
   /** Extra values to offer as suggestions — e.g. values already used elsewhere in the collection. */
   suggestions?: string[]
+  /** The locale of the entry being edited — a reference is picked from the same one. */
+  locale?: string
 }) {
   const id = `field-${field.name}`
 
@@ -179,23 +187,11 @@ export function FieldInput({
       }
 
       case 'media':
-        return (
-          <Input
-            id={id}
-            placeholder="Media key, e.g. 2026/07/abc-photo.jpg"
-            value={Array.isArray(value) ? value.join(',') : String(value ?? '')}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        )
+        return <MediaField id={id} field={field} value={value} onChange={onChange} />
 
       case 'reference':
         return (
-          <Input
-            id={id}
-            placeholder={`Entry slug in "${field.collection}"`}
-            value={Array.isArray(value) ? value.join(',') : String(value ?? '')}
-            onChange={(event) => onChange(event.target.value)}
-          />
+          <ReferenceField id={id} field={field} value={value} locale={locale} onChange={onChange} />
         )
 
       case 'url':
@@ -352,6 +348,349 @@ function TokenInput({
             </option>
           ))}
       </datalist>
+    </div>
+  )
+}
+
+/**
+ * The stored value of a `media` or `reference` field, as a list regardless of arity — one list to
+ * add to, remove from and reorder, whatever shape it is written back in.
+ */
+function toValues(value: unknown): string[] {
+  if (typeof value === 'string') return value ? [value] : []
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
+  return []
+}
+
+/**
+ * Writes the value back in the shape `buildEntryValidator` expects: an array for a `multiple`
+ * field, a plain string otherwise. The old input emitted a comma-joined string for both, so
+ * declaring a multiple field and saving it failed validation — with the error attached to the
+ * field rather than to the control that produced it. `packages/core/src/fields.test.ts` pins
+ * both shapes, because this broke silently once and would break silently again.
+ */
+function emit(values: string[], multiple: boolean): unknown {
+  if (multiple) return values
+  return values[0] ?? null
+}
+
+function move(values: string[], from: number, to: number): string[] {
+  const next = [...values]
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item!)
+  return next
+}
+
+/** The admin is served by the same Worker as `/media`, so a key needs no configured origin. */
+function previewUrl(key: string): string {
+  return /^https?:\/\//i.test(key) ? key : `/media/${encodeURI(key)}`
+}
+
+/** A picked media key or entry slug: what it is, and how to get rid of it or move it. */
+function PickedItem({
+  preview,
+  label,
+  sublabel,
+  index,
+  count,
+  t,
+  onMove,
+  onRemove,
+}: {
+  preview: ReactNode
+  label: string
+  sublabel?: string
+  index: number
+  count: number
+  t: TranslateFn
+  onMove: (to: number) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-md border p-2">
+      {preview}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{label}</p>
+        {sublabel && <p className="truncate text-muted-foreground text-xs">{sublabel}</p>}
+      </div>
+      {count > 1 && (
+        <div className="flex shrink-0 items-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('picker.moveEarlier', { label })}
+            disabled={index === 0}
+            onClick={() => onMove(index - 1)}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('picker.moveLater', { label })}
+            disabled={index === count - 1}
+            onClick={() => onMove(index + 1)}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('picker.removeItem', { label })}
+        onClick={onRemove}
+      >
+        <X className="size-4" />
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * The escape hatch. A picker that removes the ability to type a value outright is worse than the
+ * text box was for anyone migrating content in, so the raw input stays — just out of the way.
+ */
+function RawValueInput({
+  id,
+  multiple,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string
+  multiple: boolean
+  value: string[]
+  placeholder: string
+  onChange: (values: string[]) => void
+}) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="text-muted-foreground text-xs underline underline-offset-2 hover:text-foreground"
+        onClick={() => setOpen(true)}
+      >
+        {t('picker.manual')}
+      </button>
+    )
+  }
+
+  // A single-value field binds straight to the stored value; a multiple one appends, so the
+  // list stays a list instead of becoming the comma-joined string that broke before.
+  if (!multiple) {
+    return (
+      <Input
+        id={id}
+        placeholder={placeholder}
+        value={value[0] ?? ''}
+        onChange={(event) => onChange(event.target.value ? [event.target.value] : [])}
+      />
+    )
+  }
+
+  function add() {
+    if (!draft.trim()) return
+    onChange([...value, draft.trim()])
+    setDraft('')
+  }
+
+  return (
+    <div className="flex gap-2">
+      <Input
+        id={id}
+        placeholder={placeholder}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return
+          event.preventDefault()
+          add()
+        }}
+      />
+      <Button type="button" variant="outline" disabled={!draft.trim()} onClick={add}>
+        <Plus className="size-4" />
+        {t('picker.add')}
+      </Button>
+    </div>
+  )
+}
+
+function MediaField({
+  id,
+  field,
+  value,
+  onChange,
+}: {
+  id: string
+  field: Extract<Field, { kind: 'media' }>
+  value: unknown
+  onChange: (value: unknown) => void
+}) {
+  const t = useT()
+  const [picking, setPicking] = useState(false)
+  const values = toValues(value)
+  const set = (next: string[]) => onChange(emit(next, field.multiple))
+
+  return (
+    <div className="space-y-2">
+      {values.length > 0 && (
+        <div className="space-y-2">
+          {values.map((key, index) => (
+            <PickedItem
+              key={key}
+              index={index}
+              count={values.length}
+              t={t}
+              label={key.split('/').pop() ?? key}
+              sublabel={key}
+              preview={
+                <img
+                  src={previewUrl(key)}
+                  alt=""
+                  className="size-10 shrink-0 rounded bg-muted object-cover"
+                  loading="lazy"
+                  // A non-image, a typo or a deleted object: keep the row, drop the broken icon.
+                  onError={(event) => {
+                    event.currentTarget.style.visibility = 'hidden'
+                  }}
+                />
+              }
+              onMove={(to) => set(move(values, index, to))}
+              onRemove={() => set(values.filter((_, i) => i !== index))}
+            />
+          ))}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-3',
+          values.length === 0 &&
+            'rounded-lg border border-dashed px-4 py-6 text-muted-foreground text-sm',
+        )}
+      >
+        {values.length === 0 && (
+          <span className="flex items-center gap-2">
+            <ImageIcon className="size-4" />
+            {t('picker.nothingChosen')}
+          </span>
+        )}
+        <Button type="button" variant="outline" size="sm" onClick={() => setPicking(true)}>
+          {values.length === 0 || field.multiple ? t('picker.chooseMedia') : t('picker.replace')}
+        </Button>
+        <RawValueInput
+          id={id}
+          multiple={field.multiple}
+          value={values}
+          placeholder={t('picker.mediaKeyPlaceholder')}
+          onChange={set}
+        />
+      </div>
+
+      <MediaPicker
+        open={picking}
+        onOpenChange={setPicking}
+        multiple={field.multiple}
+        accept={field.accept}
+        onConfirm={(items) => {
+          const keys = items.map((item) => item.key)
+          set(field.multiple ? [...values, ...keys.filter((key) => !values.includes(key))] : keys)
+        }}
+      />
+    </div>
+  )
+}
+
+function ReferenceField({
+  id,
+  field,
+  value,
+  locale,
+  onChange,
+}: {
+  id: string
+  field: Extract<Field, { kind: 'reference' }>
+  value: unknown
+  locale: string
+  onChange: (value: unknown) => void
+}) {
+  const t = useT()
+  const [picking, setPicking] = useState(false)
+  const values = toValues(value)
+  const set = (next: string[]) => onChange(emit(next, field.multiple))
+
+  return (
+    <div className="space-y-2">
+      {values.length > 0 && (
+        <div className="space-y-2">
+          {values.map((slug, index) => (
+            <PickedItem
+              key={slug}
+              index={index}
+              count={values.length}
+              t={t}
+              label={slug}
+              sublabel={t('picker.inCollection', { collection: field.collection })}
+              preview={
+                <span className="flex size-10 shrink-0 items-center justify-center rounded bg-muted">
+                  <Link2 className="size-4 text-muted-foreground" />
+                </span>
+              }
+              onMove={(to) => set(move(values, index, to))}
+              onRemove={() => set(values.filter((_, i) => i !== index))}
+            />
+          ))}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-3',
+          values.length === 0 &&
+            'rounded-lg border border-dashed px-4 py-6 text-muted-foreground text-sm',
+        )}
+      >
+        {values.length === 0 && (
+          <span className="flex items-center gap-2">
+            <Link2 className="size-4" />
+            {t('picker.nothingLinked')}
+          </span>
+        )}
+        <Button type="button" variant="outline" size="sm" onClick={() => setPicking(true)}>
+          {values.length === 0 || field.multiple
+            ? t('picker.chooseEntryAction')
+            : t('picker.replace')}
+        </Button>
+        <RawValueInput
+          id={id}
+          multiple={field.multiple}
+          value={values}
+          placeholder={t('picker.entrySlugPlaceholder', { collection: field.collection })}
+          onChange={set}
+        />
+      </div>
+
+      <EntryPicker
+        open={picking}
+        onOpenChange={setPicking}
+        collection={field.collection}
+        locale={locale}
+        multiple={field.multiple}
+        onConfirm={(entries) => {
+          const slugs = entries.map((entry) => entry.slug)
+          set(
+            field.multiple ? [...values, ...slugs.filter((slug) => !values.includes(slug))] : slugs,
+          )
+        }}
+      />
     </div>
   )
 }
