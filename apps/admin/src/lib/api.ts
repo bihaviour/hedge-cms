@@ -6,6 +6,7 @@ import type {
   CreateApiKeyInput,
   CreateCollectionInput,
   CreateEntryInput,
+  CreateEntryVersionInput,
   CreateMemberInput,
   CreateNewsletterInput,
   CreateNewsletterTemplateInput,
@@ -20,6 +21,7 @@ import type {
   EmailTemplatePreview,
   Entry,
   EntryRevision,
+  EntryVersion,
   ListEntriesQuery,
   ListMediaQuery,
   Media,
@@ -28,6 +30,7 @@ import type {
   NewsletterAudience,
   NewsletterPreview,
   NewsletterTemplate,
+  ReviewQueueItem,
   RoleDefinition,
   SendResult,
   Site,
@@ -41,6 +44,7 @@ import type {
   UpdateEmailConfigInput,
   UpdateEmailTemplateInput,
   UpdateEntryInput,
+  UpdateEntryVersionInput,
   UpdateMemberInput,
   UpdateNewsletterInput,
   UpdateNewsletterTemplateInput,
@@ -213,8 +217,15 @@ export const api = {
 
     /** Per-site grants. Only meaningful for editors and viewers — admins reach every site. */
     siteAccess: (id: string) => request<SiteAccess[]>(`/users/${id}/sites`),
-    grantSite: (id: string, siteId: string, role: SiteRole) =>
-      request<SiteAccess>(`/users/${id}/sites/${siteId}`, { method: 'PUT', ...json({ role }) }),
+    /**
+     * `approvalLevel` omitted leaves whatever is stored alone, so changing the role does not
+     * silently reset the approval authority; `null` clears the override back to the role's default.
+     */
+    grantSite: (id: string, siteId: string, role: SiteRole, approvalLevel?: number | null) =>
+      request<SiteAccess>(`/users/${id}/sites/${siteId}`, {
+        method: 'PUT',
+        ...json({ role, ...(approvalLevel === undefined ? {} : { approvalLevel }) }),
+      }),
     revokeSite: (id: string, siteId: string) =>
       request<void>(`/users/${id}/sites/${siteId}`, { method: 'DELETE' }),
   },
@@ -274,6 +285,75 @@ export const api = {
         `/collections/${collection}/entries/${slug}/revisions/${revisionId}/restore?locale=${locale}`,
         { method: 'POST' },
       ),
+  },
+
+  /**
+   * Proposed future states of an entry — the forward-looking counterpart to `entries.revisions`.
+   * Every call is scoped to one entry in one locale, the way the routes are.
+   */
+  entryVersions: {
+    list: (collection: string, slug: string, locale = 'en') =>
+      request<EntryVersion[]>(
+        `/collections/${collection}/entries/${slug}/versions?locale=${locale}`,
+      ),
+    create: (collection: string, slug: string, input: CreateEntryVersionInput, locale = 'en') =>
+      request<EntryVersion>(
+        `/collections/${collection}/entries/${slug}/versions?locale=${locale}`,
+        {
+          method: 'POST',
+          ...json(input),
+        },
+      ),
+    update: (
+      collection: string,
+      slug: string,
+      versionId: string,
+      input: UpdateEntryVersionInput,
+      locale = 'en',
+    ) =>
+      request<EntryVersion>(
+        `/collections/${collection}/entries/${slug}/versions/${versionId}?locale=${locale}`,
+        { method: 'PATCH', ...json(input) },
+      ),
+    /** Abandons a version. It is kept as `discarded` so the decisions on it survive. */
+    discard: (collection: string, slug: string, versionId: string, locale = 'en') =>
+      request<EntryVersion>(
+        `/collections/${collection}/entries/${slug}/versions/${versionId}?locale=${locale}`,
+        { method: 'DELETE' },
+      ),
+    submit: (collection: string, slug: string, versionId: string, locale = 'en') =>
+      request<EntryVersion>(
+        `/collections/${collection}/entries/${slug}/versions/${versionId}/submit?locale=${locale}`,
+        { method: 'POST' },
+      ),
+    /** `approve` and `reject` take the same body; the comment is what a rejection needs. */
+    decide: (
+      collection: string,
+      slug: string,
+      versionId: string,
+      decision: 'approve' | 'reject',
+      comment: string | undefined,
+      locale = 'en',
+    ) =>
+      request<EntryVersion>(
+        `/collections/${collection}/entries/${slug}/versions/${versionId}/${decision}?locale=${locale}`,
+        { method: 'POST', ...json({ comment }) },
+      ),
+    publish: (collection: string, slug: string, versionId: string, locale = 'en') =>
+      request<{ version: EntryVersion; entry: Entry }>(
+        `/collections/${collection}/entries/${slug}/versions/${versionId}/publish?locale=${locale}`,
+        { method: 'POST' },
+      ),
+  },
+
+  /** The review inbox for the active site, and what the signed-in person may approve on it. */
+  review: {
+    authority: () => request<{ approvalLevel: number }>('/review/authority'),
+    queue: (cursor?: string) =>
+      requestPage<ReviewQueueItem>(
+        `/review/queue${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+      ),
+    count: () => request<{ count: number }>('/review/queue/count'),
   },
 
   media: {

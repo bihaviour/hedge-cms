@@ -29,6 +29,8 @@ export const en = {
   'common.created': 'Created "{name}"',
   'common.close': 'Close',
   'common.actions': 'Actions',
+  'common.error': 'Something went wrong',
+  'common.done': 'Done',
 
   // Language switcher.
   'language.label': 'Language',
@@ -189,6 +191,101 @@ export const en = {
   'editor.locale': 'Locale',
   'editor.localeHint': 'Which language variant of this entry you are editing.',
   'editor.translationMissing': 'No {locale} translation yet — saving creates one.',
+  'editor.approvalNotice':
+    'This collection needs {levels} approval(s) before an entry can be published. Save your work as a version and submit it for review.',
+
+  // Revision history — the backward-looking half of the editor's sidebar.
+  'revisions.title': 'History',
+  'revisions.previewTitle': 'Revision preview',
+  'revisions.restore': 'Restore this revision',
+  'revisions.restored': 'Revision restored',
+  'revisions.diffHint': 'Fields that differ from the current entry:',
+
+  // Entry versions — the forward-looking half. A version is a proposed future state of the entry.
+  'versions.title': 'Versions',
+  'versions.start': 'New',
+  'versions.startAction': 'Start version',
+  'versions.empty': 'No versions yet. Start one to propose changes without touching what is live.',
+  'versions.created': 'Version created',
+  'versions.newTitle': 'Start a new version',
+  'versions.newDescription':
+    'A version forks this entry as it stands now. Editing it changes nothing live until it is published.',
+  'versions.summary': 'What does this version do?',
+  'versions.summaryPlaceholder': 'Added the interview section',
+  'versions.summaryHint': 'One line. It is how a reviewer tells several open versions apart.',
+  'versions.unknownAuthor': 'Unknown',
+  'versions.cleared': '{cleared}/{required} approved',
+  'versions.stale': 'Stale',
+  'versions.staleHint':
+    'This version was written against an older copy of the entry, which has changed since. Publishing it replaces those changes.',
+  'versions.statusDraft': 'Draft',
+  'versions.statusInReview': 'In review',
+  'versions.statusChangesRequested': 'Changes requested',
+  'versions.statusApproved': 'Approved',
+  'versions.statusPublished': 'Published',
+  'versions.statusDiscarded': 'Discarded',
+  'versions.compareAgainst': 'Compare against',
+  'versions.compareLive': 'The live entry',
+  'versions.diffIdentical': 'Nothing differs between these two.',
+  'versions.diffBefore': 'Before',
+  'versions.diffAfter': 'This version',
+  'versions.change.changed': 'changed',
+  'versions.change.added': 'added',
+  'versions.change.removed': 'removed',
+  'versions.trail': 'Review trail',
+  'versions.trailEntry': '{name} at level {level}',
+  'versions.comment': 'Note for the author',
+  'versions.commentPlaceholder': 'What needs to change, or why this is good to go',
+  'versions.submit': 'Submit for review',
+  'versions.discard': 'Discard',
+  'versions.approve': 'Approve',
+  'versions.reject': 'Request changes',
+  'versions.publish': 'Publish this version',
+  'versions.cannotReviewOwn': 'You wrote this version, so somebody else has to review it.',
+  'versions.alreadyDecided':
+    'You have already reviewed this version — the next level needs someone else.',
+  'versions.levelTooLow': 'Approving at level {level} needs a higher approval level than yours.',
+  'versions.done.submit': 'Submitted for review',
+  'versions.done.approve': 'Version approved',
+  'versions.done.reject': 'Sent back to the author',
+  'versions.done.publish': 'Version published',
+  'versions.done.discard': 'Version discarded',
+
+  // Review inbox.
+  'review.title': 'Review',
+  'review.subtitle': 'Versions waiting on you, across this site.',
+  'review.emptyTitle': 'Nothing waiting',
+  'review.emptyDescription': 'No version on this site is waiting for your approval right now.',
+  'review.colVersion': 'Version',
+  'review.colEntry': 'Entry',
+  'review.colAuthor': 'Author',
+  'review.colSubmitted': 'Submitted',
+  'review.open': 'Open',
+  'review.loadMore': 'Load more',
+  'review.noAuthority':
+    'You do not approve versions on this site. An admin can change that from Users → Site access.',
+  'nav.review': 'Review',
+  'label.review': 'Review',
+
+  // Per-user approval authority, edited beside the site role.
+  'users.approvalLevel': 'Approvals',
+  'users.approvalInherit': 'From role ({level})',
+  'users.approvalNone': 'None',
+  'users.approvalLevel1': 'Level 1',
+  'users.approvalLevel2': 'Level 1 and 2',
+  'users.approvalAllSites': 'Level 2 on every site',
+  'users.approvalHint':
+    'Which review levels this person can sign off on for this site. "From role" follows their site role — editors approve level 1, admins both.',
+
+  // Collection settings: the approval selector.
+  'collections.approvalTitle': 'Publishing',
+  'collections.approvalLabel': 'Approvals before publishing',
+  'collections.approvalOff': 'Off — anyone who can edit can publish',
+  'collections.approvalOne': 'One approval',
+  'collections.approvalTwo': 'Two approvals',
+  'collections.approvalHint':
+    'With approvals on, an entry in this collection can no longer be published by editing it directly. Changes are written as a version, reviewed by somebody other than their author, and published from there.',
+  'collections.fieldsTitle': 'Fields',
 
   // Collections page.
   'collections.title': 'Collections',

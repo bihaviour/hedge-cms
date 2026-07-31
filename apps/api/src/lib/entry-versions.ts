@@ -82,7 +82,14 @@ export function toEntryVersion(
     baseUpdatedAt: row.baseUpdatedAt,
     // Written against an older article. A warning the editor renders, not a reason to refuse a
     // publish: which of two writers' work wins is an editorial call, not one the CMS should make.
-    stale: row.baseUpdatedAt < entry.updatedAt,
+    //
+    // Only for a version somebody can still act on. A published version *is* what the entry says
+    // now, and a discarded one is not going anywhere — flagging either would be warning about a
+    // decision nobody is about to take.
+    stale:
+      row.status !== 'published' &&
+      row.status !== 'discarded' &&
+      row.baseUpdatedAt < entry.updatedAt,
     createdBy: row.createdBy,
     createdByName: authorName,
     submittedAt: row.submittedAt,
@@ -503,7 +510,7 @@ export async function listReviewQueue(
   env: Bindings,
   site: SiteRow,
   query: ReviewQueueQuery,
-  approverLevel: number,
+  reviewer: { id: string; level: number },
 ): Promise<{ data: ReviewQueueItem[]; nextCursor: string | null }> {
   const filters = [eq(entryVersions.siteId, site.id), eq(entryVersions.status, 'in_review')]
   if (query.cursor) filters.push(lt(entryVersions.id, query.cursor))
@@ -543,21 +550,31 @@ export async function listReviewQueue(
   }))
 
   return {
-    // "Waiting on *you*", not "waiting on somebody": a version's next level is derived from the
-    // decisions already recorded against it, which no index can hold, so it is filtered here rather
-    // than in the query. The cursor still advances by row, so a page can come back short — that is
-    // the honest answer, and the next cursor keeps working.
-    data: items.filter((item) => canDecide(item, approverLevel)),
+    // "Waiting on *you*", not "waiting on somebody": whether a version is is derived from the
+    // decisions recorded against it and who wrote it, neither of which an index can hold, so it is
+    // filtered here rather than in the query. The cursor still advances by row, so a page can come
+    // back short — that is the honest answer, and the next cursor keeps working.
+    data: items.filter((item) => canDecide(item.approvals, item.createdBy, reviewer)),
     nextCursor: hasMore ? (page.at(-1)?.version.id ?? null) : null,
   }
 }
 
 /**
- * Whether one approval level can take the *next* decision on a version. Its own function so the
- * inbox, its badge and `decideEntryVersion` cannot drift apart on what "waiting on you" means.
+ * Whether this person can take the *next* decision on a version — the same three conditions
+ * `decideEntryVersion` enforces, in one function so the inbox, its badge and the route that
+ * actually refuses cannot drift apart on what "waiting on you" means.
+ *
+ * Authorship matters as much as level here. A queue that lists your own submission is nagging you
+ * about work you cannot act on, and a badge counting it never reaches zero.
  */
-function canDecide(version: EntryVersion, approverLevel: number): boolean {
-  return approverLevel >= clearedLevels(version.approvals) + 1
+function canDecide(
+  approvals: EntryVersionApproval[],
+  createdBy: string | null,
+  reviewer: { id: string; level: number },
+): boolean {
+  if (createdBy && createdBy === reviewer.id) return false
+  if (liveApprovals(approvals).some((approval) => approval.userId === reviewer.id)) return false
+  return reviewer.level >= clearedLevels(approvals) + 1
 }
 
 /**
@@ -567,10 +584,10 @@ function canDecide(version: EntryVersion, approverLevel: number): boolean {
 export async function countReviewQueue(
   env: Bindings,
   site: SiteRow,
-  approverLevel: number,
+  reviewer: { id: string; level: number },
 ): Promise<number> {
   const rows = await getDb(env)
-    .select({ id: entryVersions.id })
+    .select({ id: entryVersions.id, createdBy: entryVersions.createdBy })
     .from(entryVersions)
     .where(and(eq(entryVersions.siteId, site.id), eq(entryVersions.status, 'in_review')))
     .limit(100)
@@ -583,6 +600,6 @@ export async function countReviewQueue(
     env,
     rows.map((row) => row.id),
   )
-  return rows.filter((row) => approverLevel >= clearedLevels(approvals.get(row.id) ?? []) + 1)
+  return rows.filter((row) => canDecide(approvals.get(row.id) ?? [], row.createdBy, reviewer))
     .length
 }

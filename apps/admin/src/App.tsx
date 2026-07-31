@@ -22,6 +22,7 @@ import { NewsletterTemplatesPage } from '@/pages/newsletter-templates'
 import { NewslettersPage } from '@/pages/newsletters'
 import { OAuthConsentPage } from '@/pages/oauth-consent'
 import { OnboardingPage } from '@/pages/onboarding'
+import { ReviewPage } from '@/pages/review'
 import { RolesPage } from '@/pages/roles'
 import { SitesPage } from '@/pages/sites'
 import { UsersPage } from '@/pages/users'
@@ -96,6 +97,8 @@ export function App() {
         <Route path="/collections/:collection/settings" element={<CollectionSettingsPage />} />
         <Route path="/collections/:collection/entries/new" element={<EntryEditorPage />} />
         <Route path="/collections/:collection/entries/:slug" element={<EntryEditorPage />} />
+        {/* Versions waiting on the signed-in person, across this site. */}
+        <Route path="/review" element={<ReviewPage />} />
         <Route path="/media" element={<MediaPage />} />
         <Route path="/members" element={<MembersPage />} />
         <Route path="/newsletters" element={<NewslettersPage />} />

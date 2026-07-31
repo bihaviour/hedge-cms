@@ -29,22 +29,23 @@ app.get('/authority', requireSiteRole('viewer'), async (c) => {
   return c.json({ data: { approvalLevel } })
 })
 
-app.get('/queue', requireSiteRole('editor'), async (c) => {
+/** Who is asking, and what they may approve here — the pair both queue routes filter on. */
+async function reviewer(c: Parameters<typeof requireUserActor>[0]) {
   const actor = requireUserActor(c)
-  const query = validateQuery(c, reviewQueueQuerySchema)
   const site = requireSite(c)
+  return { site, reviewer: { id: actor.id, level: await approvalLevelFor(c.env, actor, site.id) } }
+}
 
-  return c.json(
-    await listReviewQueue(c.env, site, query, await approvalLevelFor(c.env, actor, site.id)),
-  )
+app.get('/queue', requireSiteRole('editor'), async (c) => {
+  const query = validateQuery(c, reviewQueueQuerySchema)
+  const { site, reviewer: who } = await reviewer(c)
+  return c.json(await listReviewQueue(c.env, site, query, who))
 })
 
 /** Just the number, for the sidebar badge. Polls on the admin's existing query cadence. */
 app.get('/queue/count', requireSiteRole('editor'), async (c) => {
-  const actor = requireUserActor(c)
-  const site = requireSite(c)
-  const count = await countReviewQueue(c.env, site, await approvalLevelFor(c.env, actor, site.id))
-  return c.json({ data: { count } })
+  const { site, reviewer: who } = await reviewer(c)
+  return c.json({ data: { count: await countReviewQueue(c.env, site, who) } })
 })
 
 export default app

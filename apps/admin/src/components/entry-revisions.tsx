@@ -14,15 +14,16 @@ import {
 } from '@/components/ui/dialog'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
-import { useFormatters } from '@/lib/i18n'
-
-const preview = (value: unknown) =>
-  value === undefined ? '—' : typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+import { diffFields, previewValue } from '@/lib/field-diff'
+import { useFormatters, useT } from '@/lib/i18n'
 
 /**
  * A revision is written before every edit; this lists them and restores one. Restoring is itself an
  * edit (the server snapshots the current state first), so it is undoable — which is why the button
  * doesn't warn: there is nothing to lose that isn't kept.
+ *
+ * Its counterpart above it in the editor's sidebar is `EntryVersions`: what this entry *was*, and
+ * what it *may become*.
  */
 export function EntryRevisions({
   collection,
@@ -35,6 +36,7 @@ export function EntryRevisions({
   locale: string
   currentData: Record<string, unknown>
 }) {
+  const t = useT()
   const siteSlug = useActiveSiteSlug()
   const { formatDateTime } = useFormatters()
   const queryClient = useQueryClient()
@@ -55,9 +57,9 @@ export function EntryRevisions({
       queryClient.invalidateQueries({ queryKey: ['entries', collection] })
       queryClient.invalidateQueries({ queryKey: ['revisions', siteSlug, collection, slug] })
       setSelected(null)
-      toast.success('Revision restored')
+      toast.success(t('revisions.restored'))
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'Restore failed'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : t('common.error')),
   })
 
   if (!revisions.data || revisions.data.length === 0) return null
@@ -65,7 +67,7 @@ export function EntryRevisions({
   return (
     <div className="space-y-2 border-t pt-4">
       <h3 className="flex items-center gap-2 font-medium text-sm">
-        <History className="size-4" /> History
+        <History className="size-4" /> {t('revisions.title')}
       </h3>
       <ul className="space-y-0.5">
         {revisions.data.map((revision) => (
@@ -88,7 +90,7 @@ export function EntryRevisions({
       <Dialog open={Boolean(selected)} onOpenChange={(next) => !next && setSelected(null)}>
         <DialogContent className="max-h-[80vh] overflow-auto">
           <DialogHeader>
-            <DialogTitle>Revision preview</DialogTitle>
+            <DialogTitle>{t('revisions.previewTitle')}</DialogTitle>
             <DialogDescription>
               {selected && formatDateTime(selected.createdAt)}
               {selected?.createdByName ? ` · ${selected.createdByName}` : ''}
@@ -99,13 +101,13 @@ export function EntryRevisions({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelected(null)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               disabled={restore.isPending}
               onClick={() => selected && restore.mutate(selected.id)}
             >
-              <RotateCcw className="size-4" /> Restore this version
+              <RotateCcw className="size-4" /> {t('revisions.restore')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -114,7 +116,10 @@ export function EntryRevisions({
   )
 }
 
-/** The fields where a revision differs from the live entry, with the revision's values shown. */
+/**
+ * The fields where a revision differs from the live entry, with the revision's values shown.
+ * `diffFields` is shared with the version comparison — the same question asked of two field maps.
+ */
 function RevisionDiff({
   revision,
   current,
@@ -122,28 +127,22 @@ function RevisionDiff({
   revision: EntryRevision
   current: Record<string, unknown>
 }) {
-  const keys = Array.from(new Set([...Object.keys(revision.data), ...Object.keys(current)]))
-  const changed = keys.filter(
-    (key) => JSON.stringify(revision.data[key]) !== JSON.stringify(current[key]),
-  )
+  const t = useT()
+  const changes = diffFields(current, revision.data)
 
-  if (changed.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">
-        This version's fields match the current entry.
-      </p>
-    )
+  if (changes.length === 0) {
+    return <p className="text-muted-foreground text-sm">{t('versions.diffIdentical')}</p>
   }
 
   return (
     <div className="space-y-2">
-      <p className="text-muted-foreground text-xs">Fields that differ from the current entry:</p>
+      <p className="text-muted-foreground text-xs">{t('revisions.diffHint')}</p>
       <ul className="space-y-2">
-        {changed.map((key) => (
-          <li key={key} className="rounded border p-2 text-sm">
-            <p className="font-medium">{key}</p>
+        {changes.map((change) => (
+          <li key={change.name} className="rounded border p-2 text-sm">
+            <p className="font-medium">{change.name}</p>
             <pre className="mt-1 overflow-auto whitespace-pre-wrap break-words text-muted-foreground text-xs">
-              {preview(revision.data[key])}
+              {previewValue(change.right)}
             </pre>
           </li>
         ))}
