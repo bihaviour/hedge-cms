@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { EntryRevisions } from '@/components/entry-revisions'
 import { FieldInput } from '@/components/field-input'
 import { PageHeader } from '@/components/page-header'
+import { SocialImageInput } from '@/components/social-image-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -220,6 +221,7 @@ export function EntryEditorPage() {
               key={field.name}
               field={field}
               value={data[field.name]}
+              locale={locale}
               suggestions={suggestions[field.name]}
               error={fieldErrors[field.name]?.join(', ')}
               onChange={(value) => setData((current) => ({ ...current, [field.name]: value }))}
@@ -278,15 +280,11 @@ export function EntryEditorPage() {
                   }
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="meta-og">Social image</Label>
-                <Input
-                  id="meta-og"
-                  placeholder="Media key or URL"
-                  value={metadata.ogImage ?? ''}
-                  onChange={(event) => patchMetadata({ ogImage: event.target.value || undefined })}
-                />
-              </div>
+              <SocialImageInput
+                id="meta-og"
+                value={metadata.ogImage}
+                onChange={(ogImage) => patchMetadata({ ogImage })}
+              />
             </div>
 
             <div className="flex items-center gap-2">

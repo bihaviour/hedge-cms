@@ -2,6 +2,8 @@ import { FIELD_KINDS, type Field, type FieldKind } from '@hedge/core'
 
 /** The `select` member of the field union — the one kind with editable options and flags. */
 type SelectField = Extract<Field, { kind: 'select' }>
+type MediaField = Extract<Field, { kind: 'media' }>
+type ReferenceField = Extract<Field, { kind: 'reference' }>
 
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -62,6 +64,27 @@ export function FieldsEditor({
     onChange(
       rows.map((row, i) =>
         i === index && row.field.kind === 'select'
+          ? { ...row, field: { ...row.field, ...patch } }
+          : row,
+      ),
+    )
+  }
+
+  /** Same narrowing for the two kinds that point at something outside themselves. */
+  function updateMedia(index: number, patch: Partial<MediaField>) {
+    onChange(
+      rows.map((row, i) =>
+        i === index && row.field.kind === 'media'
+          ? { ...row, field: { ...row.field, ...patch } }
+          : row,
+      ),
+    )
+  }
+
+  function updateReference(index: number, patch: Partial<ReferenceField>) {
+    onChange(
+      rows.map((row, i) =>
+        i === index && row.field.kind === 'reference'
           ? { ...row, field: { ...row.field, ...patch } }
           : row,
       ),
@@ -179,6 +202,22 @@ export function FieldsEditor({
                 fieldKey={key}
                 field={field}
                 onPatch={(patch) => updateSelect(index, patch)}
+              />
+            )}
+
+            {field.kind === 'media' && (
+              <MediaConfig
+                fieldKey={key}
+                field={field}
+                onPatch={(patch) => updateMedia(index, patch)}
+              />
+            )}
+
+            {field.kind === 'reference' && (
+              <ReferenceConfig
+                fieldKey={key}
+                field={field}
+                onPatch={(patch) => updateReference(index, patch)}
               />
             )}
           </CardContent>
@@ -337,4 +376,92 @@ export function blankField(
     case 'json':
       return { ...shared, kind }
   }
+}
+
+/**
+ * What a `media` field accepts, and whether it holds several. Both options existed on the schema
+ * from the start and neither could be set here, so `accept` was declared-and-ignored in practice
+ * and a multiple media field could only be created through the API.
+ */
+function MediaConfig({
+  fieldKey,
+  field,
+  onPatch,
+}: {
+  fieldKey: string
+  field: MediaField
+  onPatch: (patch: Partial<MediaField>) => void
+}) {
+  return (
+    <div className="grid gap-3 border-t pt-4 pl-7 sm:grid-cols-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs" htmlFor={`${fieldKey}-accept`}>
+          Accepted file types
+        </Label>
+        <Input
+          id={`${fieldKey}-accept`}
+          placeholder="image/* — leave empty for anything"
+          value={field.accept.join(', ')}
+          onChange={(event) =>
+            onPatch({
+              accept: event.target.value
+                .split(',')
+                .map((part) => part.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </div>
+      <div className="flex items-center gap-2 sm:pt-6">
+        <Switch
+          id={`${fieldKey}-multiple`}
+          checked={field.multiple}
+          onCheckedChange={(checked) => onPatch({ multiple: checked })}
+        />
+        <Label htmlFor={`${fieldKey}-multiple`} className="font-normal text-sm">
+          Allow multiple
+        </Label>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Which collection a `reference` points at. This is required by the schema (`min(1)`), so before
+ * it was editable here a reference field created in this editor could not be saved at all.
+ */
+function ReferenceConfig({
+  fieldKey,
+  field,
+  onPatch,
+}: {
+  fieldKey: string
+  field: ReferenceField
+  onPatch: (patch: Partial<ReferenceField>) => void
+}) {
+  return (
+    <div className="grid gap-3 border-t pt-4 pl-7 sm:grid-cols-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs" htmlFor={`${fieldKey}-collection`}>
+          Links to collection
+        </Label>
+        <Input
+          id={`${fieldKey}-collection`}
+          placeholder="posts"
+          value={field.collection}
+          onChange={(event) => onPatch({ collection: event.target.value })}
+        />
+      </div>
+      <div className="flex items-center gap-2 sm:pt-6">
+        <Switch
+          id={`${fieldKey}-multiple`}
+          checked={field.multiple}
+          onCheckedChange={(checked) => onPatch({ multiple: checked })}
+        />
+        <Label htmlFor={`${fieldKey}-multiple`} className="font-normal text-sm">
+          Allow multiple
+        </Label>
+      </div>
+    </div>
+  )
 }
