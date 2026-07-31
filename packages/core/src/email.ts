@@ -11,16 +11,32 @@ export const EMAIL_TEMPLATE_KEYS = [
   'member_invite',
   'member_reset',
   'member_verify',
+  'version_submitted',
+  'version_approved',
+  'version_changes_requested',
 ] as const
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]
 
-/**
- * Every template renders from the same four variables, referenced as `{{name}}` in any field. They
- * are listed per key so the editor can show which ones a given email has to work with, even though
- * the set happens to be uniform today.
- */
+/** The four variables every template renders from, referenced as `{{name}}` in any field. */
 export const EMAIL_TEMPLATE_VARIABLES = ['appName', 'name', 'to', 'url'] as const
+
+/**
+ * Variables a specific template renders from on top of the four above. The review emails are the
+ * first templates whose set is not uniform — a notification that says nothing about *what* is
+ * waiting is not worth sending — so the editor asks for the list per key rather than assuming it.
+ */
+export const EMAIL_TEMPLATE_EXTRA_VARIABLES: Partial<Record<EmailTemplateKey, readonly string[]>> =
+  {
+    version_submitted: ['title', 'comment'],
+    version_approved: ['title', 'comment'],
+    version_changes_requested: ['title', 'comment'],
+  }
+
+/** Every variable one template has to work with, in the order the editor should list them. */
+export function emailTemplateVariables(key: EmailTemplateKey): string[] {
+  return [...EMAIL_TEMPLATE_VARIABLES, ...(EMAIL_TEMPLATE_EXTRA_VARIABLES[key] ?? [])]
+}
 
 /** The editable body of a template — the shape stored as an override and rendered from. */
 export interface EmailTemplateContent {
@@ -82,6 +98,32 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefi
     heading: 'Confirm your email address',
     body: '<p style="margin:0">Confirm {{to}} so we know we can reach you. This link expires in 24 hours.</p>',
     ctaLabel: 'Confirm email',
+  },
+  // The three review notifications. These are *operator* email — staff mail about the CMS itself —
+  // so they go out as the deployment's sender, never a site's. See `sendEmail`'s `site` option.
+  version_submitted: {
+    label: 'Version submitted for review',
+    description: 'Sent to the approvers on a site when an author submits a version for review.',
+    subject: 'A version is waiting for your review',
+    heading: 'Hi {{name}}, a version needs a look',
+    body: '<p style="margin:0">“{{title}}” has been submitted for review on {{appName}}. Open it to compare it against what is live and approve or send it back.</p>',
+    ctaLabel: 'Review the version',
+  },
+  version_approved: {
+    label: 'Version approved',
+    description: "Sent to a version's author when an approver signs off on it.",
+    subject: 'Your version was approved',
+    heading: 'Hi {{name}}, your version was approved',
+    body: '<p style="margin:0">“{{title}}” has been approved on {{appName}}.</p><p style="margin:12px 0 0">{{comment}}</p>',
+    ctaLabel: 'Open the version',
+  },
+  version_changes_requested: {
+    label: 'Version sent back',
+    description: "Sent to a version's author when an approver asks for changes.",
+    subject: 'Changes were requested on your version',
+    heading: 'Hi {{name}}, your version needs changes',
+    body: '<p style="margin:0">“{{title}}” was sent back on {{appName}}.</p><p style="margin:12px 0 0">{{comment}}</p>',
+    ctaLabel: 'Open the version',
   },
 }
 

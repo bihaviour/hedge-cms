@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useActiveSite } from '@/hooks/use-site'
 import { ApiClientError, api } from '@/lib/api'
@@ -41,6 +42,8 @@ export function SiteSettingsPage() {
   const [meta, setMeta] = useState<SiteMetadata>(EMPTY_META)
   const [rows, setRows] = useState<FieldRow[]>([])
   const [sender, setSender] = useState<SenderForm>(EMPTY_SENDER)
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [previewEmbed, setPreviewEmbed] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
 
   // Reseed whenever the active site changes — the form is per-site.
@@ -49,6 +52,8 @@ export function SiteSettingsPage() {
       setMeta({ ...EMPTY_META, ...site.metadata })
       setRows(toFieldRows(site.customFields))
       setSender(toSenderForm(site.emailSender))
+      setPreviewUrl(site.previewUrl ?? '')
+      setPreviewEmbed(site.previewEmbed)
     }
   }, [site])
 
@@ -64,6 +69,10 @@ export function SiteSettingsPage() {
           fromName: sender.fromName.trim() || null,
           replyTo: sender.replyTo.trim() || null,
         },
+        // Blank means "this site has no preview endpoint", which hides the action rather than
+        // rendering a button that would send an editor to a URL nobody serves.
+        previewUrl: previewUrl.trim() || null,
+        previewEmbed,
       }),
     onSuccess: () => {
       setFieldErrors({})
@@ -200,6 +209,57 @@ export function SiteSettingsPage() {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="space-y-5">
+          <div>
+            <h2 className="font-medium text-lg">Preview</h2>
+            <p className="text-muted-foreground text-sm">
+              Where the Preview action in the entry editor sends an editor, so they can see an
+              unpublished entry in this website's own layout. Leave it blank and the action is
+              hidden. Each collection can set its own path underneath this URL.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="preview-url">Preview URL</Label>
+            <Input
+              id="preview-url"
+              type="url"
+              placeholder="https://example.com/preview"
+              value={previewUrl}
+              onChange={(event) => setPreviewUrl(event.target.value)}
+            />
+            <p className="text-muted-foreground text-xs">
+              The full origin including the scheme — <code>https://example.com</code>, not{' '}
+              <code>example.com</code> — and no trailing slash. Your website reads the token from
+              the query string and forwards it to the delivery API from its own server.
+            </p>
+            {fieldErrors.previewUrl && (
+              <p className="text-destructive text-xs">{fieldErrors.previewUrl.join(', ')}</p>
+            )}
+          </div>
+
+          <div className="flex items-start gap-2">
+            <Switch id="preview-embed" checked={previewEmbed} onCheckedChange={setPreviewEmbed} />
+            <div className="space-y-1">
+              <Label htmlFor="preview-embed" className="font-normal text-sm">
+                Show previews in a pane inside the admin
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                Off by default: the pane renders blank unless your website allows this CMS to frame
+                it, which needs a <code>frame-ancestors</code> entry in its
+                <code> Content-Security-Policy</code>. With this off, Preview opens in a new tab,
+                which always works.
+              </p>
+            </div>
+          </div>
+
+          <p className="text-muted-foreground text-xs">
+            A preview link carries a signed token that unlocks one entry for about half an hour. It
+            lands in browser history and can reach the target site as a referrer, which is what the
+            short life is for — treat one like a password for that single article.
+          </p>
         </section>
 
         <section className="space-y-5">

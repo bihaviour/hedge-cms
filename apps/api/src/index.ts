@@ -1,4 +1,4 @@
-import { HEDGE_VERSION, MEMBER_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
+import { HEDGE_VERSION, MEMBER_TOKEN_HEADER, PREVIEW_TOKEN_HEADER, SITE_HEADER } from '@hedge/core'
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from 'better-auth/plugins'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -13,6 +13,7 @@ import { resolveDeliveryActor, resolveSessionOrKeyActor } from './lib/delivery-a
 import { errorResponse } from './lib/errors'
 import { newId } from './lib/id'
 import { resolveMember } from './lib/member-auth'
+import { resolvePreview } from './lib/preview'
 import { resolveSite } from './lib/site'
 import analytics from './routes/analytics'
 import apiKeys from './routes/api-keys'
@@ -28,6 +29,7 @@ import members, { memberAuth } from './routes/members'
 import newsletterPublic from './routes/newsletter-public'
 import newsletterTemplates from './routes/newsletter-templates'
 import newsletters, { subscribers } from './routes/newsletters'
+import review from './routes/review'
 import roles from './routes/roles'
 import sites from './routes/sites'
 import system from './routes/system'
@@ -52,6 +54,9 @@ const ADMIN_PREFIXES = [
   '/api/v1/newsletter-templates',
   '/api/v1/subscribers',
   '/api/v1/system',
+  // The review inbox — one person's queue of decisions. A machine never makes one, so no key is
+  // resolved here even though the versions it lists are authored on the key-managed routes below.
+  '/api/v1/review',
   // Website analytics *reporting*. The collector that writes these numbers is a public endpoint on
   // its own prefix (`/api/v1/collect`) and resolves no actor — see `routes/collect.ts`. Analytics is
   // not an authoring surface a machine needs, so it is here rather than in `KEY_MANAGED_PREFIXES`.
@@ -113,7 +118,13 @@ app.use(
   cors({
     origin: '*',
     allowMethods: ['GET', 'OPTIONS'],
-    allowHeaders: ['authorization', 'content-type', SITE_HEADER, MEMBER_TOKEN_HEADER],
+    allowHeaders: [
+      'authorization',
+      'content-type',
+      SITE_HEADER,
+      MEMBER_TOKEN_HEADER,
+      PREVIEW_TOKEN_HEADER,
+    ],
     maxAge: 86400,
   }),
 )
@@ -217,6 +228,18 @@ app.use('/api/*', async (c, next) => {
   await next()
 })
 
+/**
+ * Preview tokens resolve on the delivery API and nowhere else — the same separation-by-prefix that
+ * keeps a delivery key out of the management API, applied to the credential that unlocks drafts.
+ * It runs after `resolveSite` so the token's own site can be checked against the resolved tenant.
+ */
+app.use('/api/*', async (c, next) => {
+  if (startsWithPrefix(c.req.path, DELIVERY_PREFIX)) return resolvePreview(c, next)
+
+  c.set('preview', null)
+  await next()
+})
+
 app.get('/api/health', (c) =>
   c.json({ status: 'ok', environment: c.env.ENVIRONMENT, version: HEDGE_VERSION }),
 )
@@ -273,6 +296,8 @@ app.route('/api/v1/api-keys', apiKeys)
 app.route('/api/v1/collections', collections)
 app.route('/api/v1/collections/:collection/entries', entries)
 app.route('/api/v1/media', media)
+// Entry versions waiting on the signed-in person, for the active site.
+app.route('/api/v1/review', review)
 app.route('/api/v1/email', email)
 app.route('/api/v1/newsletters', newsletters)
 app.route('/api/v1/newsletter-templates', newsletterTemplates)

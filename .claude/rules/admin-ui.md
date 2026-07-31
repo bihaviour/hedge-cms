@@ -31,7 +31,13 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
   stages: setup-required → signed-out (token flows and `/login` stay reachable, and the query string
   must survive, because an MCP authorization request is carried in it) → the authenticated shell.
 - Role gating in the UI uses `roleAtLeast` from `@hedge/core` — the same ordering the API enforces.
-  UI gating is cosmetic; the server check is the real one, and both must exist.
+  UI gating is cosmetic; the server check is the real one, and both must exist. The same goes for
+  approval authority: the version panel mirrors what `decideEntryVersion` would allow, so it never
+  offers a button that 403s, but the server is what makes it true.
+- **Both catalogs, always.** `catalog.test.ts` fails when an English key has no Indonesian
+  translation, or when the two disagree on `{placeholders}`. A key present in one and missing from
+  the other degrades silently to English and can sit unnoticed for a release, which is why it is a
+  test rather than a habit.
 
 ## Local development
 

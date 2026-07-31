@@ -90,6 +90,34 @@ mock.module('../lib/entries', () => ({
   restoreEntryRevision: async (_e: unknown, _s: unknown, _c: string, slug: string) => entry(slug),
 }))
 
+const version = (id: string, status = 'draft') => ({
+  id,
+  entryId: 'ent_hello',
+  collectionSlug: 'posts',
+  entrySlug: 'hello',
+  locale: 'en',
+  title: 'Added the interview section',
+  data: { title: 'Hello' },
+  metadata: null,
+  status,
+  baseUpdatedAt: '2026-01-01T00:00:00Z',
+  stale: false,
+  createdBy: 'usr_1',
+  createdByName: 'A',
+  submittedAt: null,
+  publishedAt: null,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+  approvals: [],
+  requiredLevels: 2,
+})
+
+mock.module('../lib/entry-versions', () => ({
+  listEntryVersions: async () => [version('ver_1')],
+  createEntryVersion: async () => version('ver_2'),
+  submitEntryVersion: async () => version('ver_2', 'in_review'),
+}))
+
 mock.module('../lib/users', () => ({
   listUsers: async () => [
     {
@@ -195,6 +223,22 @@ describe('POST /mcp', () => {
     expect(names).not.toContain('send_newsletter')
   })
 
+  /**
+   * Versions are the second withholding, and a sharper one: an agent approving the version it has
+   * just written is not review, it is a rubber stamp with extra steps. Authoring and submitting are
+   * exposed; blessing and publishing are decisions only a signed-in person can make.
+   */
+  test('no tool approves, rejects or publishes an entry version', async () => {
+    reset()
+    const names = await listTools()
+    expect(names).toContain('create_entry_version')
+    expect(names).toContain('submit_entry_version')
+    expect(names).toContain('list_entry_versions')
+    expect(names).not.toContain('approve_entry_version')
+    expect(names).not.toContain('reject_entry_version')
+    expect(names).not.toContain('publish_entry_version')
+  })
+
   test('every tool name is unique', async () => {
     reset()
     const names = await listTools()
@@ -225,7 +269,12 @@ describe('POST /mcp', () => {
     reset()
     token = { userId: 'usr_1', scopes: 'openid entries:read' }
     const names = await listTools()
-    expect(names).toEqual(['list_entries', 'get_entry', 'list_entry_revisions'])
+    expect(names).toEqual([
+      'list_entries',
+      'get_entry',
+      'list_entry_revisions',
+      'list_entry_versions',
+    ])
     expect(names).not.toContain('create_entry')
   })
 

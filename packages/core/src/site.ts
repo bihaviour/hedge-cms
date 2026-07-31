@@ -9,6 +9,7 @@ import {
   localesSchema,
   timezoneSchema,
 } from './i18n'
+import { previewUrlSchema } from './preview'
 
 /**
  * A site is the tenant boundary. One deployment holds many sites — a blog, a docs site, a
@@ -33,11 +34,23 @@ export const siteAccessSchema = z.object({
   siteSlug: z.string(),
   siteName: z.string(),
   role: z.enum(SITE_ROLES),
+  /**
+   * What this user may approve on this site, or `null` to derive it from their site role. Kept as a
+   * column on the grant rather than a table of its own: approval is a *site* power, and this row
+   * already is somebody's site access — one that every request resolves anyway.
+   */
+  approvalLevel: z.number().int().min(0).max(2).nullable(),
+  /** The level actually in force — the override above, or the site role's default. */
+  effectiveApprovalLevel: z.number().int().min(0).max(2),
 })
 
 export type SiteAccess = z.infer<typeof siteAccessSchema>
 
-export const setSiteRoleSchema = z.object({ role: z.enum(SITE_ROLES) })
+export const setSiteRoleSchema = z.object({
+  role: z.enum(SITE_ROLES),
+  /** Omitted leaves any existing override alone; `null` clears it back to the role's default. */
+  approvalLevel: z.number().int().min(0).max(2).nullable().optional(),
+})
 
 export type SetSiteRoleInput = z.infer<typeof setSiteRoleSchema>
 
@@ -125,6 +138,20 @@ export const siteSchema = z.object({
   customFields: fieldsSchema,
   /** This site's sender override for newsletters and member email — see `siteEmailSenderSchema`. */
   emailSender: siteEmailSenderSchema,
+  /**
+   * Base URL of the website's own preview endpoint — see `preview.ts`. Null means this site has no
+   * preview configured, and the admin hides the Preview action rather than rendering one that 404s.
+   */
+  previewUrl: z.string().nullable(),
+  /**
+   * Whether the admin may show a preview inside an embedded pane as well as in a new tab.
+   *
+   * Off by default and opt-in per site, because it only works when the website lets the CMS origin
+   * frame it — `X-Frame-Options` or a `Content-Security-Policy` without `frame-ancestors` renders a
+   * blank pane, and cross-origin framing gives the parent no reliable way to detect that. Opening
+   * in a tab always works, so that stays the default.
+   */
+  previewEmbed: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -205,6 +232,13 @@ export const updateSiteConfigSchema = z.object({
   metadata: siteMetadataSchema.optional(),
   customFields: fieldsSchema.optional(),
   emailSender: siteEmailSenderSchema.optional(),
+  /**
+   * Where preview points, and whether it may be framed. Site-level rather than instance-level for
+   * the same reason the rest of this schema is: which URL renders this site's drafts is the site
+   * admin's business, where the site's *domain* is the deployment's.
+   */
+  previewUrl: previewUrlSchema.nullable().optional(),
+  previewEmbed: z.boolean().optional(),
 })
 
 export type UpdateSiteConfigInput = z.infer<typeof updateSiteConfigSchema>

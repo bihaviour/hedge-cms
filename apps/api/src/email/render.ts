@@ -14,6 +14,10 @@ export interface TemplateVariables {
   to: string
   name: string
   url: string
+  /** What the email is about — an entry version's title. Only the review templates reference it. */
+  title?: string
+  /** An approver's note, or empty when they left none. Only the review templates reference it. */
+  comment?: string
 }
 
 /**
@@ -126,7 +130,17 @@ export function renderMessage(
   source: EmailTemplateContent,
   variables: TemplateVariables,
 ): EmailMessage {
-  const values = { appName, name: variables.name, to: variables.to, url: variables.url }
+  const values = {
+    appName,
+    name: variables.name,
+    to: variables.to,
+    url: variables.url,
+    // Left as empty strings rather than omitted: an unset variable is rendered back as its literal
+    // `{{title}}`, which is right for a typo in an override and wrong for one this send has no
+    // value for — a review email with no comment should read as having no comment.
+    title: variables.title ?? '',
+    comment: variables.comment ?? '',
+  }
   const subject = interpolate(source.subject, values, false)
   const heading = interpolate(source.heading, values, true)
   const body = interpolate(source.body, values, true)

@@ -253,6 +253,19 @@ Query parameters: `locale`, `limit`, `cursor`, `sort`, `order`.
 A key belongs to the site it was created on and can only read that site's content, so nothing
 extra is needed to pick a tenant.
 
+### Previewing unpublished content
+
+The delivery API serves published entries only — which leaves no way to see a draft the way a reader
+would, short of publishing it and looking. **Preview** in the entry editor closes that: the CMS mints
+a short-lived token scoped to that one entry, opens your website's own preview route with it, and
+your website's server forwards it to the delivery API in `X-Hedge-Preview` to render the draft in
+your real layout.
+
+Point a site at its preview route under **Settings → Configuration → Overview**; the website side is
+a page you write. [docs/preview.md](docs/preview.md) walks through it, with worked snippets, the
+header the embedded pane needs, and the one mistake worth naming — handing the delivery key to the
+browser.
+
 ### Images
 
 A `media` field stores an R2 object key, not a URL — a stored URL bakes this deployment's origin

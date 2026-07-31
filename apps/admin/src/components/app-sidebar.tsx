@@ -38,6 +38,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -89,6 +90,7 @@ const NAV: {
     title: 'nav.content',
     items: [
       { title: 'nav.collections', url: '/collections' },
+      { title: 'nav.review', url: '/review' },
       { title: 'nav.media', url: '/media' },
     ],
   },
@@ -132,6 +134,19 @@ export function AppSidebar({
     enabled: Boolean(siteSlug),
   })
 
+  /**
+   * How many versions are waiting on this person. Polled on TanStack Query's existing cadence
+   * rather than by adding any transport — a queue badge is a nudge, and a self-hosted CMS's review
+   * volume does not justify a socket. A viewer gets a 403 here, which is simply no badge.
+   */
+  const reviewCount = useQuery({
+    queryKey: ['review-count', siteSlug],
+    queryFn: api.review.count,
+    enabled: Boolean(siteSlug),
+    retry: false,
+    refetchInterval: 60_000,
+  })
+
   const groups = NAV.map((group) => ({
     ...group,
     items: group.items.filter(
@@ -150,7 +165,12 @@ export function AppSidebar({
 
       <SidebarContent>
         {groups.map((group) => (
-          <NavGroup key={group.title} group={group} collections={collections.data ?? []} />
+          <NavGroup
+            key={group.title}
+            group={group}
+            collections={collections.data ?? []}
+            reviewCount={reviewCount.data?.count ?? 0}
+          />
         ))}
       </SidebarContent>
 
@@ -170,9 +190,11 @@ export function AppSidebar({
 function NavGroup({
   group,
   collections,
+  reviewCount,
 }: {
   group: (typeof NAV)[number]
   collections: { id: string; slug: string; name: string }[]
+  reviewCount: number
 }) {
   const t = useT()
   const { pathname } = useLocation()
@@ -201,6 +223,11 @@ function NavGroup({
                   {t(item.title)}
                 </NavLink>
               </SidebarMenuButton>
+
+              {/* Visible without navigating to it, which is the whole point of a queue. */}
+              {item.url === '/review' && reviewCount > 0 && (
+                <SidebarMenuBadge>{reviewCount}</SidebarMenuBadge>
+              )}
 
               {/* The collections this site actually has, nested under the section. */}
               {item.url === '/collections' && collections.length > 0 && (

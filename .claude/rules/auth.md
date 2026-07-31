@@ -26,11 +26,27 @@ server. **Authorization is ours** and nothing in `auth/` reads `users.role` or `
 | Delivery API key (`content:read` only) | `Authorization: Bearer hdg_…` | `resolveDeliveryActor` | `/api/v1/content/*` only |
 | Authoring API key (any `:write` scope) | `Authorization: Bearer hdg_…` | `resolveSessionOrKeyActor` | the above, plus `/collections/*` and `/media/*` |
 | Member token | `X-Member-Token` | `resolveMember` | gated delivery content; never the admin API |
+| Preview token | `X-Hedge-Preview` | `resolvePreview` | one unpublished entry, on `/api/v1/content/*` only |
 | MCP OAuth token | `Authorization: Bearer` | inside `routes/mcp.ts` | `/api/v1/mcp` only |
+
+**A machine never approves an entry version** (#59). An authoring key and a delegated MCP client may
+both *write* one — that is ordinary content work — but the approve, reject and publish routes carry
+`requireUserActor`, and `approvalLevelFor` in `lib/auth.ts` returns 0 for anything that is not a
+session actor. An approval is a statement by a person, and the credential that can author is the one
+most likely to be automated. That is a third check on top of the two below, deliberately.
+
+Approval authority itself is a *site* power, not an instance one: `site_users.approvalLevel`, per
+user per site, null meaning "derive from the site role" (`approvalLevelForSiteRole`). A user reaching
+a site through `sites:access_all` has no grant row and resolves to site admin, hence level 2 — by
+construction, not by exemption, which is the same shape the MCP owner case has.
 
 The two key rows are the *same credential type* separated by what it was issued to do. A key with
 no write scope never leaves the delivery API, so the credential a public website holds still cannot
 see a draft. Neither kind reaches users, sites, members, email, or the key routes themselves.
+
+A preview token resolves no actor at all — it sets `preview`, not `actor`, so it widens what an
+already-authenticated delivery request may see rather than authenticating one. Minting it is
+`requireUserActor` only; see `api-routes.md`.
 
 `Actor.kind` is *who* is acting; `Actor.via` is what they presented. Both matter — `requireUserActor`
 rejects keys and delegated clients even when the role would allow the action.
@@ -113,12 +129,16 @@ so calling it reports the missing scope rather than "unknown tool" — which a m
 cannot do this" and works around. Role failures are never hidden; a role can change between two calls
 on one token.
 
-Two REST powers are deliberately withheld, and `mcp.test.ts` pins the first:
+Three REST powers are deliberately withheld, and `mcp.test.ts` pins the first and the third:
 
 - **Sending a newsletter to its audience.** It reaches real inboxes and cannot be recalled.
   `send_test_newsletter` mails one named address, which is what an agent actually needs.
 - **Uploading media.** It needs a multipart body streamed into R2; base64 through a context window
   is not a substitute. Everything *about* an upload — listing, captioning, deleting — is exposed.
+- **Approving, rejecting or publishing an entry version** (#62). Authoring one and submitting it for
+  review are exposed; blessing one is not. The reasoning is sharper than the newsletter's: the point
+  of the workflow is a second pair of *human* eyes, and an agent approving the version it has just
+  written is a rubber stamp with extra steps. Say so in any new tool description that comes near it.
 
 `create_api_key` returns a raw secret into a model's context. That is a real weakening versus the
 admin's show-once dialog, so the tool description says so; keep that warning if you touch it.

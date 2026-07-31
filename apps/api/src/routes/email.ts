@@ -1,11 +1,11 @@
 import {
   DEFAULT_EMAIL_TEMPLATES,
   EMAIL_TEMPLATE_KEYS,
-  EMAIL_TEMPLATE_VARIABLES,
   type EmailConfig,
   type EmailLog,
   type EmailTemplate,
   type EmailTemplateKey,
+  emailTemplateVariables,
   updateEmailConfigSchema,
   updateEmailTemplateSchema,
 } from '@hedge/core'
@@ -50,7 +50,7 @@ function toTemplate(key: EmailTemplateKey, row: EmailTemplateRow | undefined): E
     key,
     label: def.label,
     description: def.description,
-    variables: [...EMAIL_TEMPLATE_VARIABLES],
+    variables: emailTemplateVariables(key),
     subject: source.subject,
     heading: source.heading,
     body: source.body,

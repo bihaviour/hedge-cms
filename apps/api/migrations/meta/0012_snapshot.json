@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6e14c9b1-60ea-412a-8ba0-56aab68ebcbe",
-  "prevId": "7b8de775-b85e-4ac8-aedb-1ff6b829b4f6",
+  "id": "85179b6f-39e2-46ce-b0ae-342822ff2832",
+  "prevId": "b0f58aa0-a4f1-4a00-ab2e-75e5e6ad530d",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -119,6 +119,117 @@
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "analytics_daily": {
+      "name": "analytics_daily",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "site_id": {
+          "name": "site_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "metric": {
+          "name": "metric",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "analytics_daily_bucket_idx": {
+          "name": "analytics_daily_bucket_idx",
+          "columns": ["site_id", "date", "path", "metric", "key"],
+          "isUnique": true
+        },
+        "analytics_daily_site_date_idx": {
+          "name": "analytics_daily_site_date_idx",
+          "columns": ["site_id", "date"],
+          "isUnique": false
+        },
+        "analytics_daily_site_entry_idx": {
+          "name": "analytics_daily_site_entry_idx",
+          "columns": ["site_id", "entry_id", "date"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "analytics_daily_site_id_sites_id_fk": {
+          "name": "analytics_daily_site_id_sites_id_fk",
+          "tableFrom": "analytics_daily",
+          "tableTo": "sites",
+          "columnsFrom": ["site_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "analytics_daily_entry_id_entries_id_fk": {
+          "name": "analytics_daily_entry_id_entries_id_fk",
+          "tableFrom": "analytics_daily",
+          "tableTo": "entries",
+          "columnsFrom": ["entry_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -372,6 +483,13 @@
           "autoincrement": false,
           "default": 0
         },
+        "preview_path": {
+          "name": "preview_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -517,6 +635,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "newsletter_id": {
+          "name": "newsletter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -544,9 +669,24 @@
           "name": "email_log_created_at_idx",
           "columns": ["created_at"],
           "isUnique": false
+        },
+        "email_log_newsletter_idx": {
+          "name": "email_log_newsletter_idx",
+          "columns": ["newsletter_id"],
+          "isUnique": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "email_log_newsletter_id_newsletters_id_fk": {
+          "name": "email_log_newsletter_id_newsletters_id_fk",
+          "tableFrom": "email_log",
+          "tableTo": "newsletters",
+          "columnsFrom": ["newsletter_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -2609,6 +2749,21 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "preview_url": {
+          "name": "preview_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "preview_embed": {
+          "name": "preview_embed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
