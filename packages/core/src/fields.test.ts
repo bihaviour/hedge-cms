@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { buildEntryValidator, type Field, fieldsSchema } from './index'
+import {
+  buildEntryValidator,
+  codeFields,
+  type Field,
+  fieldsSchema,
+  formatEntryCode,
+  parseEntryCode,
+} from './index'
 
 const parse = (fields: unknown[]) => fieldsSchema.parse(fields) as Field[]
 
@@ -55,5 +62,44 @@ describe('buildEntryValidator: multiple vs single', () => {
     ]) as [Extract<Field, { kind: 'reference' }>]
     expect(reference.collection).toBe('posts')
     expect(reference.multiple).toBe(false)
+  })
+})
+
+/**
+ * A `code` field is the CMS's own identifier for a piece — assigned, never typed. The schema's job
+ * is only to describe the shape it is rendered in; the assignment itself lives in the API's write
+ * path. What is pinned here is that a field declared before the options existed still parses, and
+ * that the sequence survives a round trip through the formatter.
+ */
+describe('code fields', () => {
+  const [field] = parse([{ kind: 'code', name: 'code', label: 'Code', prefix: 'RB-' }]) as [
+    Extract<Field, { kind: 'code' }>,
+  ]
+
+  test('padding defaults so a bare declaration is usable', () => {
+    expect(field.padding).toBe(4)
+    expect(formatEntryCode(field, 7)).toBe('RB-0007')
+  })
+
+  test('a sequence past the padding simply gets longer', () => {
+    expect(formatEntryCode(field, 10000)).toBe('RB-10000')
+    expect(parseEntryCode(field, 'RB-10000')).toBe(10000)
+  })
+
+  test('a code from another prefix reads as no sequence at all', () => {
+    // Otherwise changing the prefix would restart the count from whatever the old one happened to
+    // be, and the two schemes would collide on their way past each other.
+    expect(parseEntryCode(field, 'OLD-0042')).toBeNull()
+    expect(parseEntryCode(field, 'RB-draft')).toBeNull()
+    expect(parseEntryCode(field, undefined)).toBeNull()
+  })
+
+  test('codeFields picks them out of a collection in declaration order', () => {
+    const fields = parse([
+      { kind: 'text', name: 'title', label: 'Title' },
+      { kind: 'code', name: 'ref', label: 'Ref', prefix: 'A-' },
+      { kind: 'code', name: 'code', label: 'Code', prefix: 'B-' },
+    ])
+    expect(codeFields(fields).map((f) => f.name)).toEqual(['ref', 'code'])
   })
 })

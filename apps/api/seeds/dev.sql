@@ -6,6 +6,11 @@
 -- The two sites also carry different i18n config, so per-site internationalization is visible from
 -- the first run: the blog is English-only on UTC, the docs site is bilingual (en + id) on Jakarta
 -- time with Indonesian as its default locale.
+--
+-- The blog carries a domain and the docs site does not, which is what makes both halves of the
+-- canonical-URL default visible: an entry on the blog offers its own page URL, one on the docs site
+-- says where to record a domain instead. Neither resolves locally — a request to the dev server
+-- matches no site by Host — so this stays a display value here.
 
 DELETE FROM entries WHERE collection_id IN ('col_seed_posts', 'col_seed_guides');
 DELETE FROM collections WHERE id IN ('col_seed_posts', 'col_seed_guides');
@@ -13,7 +18,7 @@ DELETE FROM sites WHERE id IN ('sit_seed_blog', 'sit_seed_docs');
 
 INSERT INTO sites (id, slug, name, description, domain, allow_member_signup, locales, default_locale, timezone, created_at, updated_at)
 VALUES
-  ('sit_seed_blog', 'blog', 'Blog', 'Articles and release notes', NULL, 1, json('["en"]'), 'en', 'UTC', datetime('now'), datetime('now')),
+  ('sit_seed_blog', 'blog', 'Blog', 'Articles and release notes', 'blog.example.com', 1, json('["en"]'), 'en', 'UTC', datetime('now'), datetime('now')),
   ('sit_seed_docs', 'docs', 'Documentation', 'Product documentation', NULL, 0, json('["en","id"]'), 'id', 'Asia/Jakarta', datetime('now'), datetime('now'));
 
 INSERT INTO collections (id, site_id, slug, name, description, kind, fields, created_at, updated_at)
@@ -29,8 +34,9 @@ VALUES (
     {"kind":"text","name":"excerpt","label":"Excerpt","required":false,"localized":false,"multiline":true,"maxLength":300},
     {"kind":"richtext","name":"body","label":"Body","required":false,"localized":false,"format":"markdown"},
     {"kind":"media","name":"cover","label":"Cover image","required":false,"localized":false,"accept":["image/*"],"multiple":false},
-    {"kind":"select","name":"category","label":"Category","required":false,"localized":false,"multiple":false,
-      "options":[{"value":"engineering","label":"Engineering"},{"value":"product","label":"Product"}]}
+    {"kind":"select","name":"category","label":"Category","required":false,"localized":false,"multiple":true,"creatable":true,
+      "options":[{"value":"engineering","label":"Engineering"},{"value":"product","label":"Product"}]},
+    {"kind":"code","name":"code","label":"Code","required":false,"localized":false,"prefix":"BLG-","padding":4}
   ]'),
   datetime('now'),
   datetime('now')
@@ -62,7 +68,7 @@ VALUES
     'published',
     'public',
     'en',
-    json('{"title":"Hello world","excerpt":"The first post on this Hedge instance.","body":"# Hello world\n\nEdit this entry in the admin, or fetch it from the delivery API.","category":"engineering"}'),
+    json('{"title":"Hello world","excerpt":"The first post on this Hedge instance.","body":"# Hello world\n\nEdit this entry in the admin, or fetch it from the delivery API.","category":["engineering"],"code":"BLG-0001"}'),
     datetime('now'),
     datetime('now'),
     datetime('now')
@@ -74,7 +80,7 @@ VALUES
     'draft',
     'public',
     'en',
-    json('{"title":"A draft post","excerpt":"Drafts are invisible to the delivery API.","body":"Still cooking.","category":"product"}'),
+    json('{"title":"A draft post","excerpt":"Drafts are invisible to the delivery API.","body":"Still cooking.","category":["product","releases"],"code":"BLG-0002"}'),
     NULL,
     datetime('now'),
     datetime('now')
@@ -88,7 +94,7 @@ VALUES
     'published',
     'members',
     'en',
-    json('{"title":"Members only: a deep dive","excerpt":"Visible to anyone, readable by members.","body":"The part behind the sign-in wall.","category":"engineering"}'),
+    json('{"title":"Members only: a deep dive","excerpt":"Visible to anyone, readable by members.","body":"The part behind the sign-in wall.","category":["engineering"],"code":"BLG-0003"}'),
     datetime('now'),
     datetime('now'),
     datetime('now')

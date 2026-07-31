@@ -1,5 +1,5 @@
 import type { EntryMetadata, EntryStatus, EntryVisibility } from '@hedge/core'
-import { localeLabel, slugify } from '@hedge/core'
+import { entryPublicUrl, localeLabel, slugify } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ChartLine, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -124,11 +124,27 @@ export function EntryEditorPage() {
     setMetadata((current) => ({ ...current, ...patch }))
   }
 
+  // Where this entry lives on the website, from the site's domain and the collection's page shape.
+  // Follows the slug as it is typed, so a new entry's default is the URL it will actually have.
+  const articleUrl = entryPublicUrl({
+    domain: site?.domain,
+    previewPath: collection.data?.previewPath ?? null,
+    collection: collectionSlug,
+    slug: entrySlug || slugify(String(data.title ?? '')),
+    locale,
+  })
+
   const save = useMutation({
     mutationFn: () => {
       const payload = {
         data,
-        metadata,
+        // A blank canonical URL is filled in with the entry's own URL rather than left for the
+        // website to guess. Self-referencing canonicals are what a search engine expects on an
+        // article, and the field is still an override — clearing it just re-derives the default,
+        // and a value typed here is never touched.
+        metadata: metadata.canonicalUrl
+          ? metadata
+          : { ...metadata, canonicalUrl: articleUrl ?? undefined },
         status,
         visibility,
         ...(entrySlug ? { slug: entrySlug } : {}),
@@ -139,6 +155,10 @@ export function EntryEditorPage() {
     },
     onSuccess: (saved) => {
       setFieldErrors({})
+      // Re-seed from what was actually stored: a `code` field was assigned server-side and the
+      // canonical URL may have been defaulted, and neither is visible until the form says so.
+      setData(saved.data)
+      setMetadata({ ...EMPTY_METADATA, ...saved.metadata })
       queryClient.invalidateQueries({ queryKey: ['entries', collectionSlug] })
       queryClient.invalidateQueries({ queryKey: ['entry', collectionSlug] })
       toast.success(t('common.saved'))
@@ -297,12 +317,17 @@ export function EntryEditorPage() {
                 <Input
                   id="meta-canonical"
                   type="url"
-                  placeholder="https://example.com/page"
+                  placeholder={articleUrl ?? 'https://example.com/page'}
                   value={metadata.canonicalUrl ?? ''}
                   onChange={(event) =>
                     patchMetadata({ canonicalUrl: event.target.value || undefined })
                   }
                 />
+                <p className="text-muted-foreground text-xs">
+                  {articleUrl
+                    ? 'Left blank, this entry points at its own URL on the website. Set one to point somewhere else.'
+                    : 'Record this site’s domain in site settings and this defaults to the entry’s own URL.'}
+                </p>
               </div>
               <SocialImageInput
                 id="meta-og"

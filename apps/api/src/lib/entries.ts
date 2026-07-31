@@ -1,16 +1,20 @@
 import {
   buildEntryValidator,
   type CreateEntryInput,
+  codeFields,
   type Entry,
   type EntryMetadata,
   type EntryRevision,
   entryMetadataSchema,
+  type Field,
   fieldsSchema,
+  formatEntryCode,
   type ListEntriesQuery,
+  parseEntryCode,
   slugify,
   type UpdateEntryInput,
 } from '@hedge/core'
-import { and, desc, eq, getTableColumns, like, type SQL } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, like, type SQL, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   type CollectionRow,
@@ -130,6 +134,93 @@ export function assertPublishAllowed(
     `"${collection.slug}" requires ${collection.approvalLevels} approval(s) before an entry can be published. ` +
       'Create a version, submit it for review, and publish that instead.',
   )
+}
+
+/**
+ * Fills in every `code` field the collection declares, and refuses to let a caller set one.
+ *
+ * A code is the CMS's own identifier for a piece — `RB-0007` — so it is assigned once, when the
+ * entry is first created, and then never moves. Three rules follow from that, and all three live
+ * here rather than in a route so the REST API, the MCP tools and the version routes get the same
+ * answer:
+ *
+ * - **The incoming value is discarded, always.** Not rejected — a client that round-trips an entry
+ *   would then be unable to save it back. The stored value simply wins.
+ * - **An existing entry keeps the code it has**, whatever the update says, including an update that
+ *   renames the slug. An entry that predates the field being declared gets one on its next write.
+ * - **A translation shares its siblings' code.** Entries are keyed by (collection, slug, locale),
+ *   so the Indonesian version of an article is the same piece and carries the same identifier.
+ *
+ * The sequence is `max + 1` over the codes already issued in this collection, which cannot collide
+ * with anything stored. Two creates racing in separate isolates can still both read the same max —
+ * D1 has no transaction to hold across the two statements — so a duplicate is possible under
+ * genuinely simultaneous authoring. Nothing downstream treats a code as unique.
+ */
+export async function applyGeneratedCodes(
+  env: Bindings,
+  collection: CollectionRow,
+  data: Record<string, unknown>,
+  slug: string,
+  existing?: EntryRow,
+): Promise<Record<string, unknown>> {
+  const fields = codeFields(fieldsSchema.parse(collection.fields))
+  if (fields.length === 0) return data
+
+  // One lookup for every code field: the sibling locales of this slug, if any. On an update the
+  // entry itself is the source, so this only runs when creating.
+  const sibling = existing ?? (await findSibling(env, collection, slug))
+  const next: Record<string, unknown> = { ...data }
+
+  for (const field of fields) {
+    const carried = sibling?.data[field.name]
+    if (typeof carried === 'string' && carried) {
+      next[field.name] = carried
+      continue
+    }
+    next[field.name] = formatEntryCode(field, await nextCodeSequence(env, collection, field))
+  }
+
+  return next
+}
+
+/** Any locale of this slug — the entry a new translation inherits its code from. */
+async function findSibling(
+  env: Bindings,
+  collection: CollectionRow,
+  slug: string,
+): Promise<EntryRow | undefined> {
+  const [row] = await getDb(env)
+    .select()
+    .from(entries)
+    .where(and(eq(entries.collectionId, collection.id), eq(entries.slug, slug)))
+    .limit(1)
+  return row
+}
+
+/**
+ * One past the highest sequence issued in this collection for this field.
+ *
+ * Ordering by length before value is what makes a plain string comparison agree with a numeric one
+ * once the count outgrows the padding — `RB-10000` sorts below `RB-9999` lexicographically and above
+ * it by length. A short window rather than one row because a code left behind by an earlier prefix
+ * sorts high and parses to nothing; taking the best of twenty skips past those without reading the
+ * whole collection.
+ */
+async function nextCodeSequence(
+  env: Bindings,
+  collection: CollectionRow,
+  field: Extract<Field, { kind: 'code' }>,
+): Promise<number> {
+  const code = sql<string>`json_extract(${entries.data}, ${`$.${field.name}`})`
+  const rows = await getDb(env)
+    .select({ code })
+    .from(entries)
+    .where(and(eq(entries.collectionId, collection.id), sql`${code} IS NOT NULL`))
+    .orderBy(sql`length(${code}) desc`, sql`${code} desc`)
+    .limit(20)
+
+  const highest = rows.reduce((max, row) => Math.max(max, parseEntryCode(field, row.code) ?? 0), 0)
+  return highest + 1
 }
 
 /** Validates `data` against the collection's field definitions. */
@@ -255,9 +346,14 @@ export async function createEntry(
     })
   }
 
-  const data = validateData(collection, input.data)
+  // The slug is settled before validation now: a `code` field's value depends on it, because a new
+  // translation of an existing slug inherits that piece's identifier rather than taking a new one.
+  const slug = input.slug ?? (slugify(String(input.data.title ?? '')) || newId())
+  const data = validateData(
+    collection,
+    await applyGeneratedCodes(env, collection, input.data, slug),
+  )
   const metadata = resolveMetadata(site, input.metadata)
-  const slug = input.slug ?? (slugify(String(data.title ?? '')) || newId())
 
   // Creating an entry already published would sidestep the workflow as completely as a `PATCH`
   // would — versions hang off an entry that exists, so the first save has to land as a draft.
@@ -325,7 +421,18 @@ export async function updateEntry(
     })
   }
 
-  const data = input.data ? validateData(collection, input.data) : existing.data
+  const data = input.data
+    ? validateData(
+        collection,
+        await applyGeneratedCodes(
+          env,
+          collection,
+          input.data,
+          input.slug ?? existing.slug,
+          existing,
+        ),
+      )
+    : existing.data
   const metadata =
     input.metadata !== undefined ? resolveMetadata(site, input.metadata) : existing.metadata
   const status = input.status ?? existing.status
@@ -436,7 +543,9 @@ export async function restoreEntryRevision(
   const [row] = await db
     .update(entries)
     .set({
-      data: revision.data,
+      // Restoring rolls the content back, never the identifier: a revision taken before the `code`
+      // field was declared carries none, and rolling one back would otherwise reissue the piece.
+      data: await applyGeneratedCodes(env, collection, revision.data, existing.slug, existing),
       // A revision predating metadata capture leaves the live metadata as it is.
       metadata: revision.metadata ?? existing.metadata,
       status,
