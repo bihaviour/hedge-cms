@@ -71,6 +71,13 @@
       "when": 1785166758650,
       "tag": "0009_smart_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785500488962,
+      "tag": "0010_swift_warstar",
+      "breakpoints": true
     }
   ]
 }

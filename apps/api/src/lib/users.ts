@@ -1,4 +1,10 @@
-import type { InviteUserInput, SiteAccess, SiteRole, User } from '@hedge/core'
+import {
+  approvalLevelForSiteRole,
+  type InviteUserInput,
+  type SiteAccess,
+  type SiteRole,
+  type User,
+} from '@hedge/core'
 import { and, asc, eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { accounts, sites, siteUsers, type UserRow, users } from '../db/schema'
@@ -136,17 +142,25 @@ export async function deleteUser(env: Bindings, id: string, actorId: string): Pr
  * ------------------------------------------------------------------ */
 
 export async function listUserSites(env: Bindings, userId: string): Promise<SiteAccess[]> {
-  return await getDb(env)
+  const rows = await getDb(env)
     .select({
       siteId: sites.id,
       siteSlug: sites.slug,
       siteName: sites.name,
       role: siteUsers.role,
+      approvalLevel: siteUsers.approvalLevel,
     })
     .from(siteUsers)
     .innerJoin(sites, eq(sites.id, siteUsers.siteId))
     .where(eq(siteUsers.userId, userId))
     .orderBy(asc(sites.name))
+
+  // The effective level is resolved here rather than in the admin, so one rule decides it — the
+  // same one `approvalLevelFor` applies when a decision is actually made.
+  return rows.map((row) => ({
+    ...row,
+    effectiveApprovalLevel: row.approvalLevel ?? approvalLevelForSiteRole(row.role),
+  }))
 }
 
 export async function setUserSiteRole(
@@ -154,24 +168,40 @@ export async function setUserSiteRole(
   userId: string,
   siteId: string,
   role: SiteRole,
-): Promise<{ siteId: string; userId: string; role: SiteRole }> {
+  approvalLevel?: number | null,
+): Promise<SiteAccess> {
   const db = getDb(env)
 
   const user = await findUser(env, userId)
 
-  const [site] = await db.select({ id: sites.id }).from(sites).where(eq(sites.id, siteId)).limit(1)
+  const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1)
   if (!site) throw ApiError.notFound('Site')
 
   if ((await permissionsForRole(env, user.role)).includes('sites:access_all')) {
     throw ApiError.badRequest(`${user.name}'s role already reaches every site`)
   }
 
-  await db
-    .insert(siteUsers)
-    .values({ siteId, userId, role })
-    .onConflictDoUpdate({ target: [siteUsers.siteId, siteUsers.userId], set: { role } })
+  // Omitting `approvalLevel` leaves whatever is stored alone — the admin's role dropdown and its
+  // approval dropdown are two controls on one row, and changing one must not silently reset the other.
+  const level = approvalLevel === undefined ? {} : { approvalLevel }
 
-  return { siteId, userId, role }
+  const [row] = await db
+    .insert(siteUsers)
+    .values({ siteId, userId, role, ...level })
+    .onConflictDoUpdate({
+      target: [siteUsers.siteId, siteUsers.userId],
+      set: { role, ...level },
+    })
+    .returning()
+
+  return {
+    siteId,
+    siteSlug: site.slug,
+    siteName: site.name,
+    role,
+    approvalLevel: row?.approvalLevel ?? null,
+    effectiveApprovalLevel: row?.approvalLevel ?? approvalLevelForSiteRole(role),
+  }
 }
 
 export async function removeUserSiteRole(

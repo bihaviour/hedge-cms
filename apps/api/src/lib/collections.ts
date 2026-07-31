@@ -25,6 +25,7 @@ export function toCollection(row: CollectionRow): Collection {
     description: row.description,
     kind: row.kind,
     fields: fieldsSchema.parse(row.fields),
+    approvalLevels: row.approvalLevels as Collection['approvalLevels'],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -88,6 +89,7 @@ export async function createCollection(
       description: input.description ?? null,
       kind: input.kind,
       fields: input.fields ?? defaultFields(),
+      approvalLevels: input.approvalLevels ?? 0,
     })
     .returning()
 
@@ -108,6 +110,7 @@ export async function updateCollection(
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.kind !== undefined ? { kind: input.kind } : {}),
       ...(input.fields !== undefined ? { fields: input.fields } : {}),
+      ...(input.approvalLevels !== undefined ? { approvalLevels: input.approvalLevels } : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(eq(collections.id, existing.id))

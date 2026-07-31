@@ -13,6 +13,7 @@ import {
 } from '../lib/entries'
 import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
+import entryVersions from './entry-versions'
 
 const app = new Hono<AppEnv>()
 
@@ -107,5 +108,12 @@ app.post(
     return c.json({ data })
   },
 )
+
+/**
+ * Proposed future states of this entry — authoring, review and publish. Mounted here rather than at
+ * the top level so a version is addressed through the entry it belongs to, and so the collection
+ * and slug params resolve the same way for both.
+ */
+app.route('/:slug/versions', entryVersions)
 
 export default app

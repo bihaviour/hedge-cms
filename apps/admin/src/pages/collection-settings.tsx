@@ -1,3 +1,4 @@
+import type { ApprovalLevels } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
@@ -7,13 +8,22 @@ import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
+import { useT } from '@/lib/i18n'
 
 /** Field-schema editor. Reordering here changes the order fields appear in the entry form. */
 export function CollectionSettingsPage() {
   const { collection: slug = '' } = useParams()
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -26,16 +36,23 @@ export function CollectionSettingsPage() {
 
   const [rows, setRows] = useState<FieldRow[]>([])
   const [name, setName] = useState('')
+  const [approvalLevels, setApprovalLevels] = useState<ApprovalLevels>(0)
 
   useEffect(() => {
     if (collection.data) {
       setRows(toFieldRows(collection.data.fields))
       setName(collection.data.name)
+      setApprovalLevels(collection.data.approvalLevels)
     }
   }, [collection.data])
 
   const save = useMutation({
-    mutationFn: () => api.collections.update(slug, { name, fields: rows.map((row) => row.field) }),
+    mutationFn: () =>
+      api.collections.update(slug, {
+        name,
+        approvalLevels,
+        fields: rows.map((row) => row.field),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['collection', slug] })
       queryClient.invalidateQueries({ queryKey: ['collections'] })
@@ -89,7 +106,30 @@ export function CollectionSettingsPage() {
           />
         </div>
 
-        <FieldsEditor rows={rows} onChange={setRows} />
+        {/* Switching this on changes what publishing *is* for this collection, so the copy says so
+            plainly rather than describing it as a preference. */}
+        <div className="space-y-2 border-t pt-6">
+          <h2 className="font-medium">{t('collections.approvalTitle')}</h2>
+          <Label htmlFor="collection-approvals">{t('collections.approvalLabel')}</Label>
+          <Select
+            value={String(approvalLevels)}
+            onValueChange={(value) => setApprovalLevels(Number(value) as ApprovalLevels)}
+          >
+            <SelectTrigger id="collection-approvals">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">{t('collections.approvalOff')}</SelectItem>
+              <SelectItem value="1">{t('collections.approvalOne')}</SelectItem>
+              <SelectItem value="2">{t('collections.approvalTwo')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">{t('collections.approvalHint')}</p>
+        </div>
+
+        <div className="border-t pt-6">
+          <FieldsEditor rows={rows} onChange={setRows} />
+        </div>
       </div>
     </>
   )

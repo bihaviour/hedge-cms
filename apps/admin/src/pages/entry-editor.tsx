@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { EntryRevisions } from '@/components/entry-revisions'
+import { EntryVersions } from '@/components/entry-versions'
 import { FieldInput } from '@/components/field-input'
 import { PageHeader } from '@/components/page-header'
 import { SocialImageInput } from '@/components/social-image-input'
@@ -22,6 +23,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { useSession } from '@/hooks/use-session'
 import { useActiveSite, useActiveSiteSlug } from '@/hooks/use-site'
 import { ApiClientError, api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -39,6 +41,8 @@ export function EntryEditorPage() {
 
   const siteSlug = useActiveSiteSlug()
   const { site } = useActiveSite()
+  // Who is editing — the versions panel needs it to know whose work it may not review.
+  const session = useSession()
   const locales = site?.locales ?? []
   const customFields = site?.customFields ?? []
   // The locale being edited: the URL wins, then the site's default, then a safe fallback.
@@ -176,6 +180,7 @@ export function EntryEditorPage() {
   }
 
   const fields = collection.data?.fields ?? []
+  const approvalLevels = collection.data?.approvalLevels ?? 0
   const title = String(data.title ?? '') || (creating ? t('editor.newEntry') : entrySlug)
 
   return (
@@ -350,10 +355,20 @@ export function EntryEditorPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="draft">{t('entries.statusDraft')}</SelectItem>
-                <SelectItem value="published">{t('entries.statusPublished')}</SelectItem>
+                {/* With approvals on, publishing is a step rather than a field: the server refuses
+                    this transition, so offering it here would only produce a 409. Already-published
+                    entries keep the option, since staying published is not a new publish. */}
+                {(approvalLevels === 0 || status === 'published') && (
+                  <SelectItem value="published">{t('entries.statusPublished')}</SelectItem>
+                )}
                 <SelectItem value="archived">{t('entries.statusArchived')}</SelectItem>
               </SelectContent>
             </Select>
+            {approvalLevels > 0 && status !== 'published' && (
+              <p className="text-muted-foreground text-xs">
+                {t('editor.approvalNotice', { levels: approvalLevels })}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -407,8 +422,19 @@ export function EntryEditorPage() {
             </dl>
           )}
 
-          {/* An entry that exists has a history; a new one has none yet. `data` is the live form
-              state, so the diff compares each revision against unsaved edits too. */}
+          {/* What this entry may become, and what it was. Both read the live form state as "the
+              entry", so a comparison includes unsaved edits. A new entry has neither yet: versions
+              hang off an entry that exists, so the first save still creates the draft row. */}
+          {entry.data && !creating && session.data && (
+            <EntryVersions
+              collection={collectionSlug}
+              slug={entry.data.slug}
+              locale={locale}
+              currentData={data}
+              currentUserId={session.data.id}
+            />
+          )}
+
           {entry.data && !creating && (
             <EntryRevisions
               collection={collectionSlug}

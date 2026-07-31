@@ -95,6 +95,11 @@ Details are in the rule files; these are the ones worth knowing before you read 
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
   (`site_users`) are checked independently in `lib/auth.ts`.
 - **`siteId` is the tenant boundary.** A content query that doesn't filter on it is a bug.
+- **Publishing can be a step rather than a field, and a machine never takes it.** A collection with
+  `approvalLevels > 0` refuses a direct transition to `published` — in `updateEntry`, so the gate
+  holds for the MCP tools too — and the way through is an entry *version* somebody other than its
+  author approved. `entry_revisions` stays what an entry was; `entry_versions` is what it may become.
+  Default is 0 everywhere, so a deployment that enables nothing behaves exactly as it did.
 - **The Worker can redeploy itself, but never stores a Cloudflare token.** This reverses the older
   "the Worker never redeploys itself". A token carrying `Workers Scripts:Edit` is arbitrary code
   execution on the account, so it is presented per update, used inside one request, and discarded —

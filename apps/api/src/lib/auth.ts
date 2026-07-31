@@ -1,4 +1,9 @@
-import { type InstancePermission, type Role, roleAtLeast } from '@hedge/core'
+import {
+  approvalLevelForSiteRole,
+  type InstancePermission,
+  type Role,
+  roleAtLeast,
+} from '@hedge/core'
 import { and, asc, eq } from 'drizzle-orm'
 import type { Context, MiddlewareHandler } from 'hono'
 import { getCmsAuth } from '../auth/cms'
@@ -132,6 +137,40 @@ export function requireSiteRole(minimum: Role): MiddlewareHandler<AppEnv> {
     }
     await next()
   }
+}
+
+/**
+ * What this caller may approve on one site — 0 for nothing, 1 or 2 for the levels an entry version
+ * has to clear before it can be published.
+ *
+ * Three answers, in order:
+ *
+ * - an **API key or a delegated client** approves nothing, ever. Authoring a version is something a
+ *   machine may do; blessing one is a statement by a person, and the credential that can author is
+ *   the one most likely to be automated. The approval routes reject them outright as well, on the
+ *   same reasoning `requirePermission` rejects keys — this is the belt to that pair of braces.
+ * - the **explicit override** on their `site_users` grant, when one is set.
+ * - otherwise the **site role's default**, which is also the answer for a user who reaches the site
+ *   through `sites:access_all` and therefore has no grant row at all: they resolve to site admin,
+ *   and site admin derives level 2.
+ */
+export async function approvalLevelFor(
+  env: Bindings,
+  actor: Actor,
+  siteId: string,
+): Promise<number> {
+  if (actor.kind !== 'user' || actor.via !== 'session') return 0
+
+  const role = await siteRoleFor(env, actor, siteId)
+  if (!role) return 0
+
+  const [grant] = await getDb(env)
+    .select({ level: siteUsers.approvalLevel })
+    .from(siteUsers)
+    .where(and(eq(siteUsers.siteId, siteId), eq(siteUsers.userId, actor.id)))
+    .limit(1)
+
+  return grant?.level ?? approvalLevelForSiteRole(role)
 }
 
 /** The sites this caller can reach, newest name first. Drives the admin's site switcher. */
