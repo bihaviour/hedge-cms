@@ -15,6 +15,14 @@ handlers remembering to check. Three tiers, narrowing as authority grows:
 - `/api/v1/mcp` → resolves its own OAuth bearer token inside the route
 - everything else → `actor = null`
 
+`/api/v1/collect` is in that last group deliberately, and it is the reason to keep the group. It is
+the analytics collector: a public, unauthenticated write path a reader's browser posts to
+(`routes/collect.ts`), and it is *not* under `/api/v1/analytics`, which is a management surface in
+`ADMIN_PREFIXES`. Putting a public writer and an admin reader under one prefix means special-casing
+inside the middleware whose entire value is that it does not special-case. `/api/v1/newsletter`
+versus `/api/v1/newsletters` is the existing precedent for the split; follow it rather than widening
+a prefix.
+
 The point is that a delivery key sitting in a public website's env has *no path* into the
 management API even if a route's own authorization check is wrong. **A new management route must be
 added to one of the two lists** or it will resolve no actor at all; `ADMIN_PREFIXES` is the default,
@@ -129,3 +137,8 @@ attacker resets by being routed elsewhere.
 Anything unlocked by a member token, or carrying one, is `private, no-store` — gated content must
 never land in a shared cache, and that is enforced by staying out of shared caches rather than by
 trusting every hop to honour `Vary`.
+
+That `s-maxage` is also why the Worker cannot see website traffic and why `/api/v1/collect` exists.
+Don't weaken it to make a metric work: the cache absorbing delivery traffic is the point, and the
+beacon is a separate path precisely so both can be true. `routes/analytics.ts` is the other end of
+the same reasoning — per-session management data, so `private, no-store` and no `s-maxage` at all.

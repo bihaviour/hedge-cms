@@ -44,6 +44,28 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
 `bun run dev:admin` serves :5173 and proxies `/api` and `/media` to the Worker on :8787, so the SPA
 talks to a real API. `bun run dev:api` must be running too.
 
+## Charts
+
+Recharts is the one charting dependency, and it is 400 KB. It is confined to
+`src/components/chart-marks.tsx`, which is reached **only** through the `lazy()` boundaries in
+`src/components/charts.tsx` — the admin bundle is served from the Worker's `ASSETS` binding on every
+cold load, and a charting library has no business being in it for somebody editing an entry. Import
+recharts anywhere else and it lands in the main chunk; `bun run build` will show it.
+
+These live in `src/components/` rather than `src/components/ui/` on purpose: that directory is
+shadcn CLI output, and hand-writing a file there claims a provenance it does not have.
+
+Series colours are the `--chart-*` tokens in `index.css`, with separate light and dark steps. They
+were validated rather than chosen — lightness band, chroma floor, colour-vision separation and 3:1
+contrast against both surfaces — and the reasoning is in the comment beside them. The green/red pair
+sits in the CVD floor band, which is only legal alongside a second encoding, so wherever those two
+appear together the meaning is also carried by position and a signed label. Re-validate before
+changing a value.
+
+Two conventions the charts share: never a dual y-axis (two measures of different scale get two
+charts), and the previous period is drawn as a recessive dashed line in the muted text colour rather
+than a second series — it is a reference, not a rival.
+
 ## Adding a field kind
 
 Four touchpoints; TypeScript exhaustiveness will point at any you miss:

@@ -32,6 +32,17 @@
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 91%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+
+  /* Chart marks. Three slots is all the analytics screens need, and a palette is only defensible
+     if it was checked rather than chosen: these clear the lightness band, the chroma floor, the
+     normal-vision separation floor and 3:1 contrast against both surfaces. The green/red pair sits
+     in the 6–8 CVD band in light mode, which is legal only with a second encoding — so wherever
+     they appear together (subscribers gained against lost) position above and below zero and a
+     signed direct label carry the meaning, and colour only agrees with them. The dark values are
+     stepped for the dark surface rather than being an automatic flip of the light ones. */
+  --chart-1: #2a78d6;
+  --chart-2: #008300;
+  --chart-3: #e34948;
 }
 
 .dark {
@@ -62,6 +73,10 @@
   --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+
+  --chart-1: #3987e5;
+  --chart-2: #008300;
+  --chart-3: #e66767;
 }
 
 @theme inline {
@@ -96,6 +111,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
 }
 
 @layer base {

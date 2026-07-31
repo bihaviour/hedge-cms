@@ -20,6 +20,7 @@ import { useT } from '@/lib/i18n'
 import type { MessageKey } from '@/lib/i18n/catalog'
 
 const LABELS: Record<string, MessageKey> = {
+  analytics: 'label.analytics',
   collections: 'label.collections',
   media: 'label.media',
   members: 'label.members',

@@ -1,4 +1,13 @@
 import type {
+  AnalyticsEntryStat,
+  AnalyticsMetric,
+  AnalyticsOverview,
+  AnalyticsPoint,
+  AnalyticsRange,
+  AnalyticsRangeQuery,
+  AnalyticsReferrerStat,
+  AnalyticsShareStat,
+  AnalyticsTimeseries,
   ApiErrorBody,
   ApiKey,
   AuthorizedClient,
@@ -27,7 +36,9 @@ import type {
   Media,
   Member,
   Newsletter,
+  NewsletterAnalytics,
   NewsletterAudience,
+  NewsletterDelivery,
   NewsletterPreview,
   NewsletterTemplate,
   PreviewToken,
@@ -130,6 +141,17 @@ function errorFrom(response: Response, payload: unknown): ApiClientError {
 }
 
 const json = (body: unknown) => ({ body: JSON.stringify(body) })
+
+/** `?a=1&b=2` from an object, dropping anything unset. Empty when nothing survives. */
+function params(query: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams(
+    Object.entries(query)
+      .filter(([, value]) => value !== undefined && value !== '')
+      .map(([key, value]) => [key, String(value)]),
+  )
+  const encoded = search.toString()
+  return encoded ? `?${encoded}` : ''
+}
 
 export const api = {
   auth: {
@@ -469,6 +491,42 @@ export const api = {
         method: 'POST',
         ...json(input),
       }),
+  },
+
+  /**
+   * Website analytics for the active site. Every range is resolved on the server, in the site's
+   * timezone — the admin passes `from`/`to` through and never derives a day boundary of its own,
+   * because two different answers to "what is today" is how these screens start disagreeing with
+   * each other.
+   */
+  analytics: {
+    overview: (range: AnalyticsRangeQuery = {}) =>
+      request<AnalyticsOverview & { collecting: boolean }>(`/analytics/overview${params(range)}`),
+    timeseries: (
+      query: AnalyticsRangeQuery & { metric?: AnalyticsMetric; entryId?: string } = {},
+    ) => request<AnalyticsTimeseries>(`/analytics/timeseries${params(query)}`),
+    entries: (query: AnalyticsRangeQuery & { limit?: number } = {}) =>
+      request<AnalyticsEntryStat[]>(`/analytics/entries${params(query)}`),
+    /** One article's traffic — reachable from the ranked table and from the entry editor. */
+    entry: (entryId: string, range: AnalyticsRangeQuery = {}) =>
+      request<{
+        entryId: string
+        title: string | null
+        range: AnalyticsRange
+        views: number
+        previousViews: number
+        shareIntents: number
+        series: AnalyticsPoint[]
+        previousSeries: AnalyticsPoint[]
+      }>(`/analytics/entries/${entryId}${params(range)}`),
+    referrers: (query: AnalyticsRangeQuery & { limit?: number } = {}) =>
+      request<AnalyticsReferrerStat[]>(`/analytics/referrers${params(query)}`),
+    shares: (query: AnalyticsRangeQuery & { limit?: number } = {}) =>
+      request<AnalyticsShareStat[]>(`/analytics/shares${params(query)}`),
+    /** Campaign delivery and audience movement — no collector involved. */
+    newsletters: (range: AnalyticsRangeQuery = {}) =>
+      request<NewsletterAnalytics>(`/analytics/newsletters${params(range)}`),
+    newsletter: (id: string) => request<NewsletterDelivery>(`/analytics/newsletters/${id}`),
   },
 
   /** Deployment-level version and update awareness. Admin-only on the server. */

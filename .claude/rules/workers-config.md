@@ -37,6 +37,27 @@ A new binding also needs its field on `Bindings` in `apps/api/src/env.ts`.
 is what lets someone deploy this repository into their own account without editing anything. Adding
 an account-specific id back into the committed config breaks the deploy button — don't.
 
+## The one cron trigger
+
+`triggers.crons` runs a single daily job, and the Worker's default export is
+`{ fetch, scheduled }` rather than the Hono app because of it. It prunes website-analytics rollups
+past `ANALYTICS_RETENTION_DAYS` (400): D1 has no TTL, so without it that table is the only thing in
+the deployment that grows forever.
+
+It carries no account-specific value, so the deploy button is unaffected — a cron expression is the
+same on everybody's account.
+
+**This is not a general background-work hook.** Nothing else in this deployment self-schedules:
+updates and deploys are operator-initiated, for the reason in the token-policy section below. A
+second cron job means meeting that argument first, in the commit message.
+
+**`wrangler dev --test-scheduled` does not work here, and that is not a bug in the handler.** It
+exposes `/__scheduled`, but the assets binding answers that path first — `run_worker_first` covers
+only `/api/*`, `/media/*` and `/.well-known/*`, so `not_found_handling` returns `index.html` and the
+handler never runs. Adding `/__scheduled` to `run_worker_first` to make a dev affordance work would
+put a dev-only path in the production config; don't. A real cron event invokes `scheduled` directly
+and never touches the asset router. `analytics-prune.test.ts` covers what the job actually deletes.
+
 `AUTH_SECRET` is the only secret: Better Auth's signing key *and* the HMAC key for delivery API keys
 and invite tokens. Rotating it invalidates every session, every invite link and every API key.
 Local: `.dev.vars` at the root (wrangler resolves it next to the config file). Production:

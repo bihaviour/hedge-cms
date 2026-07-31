@@ -520,7 +520,13 @@ export async function sendNewsletter(
         body: newsletter.body,
         unsubscribeUrl: url,
       })
-      await sendEmail(env, { ...message, to: recipient.email }, { site })
+      // The campaign id is what makes per-campaign delivery a query rather than a subject-line
+      // guess — see `lib/newsletter-stats.ts`.
+      await sendEmail(
+        env,
+        { ...message, to: recipient.email },
+        { site, newsletterId: newsletter.id },
+      )
     } catch {
       failed++
     }

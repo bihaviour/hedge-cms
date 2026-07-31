@@ -7,9 +7,11 @@ import { useSites } from '@/hooks/use-site'
 import { AboutPage } from '@/pages/about'
 import { AcceptInvitePage } from '@/pages/accept-invite'
 import { AccountPage } from '@/pages/account'
+import { AnalyticsPage, EntryAnalyticsPage } from '@/pages/analytics'
 import { CollectionSettingsPage } from '@/pages/collection-settings'
 import { CollectionsPage } from '@/pages/collections'
 import { ConfigurationPage } from '@/pages/configuration'
+import { DashboardPage } from '@/pages/dashboard'
 import { EmailLogPage } from '@/pages/email-log'
 import { EmailTemplatesPage } from '@/pages/email-templates'
 import { EntriesPage } from '@/pages/entries'
@@ -91,7 +93,11 @@ export function App() {
     <Routes>
       {publicRoutes}
       <Route element={<AppLayout user={session.data} />}>
-        <Route path="/" element={<Navigate to="/collections" replace />} />
+        {/* `/` was a redirect to /collections, which landed everyone in a file listing. It is a
+            real dashboard now — the one screen that answers "how is the website doing". */}
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/analytics/:entryId" element={<EntryAnalyticsPage />} />
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:collection" element={<EntriesPage />} />
         <Route path="/collections/:collection/settings" element={<CollectionSettingsPage />} />
@@ -116,7 +122,7 @@ export function App() {
       </Route>
       {/* Outside the app shell: it is a decision to make, not a place to browse. */}
       <Route path={OAUTH_CONSENT_PATH} element={<OAuthConsentPage />} />
-      <Route path="*" element={<Navigate to="/collections" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

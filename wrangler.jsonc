@@ -44,6 +44,15 @@
     }
   ],
 
+  // The one scheduled job: it prunes website-analytics rollups past their retention window
+  // (`ANALYTICS_RETENTION_DAYS`, 400 days). D1 has no TTL, so without this the rollup table is the
+  // only thing in the deployment that grows forever. Carries no account-specific value, so the
+  // deploy button is unaffected. Nothing else self-schedules — updates and deploys stay
+  // operator-initiated, as `.claude/rules/workers-config.md` requires.
+  "triggers": {
+    "crons": ["23 3 * * *"]
+  },
+
   // Cloudflare Email Sending. Deploying works without it, but nothing sends until the `from`
   // domain is onboarded:
   //   bunx wrangler email sending enable yourdomain.com

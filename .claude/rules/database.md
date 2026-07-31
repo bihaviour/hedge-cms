@@ -82,9 +82,27 @@ migration failed) rather than pretending the file rolled back.
 | MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents` |
 | Members (Better Auth member instance) | `members`, `member_sites`, `member_sessions`, `member_accounts`, `member_verifications` |
 | Content | `collections`, `entries`, `entry_revisions`, `entry_versions`, `entry_version_approvals`, `media`, `api_keys` |
+| Analytics | `analytics_daily` |
 
 Row types are exported at the bottom of `schema.ts` (`SiteRow`, `EntryRow`, …) — use those rather
 than re-deriving `$inferSelect` at the call site.
+
+## Analytics rollups
+
+`analytics_daily` is written by a **public** endpoint, so it is the one table whose growth is not
+bounded by how many people have admin accounts. Two rules keep it honest, and both are load-bearing:
+
+- **Aggregate on write, no raw event table.** The collector increments a bucket keyed by
+  `(siteId, date, path, metric, key)`. A million hits on one article on one day is one row.
+- **`entryId` is deliberately not in the unique index**, even though it describes the bucket.
+  SQLite treats NULLs as *distinct* inside a unique index, so a nullable column there would mean
+  every view of a non-entry page conflicted with nothing and inserted a fresh row — unbounded growth
+  that looks fine until a site has a page without an entry. It costs nothing to leave out: `entryId`
+  is resolved *from* the path, so two rows with the same path agree on it by construction.
+
+The dimension caps in `@hedge/core`'s `analytics.ts` bound the last term; retention is a daily cron
+(`.claude/rules/workers-config.md`). If a reporting query cannot use `(siteId, date)`, the index is
+wrong — fix the index, don't write a query that works around it.
 
 ## Entries
 
