@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { listMediaQuerySchema, matchesAccept, mediaValueOrigin, mediaValueUrl } from './index'
+import {
+  listMediaQuerySchema,
+  matchesAccept,
+  mediaValueOrigin,
+  mediaValueUrl,
+  websiteOrigin,
+} from './index'
 
 describe('matchesAccept', () => {
   test('an empty accept list accepts anything', () => {
@@ -88,5 +94,22 @@ describe('mediaValueUrl', () => {
     // else — where the old behaviour handed out a confidently wrong `…/media//covers/hero.png`.
     expect(mediaValueUrl('/covers/hero.png', CMS, null)).toBe('/covers/hero.png')
     expect(mediaValueUrl('/covers/hero.png', CMS)).toBe('/covers/hero.png')
+  })
+})
+
+describe('websiteOrigin', () => {
+  test('prefers the explicit preview origin over the matched hostname', () => {
+    expect(
+      websiteOrigin({ domain: 'example.com', previewUrl: 'https://staging.example.com' }),
+    ).toBe('https://staging.example.com')
+  })
+
+  test("falls back to the site's own domain, which is the website by definition", () => {
+    expect(websiteOrigin({ domain: 'example.com', previewUrl: null })).toBe('https://example.com')
+  })
+
+  test('invents no origin for a site that has recorded neither', () => {
+    expect(websiteOrigin({ domain: null, previewUrl: null })).toBeNull()
+    expect(websiteOrigin({})).toBeNull()
   })
 })

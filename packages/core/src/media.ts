@@ -53,6 +53,21 @@ export function mediaValueOrigin(value: string): MediaValueOrigin {
 }
 
 /**
+ * Where a site's *own* static files are served from — the origin a `/public` path resolves
+ * against. A site records this twice, for two other reasons, and neither is a settable "website
+ * URL": `previewUrl` is a full origin and the more deliberate of the two, so it wins; `domain` is
+ * the hostname the delivery API already matches a request's `Host` against, which makes it the
+ * website by definition. Null when a site has said neither, and no origin is invented.
+ */
+export function websiteOrigin(site: {
+  domain?: string | null
+  previewUrl?: string | null
+}): string | null {
+  if (site.previewUrl) return site.previewUrl
+  return site.domain ? `https://${site.domain}` : null
+}
+
+/**
  * The URL a stored media value should be fetched from. `mediaOrigin` is this deployment's own
  * origin (where `/media/<key>` is served); `websiteOrigin` is the site's website, needed only
  * for a site path and null when the site has not recorded one — in which case the path is left

@@ -9,6 +9,7 @@ import {
   PREVIEW_TOKEN_HEADER,
   type SiteMetadata,
   siteMetadataSchema,
+  websiteOrigin,
 } from '@hedge/core'
 import { and, eq, inArray, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
@@ -272,13 +273,13 @@ app.get('/:collection', async (c) => {
     site.id,
     fields,
     page.map((row) => (row.visibility === 'members' && !isMember ? {} : row.data)),
-    site.previewUrl,
+    websiteOrigin(site),
   )
 
   setCacheHeaders(c, isMember)
   return c.json({
     data: page.map((row, index) =>
-      toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, site.previewUrl, resolved?.[index]),
+      toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, websiteOrigin(site), resolved?.[index]),
     ),
     nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   })
@@ -351,12 +352,12 @@ app.get('/:collection/:slug', async (c) => {
     site.id,
     fieldsSchema.parse(row.fields),
     [row.data],
-    site.previewUrl,
+    websiteOrigin(site),
   )
 
   setCacheHeaders(c, unlocked)
   return c.json({
-    data: toDelivery(row, unlocked, siteMeta, c.env.PUBLIC_URL, site.previewUrl, resolved?.[0]),
+    data: toDelivery(row, unlocked, siteMeta, c.env.PUBLIC_URL, websiteOrigin(site), resolved?.[0]),
   })
 })
 

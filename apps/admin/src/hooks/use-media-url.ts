@@ -1,4 +1,4 @@
-import { mediaValueOrigin } from '@hedge/core'
+import { mediaValueOrigin, websiteOrigin } from '@hedge/core'
 import { useCallback } from 'react'
 import { useActiveSite } from '@/hooks/use-site'
 
@@ -15,9 +15,8 @@ import { useActiveSite } from '@/hooks/use-site'
  * operator reads as "your image is missing".
  */
 export function useMediaPreviewUrl(): (value: string) => string | null {
-  // `previewUrl` is the site's website origin — recorded for preview links, and the only place
-  // this deployment learns where a site's own static files are served from.
-  const websiteUrl = useActiveSite().site?.previewUrl ?? null
+  const site = useActiveSite().site
+  const websiteUrl = site ? websiteOrigin(site) : null
 
   return useCallback(
     (value: string): string | null => {
