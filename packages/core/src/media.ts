@@ -24,6 +24,57 @@ export const updateMediaSchema = z.object({
 export type UpdateMediaInput = z.infer<typeof updateMediaSchema>
 
 /**
+ * Where a `media` field's stored value lives, which is what decides how to turn it into a URL.
+ *
+ * Two origins were understood already — an R2 key, and an absolute URL pasted in by hand. The
+ * third is the one every site migrating an existing text field into a `media` field actually
+ * holds: a path into the *website's own* static directory, `/covers/photo.png`. It is not a key,
+ * and prefixing it as one produces `…/media//covers/photo.png`, a URL that resolves nowhere and
+ * that no consumer can tell apart from a real one.
+ *
+ * The distinction is here rather than in either app because both sides answer it and they must
+ * answer it identically: the admin to render a thumbnail, the delivery API to resolve the value.
+ */
+export type MediaValueOrigin =
+  /** Absolute, and therefore already resolvable by anyone. Passed through untouched. */
+  | 'url'
+  /** Root-relative, served by the website itself — resolvable against the website's origin. */
+  | 'site-path'
+  /** An object key in this deployment's R2 bucket, served at `/media/<key>`. */
+  | 'key'
+
+export function mediaValueOrigin(value: string): MediaValueOrigin {
+  if (/^https?:\/\//i.test(value)) return 'url'
+  // A leading slash is the whole test, and it is unambiguous: R2 keys as this CMS writes them
+  // never start with one (`newMediaKey` builds `<prefix>/<id>-<name>`), so no key can be read as
+  // a site path by accident, and a site path is exactly how a static file is written in HTML.
+  if (value.startsWith('/')) return 'site-path'
+  return 'key'
+}
+
+/**
+ * The URL a stored media value should be fetched from. `mediaOrigin` is this deployment's own
+ * origin (where `/media/<key>` is served); `websiteOrigin` is the site's website, needed only
+ * for a site path and null when the site has not recorded one — in which case the path is left
+ * as it is, still correct for anything rendering on that website and honestly relative for
+ * anything that is not.
+ */
+export function mediaValueUrl(
+  value: string,
+  mediaOrigin: string,
+  websiteOrigin?: string | null,
+): string {
+  switch (mediaValueOrigin(value)) {
+    case 'url':
+      return value
+    case 'site-path':
+      return websiteOrigin ? `${websiteOrigin}${value}` : value
+    case 'key':
+      return `${mediaOrigin}/media/${value}`
+  }
+}
+
+/**
  * What a `media` field's stored key becomes on the delivery API.
  *
  * Content stores the key, not the URL: a stored URL bakes the deployment's origin into every
@@ -31,7 +82,9 @@ export type UpdateMediaInput = z.infer<typeof updateMediaSchema>
  * them all. The key is the portable value — so the URL is built at the boundary, where the
  * origin is known, and handed over alongside the alt text and dimensions the CMS already holds.
  *
- * `key` is null when the field held an absolute URL to begin with, which is passed through.
+ * `key` is null when the value was not this deployment's to serve — an absolute URL, or a path
+ * into the website's own static directory. Both still resolve to a `url`; neither has a row here,
+ * so neither carries alt text or dimensions. See `mediaValueOrigin`.
  */
 export const resolvedMediaSchema = z.object({
   key: z.string().nullable(),

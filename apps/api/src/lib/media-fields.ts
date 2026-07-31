@@ -1,4 +1,4 @@
-import type { Field, ResolvedMedia } from '@hedge/core'
+import { type Field, mediaValueOrigin, mediaValueUrl, type ResolvedMedia } from '@hedge/core'
 
 /**
  * Turning the R2 keys stored in an entry's `media` fields into URLs a browser can actually
@@ -11,6 +11,12 @@ import type { Field, ResolvedMedia } from '@hedge/core'
  *
  * The resolution is a sibling of `data`, never a replacement for it: changing a field's type
  * from string to object would break every consumer that exists today.
+ *
+ * Not every stored value is a key, and the ones that are not are the reason a site can adopt a
+ * `media` field without a migration first. A field that used to be plain text holds `/public`
+ * paths, and treating one as a key produced `…/media//covers/photo.png` — the exact class of
+ * silent breakage this module exists to remove. `mediaValueOrigin` in `@hedge/core` is the one
+ * place that decides, so the admin's thumbnail and this resolution can never disagree.
  */
 
 /** What the delivery API attaches per entry: field name → one resolved item, or a list of them. */
@@ -28,9 +34,9 @@ export function mediaFieldsOf(fields: Field[]): Field[] {
   return fields.filter((field) => field.kind === 'media')
 }
 
-/** Already resolvable on its own, so it is passed through untouched rather than prefixed. */
-function isAbsoluteUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value)
+/** Stored in this deployment's bucket, and therefore ours to look up and to build a URL for. */
+function isStoredKey(value: string): boolean {
+  return mediaValueOrigin(value) === 'key'
 }
 
 /**
@@ -41,10 +47,19 @@ function isAbsoluteUrl(value: string): boolean {
  * absolute URL, so a relative one fails silently in every social preview with no workaround on
  * the frontend. There is no additive option here — the tag has one slot — so the resolved
  * metadata carries the absolute form, and a value that was already absolute is left alone.
+ *
+ * A `/public` path is absolute *once it is joined to the website it belongs to*, which is what
+ * `websiteUrl` is for. Without one there is nothing truthful to build, so the path stays as it
+ * is: an OG tag a crawler ignores is a smaller failure than one pointing confidently at a CMS
+ * URL that 404s.
  */
-export function absoluteMediaUrl(value: string | undefined, publicUrl: string): string | undefined {
+export function absoluteMediaUrl(
+  value: string | undefined,
+  publicUrl: string,
+  websiteUrl?: string | null,
+): string | undefined {
   if (!value) return value
-  return isAbsoluteUrl(value) ? value : `${publicUrl}/media/${value}`
+  return mediaValueUrl(value, publicUrl, websiteUrl)
 }
 
 function valuesOf(raw: unknown): string[] {
@@ -62,7 +77,9 @@ export function collectMediaKeys(fields: Field[], datas: Record<string, unknown>
   for (const field of mediaFieldsOf(fields)) {
     for (const data of datas) {
       for (const value of valuesOf(data[field.name])) {
-        if (!isAbsoluteUrl(value)) keys.add(value)
+        // Only a key names a row in this site's library. A URL and a `/public` path are somebody
+        // else's file, so querying for them would return nothing and cost a round trip to learn it.
+        if (isStoredKey(value)) keys.add(value)
       }
     }
   }
@@ -73,9 +90,19 @@ function resolveOne(
   value: string,
   rows: Map<string, MediaLookup>,
   publicUrl: string,
+  websiteUrl: string | null,
 ): ResolvedMedia {
-  if (isAbsoluteUrl(value)) {
-    return { key: null, url: value, alt: null, width: null, height: null }
+  // Not ours: an absolute URL, or a file in the website's own static directory. Either way there
+  // is no row to carry alt text or dimensions, and `key` stays null so a consumer can tell the
+  // difference between "this is in the library" and "this merely renders".
+  if (!isStoredKey(value)) {
+    return {
+      key: null,
+      url: mediaValueUrl(value, publicUrl, websiteUrl),
+      alt: null,
+      width: null,
+      height: null,
+    }
   }
 
   const row = rows.get(value)
@@ -101,6 +128,7 @@ export function resolveMediaFields(
   data: Record<string, unknown>,
   rows: Map<string, MediaLookup>,
   publicUrl: string,
+  websiteUrl: string | null = null,
 ): ResolvedMediaFields {
   const resolved: ResolvedMediaFields = {}
 
@@ -108,7 +136,7 @@ export function resolveMediaFields(
     const values = valuesOf(data[field.name])
     if (values.length === 0) continue
 
-    const items = values.map((value) => resolveOne(value, rows, publicUrl))
+    const items = values.map((value) => resolveOne(value, rows, publicUrl, websiteUrl))
     // `multiple` decides the shape, not how many values happen to be stored — a one-item list
     // stays a list, so a frontend can map over it without checking.
     resolved[field.name] = 'multiple' in field && field.multiple ? items : items[0]!

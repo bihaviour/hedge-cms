@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { useMediaPreviewUrl } from '@/hooks/use-media-url'
 import { type TranslateFn, useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -381,11 +382,6 @@ function move(values: string[], from: number, to: number): string[] {
   return next
 }
 
-/** The admin is served by the same Worker as `/media`, so a key needs no configured origin. */
-function previewUrl(key: string): string {
-  return /^https?:\/\//i.test(key) ? key : `/media/${encodeURI(key)}`
-}
-
 /** A picked media key or entry slug: what it is, and how to get rid of it or move it. */
 function PickedItem({
   preview,
@@ -535,6 +531,7 @@ function MediaField({
   onChange: (value: unknown) => void
 }) {
   const t = useT()
+  const previewUrl = useMediaPreviewUrl()
   const [picking, setPicking] = useState(false)
   const values = toValues(value)
   const set = (next: string[]) => onChange(emit(next, field.multiple))
@@ -543,30 +540,41 @@ function MediaField({
     <div className="space-y-2">
       {values.length > 0 && (
         <div className="space-y-2">
-          {values.map((key, index) => (
-            <PickedItem
-              key={key}
-              index={index}
-              count={values.length}
-              t={t}
-              label={key.split('/').pop() ?? key}
-              sublabel={key}
-              preview={
-                <img
-                  src={previewUrl(key)}
-                  alt=""
-                  className="size-10 shrink-0 rounded bg-muted object-cover"
-                  loading="lazy"
-                  // A non-image, a typo or a deleted object: keep the row, drop the broken icon.
-                  onError={(event) => {
-                    event.currentTarget.style.visibility = 'hidden'
-                  }}
-                />
-              }
-              onMove={(to) => set(move(values, index, to))}
-              onRemove={() => set(values.filter((_, i) => i !== index))}
-            />
-          ))}
+          {values.map((key, index) => {
+            const src = previewUrl(key)
+            return (
+              <PickedItem
+                key={key}
+                index={index}
+                count={values.length}
+                t={t}
+                label={key.split('/').pop() ?? key}
+                sublabel={key}
+                preview={
+                  src ? (
+                    <img
+                      src={src}
+                      alt=""
+                      className="size-10 shrink-0 rounded bg-muted object-cover"
+                      loading="lazy"
+                      // A non-image, a typo or a deleted object: keep the row, drop the broken icon.
+                      onError={(event) => {
+                        event.currentTarget.style.visibility = 'hidden'
+                      }}
+                    />
+                  ) : (
+                    // A path into the website with no website URL recorded — the value is kept and
+                    // still serves the site, there is just no origin here to render it from.
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded bg-muted">
+                      <ImageIcon className="size-4 text-muted-foreground" />
+                    </span>
+                  )
+                }
+                onMove={(to) => set(move(values, index, to))}
+                onRemove={() => set(values.filter((_, i) => i !== index))}
+              />
+            )
+          })}
         </div>
       )}
 
