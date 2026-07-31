@@ -1,5 +1,5 @@
-import type { Media, UpdateMediaInput } from '@hedge/core'
-import { and, desc, eq, lt, type SQL } from 'drizzle-orm'
+import type { ListMediaQuery, Media, MediaTypeFilter, UpdateMediaInput } from '@hedge/core'
+import { and, desc, eq, like, lt, not, or, type SQL } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { type MediaRow, media } from '../db/schema'
 import type { Bindings } from '../env'
@@ -27,13 +27,34 @@ export function toMedia(row: MediaRow, env: Bindings): Media {
   }
 }
 
+/**
+ * `document` is everything that is not a picture or a video, expressed as a negation so a newly
+ * allowed upload type belongs to it without anyone remembering to widen a list.
+ */
+function contentTypeFilter(type: MediaTypeFilter): SQL {
+  if (type === 'document') {
+    return and(
+      not(like(media.contentType, 'image/%')),
+      not(like(media.contentType, 'video/%')),
+    ) as SQL
+  }
+  return like(media.contentType, `${type}/%`)
+}
+
 export async function listMedia(
   env: Bindings,
   siteId: string,
-  options: { limit: number; cursor?: string },
+  options: ListMediaQuery,
 ): Promise<{ data: Media[]; nextCursor: string | null }> {
   const filters: SQL[] = [eq(media.siteId, siteId)]
   if (options.cursor) filters.push(lt(media.id, options.cursor))
+  if (options.type) filters.push(contentTypeFilter(options.type))
+  if (options.q) {
+    // Alt text is searched alongside the filename because a filename is `IMG_4821.jpg` more
+    // often than not, and alt is the only description a person ever wrote for the file.
+    const pattern = `%${options.q}%`
+    filters.push(or(like(media.filename, pattern), like(media.alt, pattern)) as SQL)
+  }
 
   const rows = await getDb(env)
     .select()

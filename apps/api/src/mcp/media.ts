@@ -1,4 +1,4 @@
-import { MCP_SCOPES, updateMediaSchema } from '@hedge/core'
+import { listMediaQuerySchema, MCP_SCOPES, updateMediaSchema } from '@hedge/core'
 import { z } from 'zod'
 import { deleteMedia, getMedia, listMedia, updateMedia } from '../lib/media'
 import { defineTool } from './registry'
@@ -15,11 +15,10 @@ export const mediaTools = [
     title: 'List media',
     description:
       'List uploaded media for the current site, newest first. Each item carries its public URL, ' +
-      'so this is how you find an image to reference from an entry.',
-    args: z.object({
-      limit: z.coerce.number().int().min(1).max(100).default(24),
-      cursor: z.string().optional(),
-    }),
+      'so this is how you find an image to reference from an entry. Narrow a large library with ' +
+      '`q` (matched against filename and alt text) or `type`.',
+    // The REST schema, so this tool cannot accept something `GET /api/v1/media` would reject.
+    args: listMediaQuerySchema,
     access: { scope: MCP_SCOPES.mediaRead, site: 'viewer' },
     annotations: { readOnlyHint: true },
     handler: async (query, ctx) => {
