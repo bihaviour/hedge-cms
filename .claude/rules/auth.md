@@ -59,6 +59,14 @@ shows the consent screen when the client asks, and a client is under no obligati
 can rewrite the content model should never arrive from a redirect nobody read. Keep that interceptor
 in front of the handler.
 
+**The facade strips `oidc_login_prompt` before forwarding a sign-in** (`auth/forward.ts`). Better
+Auth's `mcp` plugin parks a pending authorization in that cookie and its after-hook — matching every
+endpoint — resumes the flow server-side as soon as any response sets a session cookie, which through
+a JSON facade arrives as a `302` on `/sign-in/email` and can only be reported as `internal_error`.
+The admin resumes the request itself (`resumeAuthorization` in `lib/oauth.ts`), so the server-side
+resume is redundant here. Don't restore the cookie to `FORWARDED_HEADERS`' output without removing
+the admin's resume first — one of the two has to own it, and only one of them can answer JSON.
+
 Discovery documents are served from the root (`/.well-known/oauth-authorization-server`,
 `/.well-known/oauth-protected-resource`, plus RFC 9728's path-suffixed form). `/.well-known/*` is in
 `run_worker_first` in `wrangler.jsonc` — without it the SPA fallback answers metadata requests with

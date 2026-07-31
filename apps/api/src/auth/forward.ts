@@ -14,6 +14,21 @@ const FORWARDED_HEADERS = [
   'x-forwarded-for',
 ] as const
 
+/**
+ * Better Auth's `mcp` plugin parks a pending authorization request in this cookie when `/authorize`
+ * finds no session, and its after-hook — which matches *every* endpoint — resumes the OAuth flow
+ * server-side the moment any response sets a session cookie. Through this facade that lands as a
+ * `302` on `/sign-in/email`, which is not a status a JSON API can return to `fetch`, so signing in
+ * failed with `internal_error` for anyone who reached `/login` from an MCP client.
+ *
+ * Hedge already resumes the request itself, from the admin (`resumeAuthorization` in
+ * `lib/oauth.ts`), so the server-side resume is redundant here as well as harmful. Dropping the
+ * cookie on the way in is what turns it off: the hook reads it with `getSignedCookie` and returns
+ * early when it is absent. The browser keeps its copy — this only hides it from the forwarded
+ * request — and the next `/authorize` sees the session it now has.
+ */
+const OIDC_LOGIN_PROMPT_COOKIE = 'oidc_login_prompt'
+
 const CODE_BY_STATUS: Record<number, ApiErrorCode> = {
   400: 'bad_request',
   401: 'unauthorized',
@@ -22,6 +37,17 @@ const CODE_BY_STATUS: Record<number, ApiErrorCode> = {
   409: 'conflict',
   422: 'bad_request',
   429: 'rate_limited',
+}
+
+/** Rebuilds a `Cookie` header without the pending-authorization cookie. */
+function withoutLoginPrompt(cookie: string | undefined): string | undefined {
+  if (!cookie?.includes(OIDC_LOGIN_PROMPT_COOKIE)) return cookie
+  const kept = cookie
+    .split(';')
+    .filter((pair) => pair.trimStart().split('=')[0]?.trim() !== OIDC_LOGIN_PROMPT_COOKIE)
+    .join(';')
+    .trim()
+  return kept || undefined
 }
 
 interface ForwardResult<T> {
@@ -45,7 +71,7 @@ export async function forwardToAuth<T>(
 ): Promise<ForwardResult<T>> {
   const headers = new Headers({ 'content-type': 'application/json' })
   for (const name of FORWARDED_HEADERS) {
-    const value = c.req.header(name)
+    const value = name === 'cookie' ? withoutLoginPrompt(c.req.header(name)) : c.req.header(name)
     if (value) headers.set(name, value)
   }
 
