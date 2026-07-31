@@ -1,6 +1,6 @@
 import type { Field } from '@hedge/core'
 import { ChevronLeft, ChevronRight, ImageIcon, Link2, Plus, X } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { EntryPicker } from '@/components/entry-picker'
 import { MediaPicker } from '@/components/media-picker'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +44,7 @@ export function FieldInput({
   locale?: string
 }) {
   const id = `field-${field.name}`
+  const t = useT()
 
   return (
     <div className="space-y-2">
@@ -132,12 +133,16 @@ export function FieldInput({
         const labelFor = (val: string) =>
           field.options.find((option) => option.value === val)?.label ?? val
         const current = Array.isArray(value) ? (value as string[]) : value ? [String(value)] : []
-        // Offer the declared options, whatever is already used elsewhere, and the current values.
-        const hints = unique([...optionValues, ...(suggestions ?? []), ...current])
+        // Offer the declared options, whatever is already used elsewhere, and the current values —
+        // but only on an open field. A closed one offers exactly what it accepts, or the list would
+        // show rows that silently refuse to be picked.
+        const hints = field.creatable
+          ? unique([...optionValues, ...(suggestions ?? []), ...current])
+          : unique([...optionValues, ...current])
 
         if (field.multiple) {
           return (
-            <TokenInput
+            <TagInput
               id={id}
               values={current}
               hints={hints}
@@ -239,6 +244,21 @@ export function FieldInput({
           </div>
         )
 
+      case 'code':
+        // Read-only by construction, not by a flag someone can flip: the API assigns this value on
+        // the first save and discards whatever a client sends, so an editable box here would be a
+        // control whose input is thrown away — worse than no control at all.
+        return (
+          <Input
+            id={id}
+            readOnly
+            disabled
+            className="font-mono"
+            placeholder={t('editor.codeOnSave')}
+            value={String(value ?? '')}
+          />
+        )
+
       case 'json':
         return (
           <Textarea
@@ -266,14 +286,20 @@ function toDateInputValue(value: unknown, includeTime: boolean): string {
 }
 
 /**
- * A chip/token editor for a multiple `select`. Existing values render as removable chips; typing
- * filters the suggestions and Enter (or a comma) commits. `allowed`, when set, is the closed set of
- * declared option values — anything else is refused in the input, so a non-creatable field can no
- * longer submit a value its validator would reject. `null` means the field is creatable: any
- * non-empty string is accepted, with the suggestions offered as a convergent vocabulary rather than
- * a constraint.
+ * The tag editor for a multiple `select` — a category or keyword list.
+ *
+ * This replaced a plain text input backed by a `<datalist>`. That combination is not a control: the
+ * browser decides whether the suggestions appear at all, gives no way to see the vocabulary without
+ * typing into it, offers no keyboard selection, and on several browsers hides the list entirely
+ * once the box has text. For a field whose whole purpose is converging on a shared set of terms,
+ * "you cannot see the set" is the wrong default, so the list is rendered here instead.
+ *
+ * `allowed`, when set, is the closed set of declared option values — anything else is refused, so a
+ * non-creatable field can no longer submit a value its validator would reject. `null` means the
+ * field is creatable: any non-empty string is accepted, and the suggestions are a convergent
+ * vocabulary rather than a constraint.
  */
-function TokenInput({
+function TagInput({
   id,
   values,
   hints,
@@ -288,67 +314,167 @@ function TokenInput({
   allowed: string[] | null
   onChange: (values: string[]) => void
 }) {
+  const t = useT()
   const [draft, setDraft] = useState('')
-  const listId = `${id}-list`
+  const [open, setOpen] = useState(false)
+  // Which row Enter would take. Reset whenever the list it indexes into changes.
+  const [active, setActive] = useState(0)
+  const root = useRef<HTMLDivElement>(null)
+  const input = useRef<HTMLInputElement>(null)
 
-  function commit(raw: string) {
-    const text = raw.trim()
-    setDraft('')
-    if (!text) return
-    let next = text
-    if (allowed) {
-      // Match a declared option case-insensitively and store its canonical value; refuse the rest.
-      const match = allowed.find((option) => option.toLowerCase() === text.toLowerCase())
-      if (!match) return
-      next = match
+  const query = draft.trim().toLowerCase()
+  const options = hints.filter(
+    (hint) =>
+      !values.includes(hint) &&
+      (!query ||
+        hint.toLowerCase().includes(query) ||
+        labelFor(hint).toLowerCase().includes(query)),
+  )
+  // A creatable field offers the typed text as a new value, unless it is already on offer or held.
+  const creating =
+    !allowed && draft.trim() && ![...values, ...hints].some((v) => v.toLowerCase() === query)
+      ? draft.trim()
+      : null
+  const rows: string[] = creating ? [creating, ...options] : options
+
+  // Clicking away commits nothing and closes: a half-typed tag is not a tag.
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: PointerEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
     }
-    if (!values.includes(next)) onChange([...values, next])
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
+
+  function add(value: string) {
+    setDraft('')
+    setActive(0)
+    if (!value) return
+    // A closed set matches case-insensitively and stores the declared spelling, so "Engineering"
+    // typed into a field declaring "engineering" lands on the option rather than being refused.
+    const next = allowed
+      ? allowed.find((option) => option.toLowerCase() === value.toLowerCase())
+      : value
+    if (!next || values.includes(next)) return
+    onChange([...values, next])
   }
 
   return (
-    <div className="space-y-2">
-      {values.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {values.map((val) => (
-            <Badge key={val} variant="secondary" className="gap-1 pr-1 font-normal">
-              {labelFor(val)}
-              <button
-                type="button"
-                aria-label={`Remove ${labelFor(val)}`}
-                className="rounded-sm text-muted-foreground hover:text-foreground"
-                onClick={() => onChange(values.filter((v) => v !== val))}
-              >
-                <X className="size-3" />
-              </button>
-            </Badge>
+    <div ref={root} className="relative">
+      {/* The whole box is the control: clicking anywhere in it puts the caret in the text input,
+          which is what makes a row of chips behave like the single field it looks like. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        className="absolute inset-0 cursor-text"
+        onClick={() => {
+          input.current?.focus()
+          setOpen(true)
+        }}
+      />
+      <div className="flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 text-sm shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30">
+        {values.map((val) => (
+          <Badge key={val} variant="secondary" className="relative gap-1 pr-1 font-normal">
+            {labelFor(val)}
+            <button
+              type="button"
+              aria-label={t('picker.removeItem', { label: labelFor(val) })}
+              className="rounded-sm text-muted-foreground hover:text-foreground"
+              onClick={() => onChange(values.filter((v) => v !== val))}
+            >
+              <X className="size-3" />
+            </button>
+          </Badge>
+        ))}
+        <input
+          ref={input}
+          id={id}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={`${id}-listbox`}
+          aria-autocomplete="list"
+          className="relative min-w-24 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+          placeholder={values.length === 0 ? t('picker.tagsPlaceholder') : ''}
+          value={draft}
+          onFocus={() => setOpen(true)}
+          // A row click can't blur this: those handlers preventDefault on mouse down. So a blur is
+          // genuinely someone leaving the field, and the list should not follow them there.
+          onBlur={() => setOpen(false)}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            setActive(0)
+            setOpen(true)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault()
+              setOpen(true)
+              if (rows.length === 0) return
+              const delta = event.key === 'ArrowDown' ? 1 : -1
+              setActive((current) => (current + delta + rows.length) % rows.length)
+            } else if (event.key === 'Enter' || event.key === ',') {
+              // Enter takes the highlighted row, or the typed text when there is no list to take
+              // from. With neither it is left alone and the form gets it — a tag field should not
+              // swallow the key that saves the entry just because the caret happens to be in it.
+              const chosen = (open ? rows[active] : undefined) ?? draft.trim()
+              if (!chosen) return
+              event.preventDefault()
+              add(chosen)
+            } else if (event.key === 'Escape') {
+              setOpen(false)
+            } else if (event.key === 'Backspace' && !draft && values.length > 0) {
+              onChange(values.slice(0, -1))
+            }
+          }}
+        />
+      </div>
+
+      {open && (
+        <div
+          id={`${id}-listbox`}
+          // A listbox rather than a <select>: a select cannot hold chips, a "create" row or free
+          // text. The rows inside are the options, and the input above owns the focus throughout.
+          role="listbox"
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          {rows.length === 0 && (
+            <p className="px-2 py-1.5 text-muted-foreground text-sm">
+              {hints.length === values.length ? t('picker.allTagsUsed') : t('picker.noMatch')}
+            </p>
+          )}
+          {rows.map((row, index) => (
+            <button
+              key={row}
+              type="button"
+              role="option"
+              aria-selected={index === active}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm',
+                index === active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+              )}
+              onMouseEnter={() => setActive(index)}
+              // Mouse down rather than click: the input's blur would otherwise close the list
+              // before the click landed.
+              onMouseDown={(event) => {
+                event.preventDefault()
+                add(row)
+                input.current?.focus()
+              }}
+            >
+              {row === creating ? (
+                <>
+                  <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+                  {t('picker.createTag', { value: row })}
+                </>
+              ) : (
+                labelFor(row)
+              )}
+            </button>
           ))}
         </div>
       )}
-      <Input
-        id={id}
-        list={listId}
-        placeholder={allowed ? 'Choose a value…' : 'Type a value and press Enter'}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ',') {
-            event.preventDefault()
-            commit(draft)
-          } else if (event.key === 'Backspace' && !draft && values.length > 0) {
-            onChange(values.slice(0, -1))
-          }
-        }}
-        onBlur={() => commit(draft)}
-      />
-      <datalist id={listId}>
-        {hints
-          .filter((hint) => !values.includes(hint))
-          .map((hint) => (
-            <option key={hint} value={hint}>
-              {labelFor(hint)}
-            </option>
-          ))}
-      </datalist>
     </div>
   )
 }

@@ -125,6 +125,40 @@ export const previewTokenSchema = z.object({
 export type PreviewToken = z.infer<typeof previewTokenSchema>
 
 /**
+ * Expands a collection's path template against one entry. Shared by preview and by the canonical
+ * URL an entry defaults to, because a collection has one page shape and both are that shape — a
+ * second template for the same thing is a second thing to keep in step.
+ */
+export function expandEntryPath(
+  template: string | null,
+  entry: { collection: string; slug: string; locale: string },
+): string {
+  return (template ?? DEFAULT_PREVIEW_PATH)
+    .replaceAll('{collection}', encodeURIComponent(entry.collection))
+    .replaceAll('{slug}', encodeURIComponent(entry.slug))
+    .replaceAll('{locale}', encodeURIComponent(entry.locale))
+}
+
+/**
+ * The public URL of one entry on the website this site feeds — what its canonical URL defaults to.
+ *
+ * The origin is the site's `domain` and deliberately *not* `websiteOrigin`: that one prefers
+ * `previewUrl`, which may point at a preview endpoint (`https://example.com/api/preview`) rather
+ * than at the page a reader lands on. A canonical URL naming a preview endpoint is worse than no
+ * canonical URL at all, so a site with no domain recorded gets null and the field stays empty.
+ */
+export function entryPublicUrl(input: {
+  domain: string | null | undefined
+  previewPath: string | null
+  collection: string
+  slug: string
+  locale: string
+}): string | null {
+  if (!input.domain || !input.slug) return null
+  return `https://${input.domain}${expandEntryPath(input.previewPath, input)}`
+}
+
+/**
  * Expands a collection's path template against one entry and appends the token, so the admin and
  * any other client build the same URL from the same rule.
  */
@@ -136,12 +170,7 @@ export function buildPreviewUrl(input: {
   locale: string
   token: string
 }): string {
-  const path = (input.previewPath ?? DEFAULT_PREVIEW_PATH)
-    .replaceAll('{collection}', encodeURIComponent(input.collection))
-    .replaceAll('{slug}', encodeURIComponent(input.slug))
-    .replaceAll('{locale}', encodeURIComponent(input.locale))
-
-  const url = new URL(`${input.previewUrl}${path}`)
+  const url = new URL(`${input.previewUrl}${expandEntryPath(input.previewPath, input)}`)
   url.searchParams.set(PREVIEW_TOKEN_PARAM, input.token)
   return url.toString()
 }

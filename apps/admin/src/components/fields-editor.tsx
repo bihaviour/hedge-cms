@@ -4,6 +4,7 @@ import { FIELD_KINDS, type Field, type FieldKind } from '@hedge/core'
 type SelectField = Extract<Field, { kind: 'select' }>
 type MediaField = Extract<Field, { kind: 'media' }>
 type ReferenceField = Extract<Field, { kind: 'reference' }>
+type CodeField = Extract<Field, { kind: 'code' }>
 
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -85,6 +86,16 @@ export function FieldsEditor({
     onChange(
       rows.map((row, i) =>
         i === index && row.field.kind === 'reference'
+          ? { ...row, field: { ...row.field, ...patch } }
+          : row,
+      ),
+    )
+  }
+
+  function updateCode(index: number, patch: Partial<CodeField>) {
+    onChange(
+      rows.map((row, i) =>
+        i === index && row.field.kind === 'code'
           ? { ...row, field: { ...row.field, ...patch } }
           : row,
       ),
@@ -218,6 +229,14 @@ export function FieldsEditor({
                 fieldKey={key}
                 field={field}
                 onPatch={(patch) => updateReference(index, patch)}
+              />
+            )}
+
+            {field.kind === 'code' && (
+              <CodeConfig
+                fieldKey={key}
+                field={field}
+                onPatch={(patch) => updateCode(index, patch)}
               />
             )}
           </CardContent>
@@ -375,7 +394,62 @@ export function blankField(
       return { ...shared, kind }
     case 'json':
       return { ...shared, kind }
+    case 'code':
+      return { ...shared, kind, prefix: '', padding: 4 }
   }
+}
+
+/**
+ * A `code` field's shape. There is nothing here about *whether* it is generated — it always is,
+ * which is the point of the kind — only what the generated value looks like.
+ */
+function CodeConfig({
+  fieldKey,
+  field,
+  onPatch,
+}: {
+  fieldKey: string
+  field: CodeField
+  onPatch: (patch: Partial<CodeField>) => void
+}) {
+  return (
+    <div className="space-y-3 border-t pt-4 pl-7">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs" htmlFor={`${fieldKey}-prefix`}>
+            Prefix
+          </Label>
+          <Input
+            id={`${fieldKey}-prefix`}
+            className="h-8"
+            placeholder="RB-"
+            maxLength={16}
+            value={field.prefix}
+            onChange={(event) => onPatch({ prefix: event.target.value })}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs" htmlFor={`${fieldKey}-padding`}>
+            Digits
+          </Label>
+          <Input
+            id={`${fieldKey}-padding`}
+            className="h-8"
+            type="number"
+            min={1}
+            max={12}
+            value={field.padding}
+            onChange={(event) => onPatch({ padding: Number(event.target.value) || 1 })}
+          />
+        </div>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Assigned by Hedge when an entry is first created, and never editable — the next one here
+        would be <code>{`${field.prefix}${'1'.padStart(field.padding, '0')}`}</code>. Changing the
+        prefix or digits only affects codes issued from now on.
+      </p>
+    </div>
+  )
 }
 
 /**

@@ -110,6 +110,14 @@ Entries are keyed by (site, collection, slug, **locale**) — every read and wri
 defaulting to `en`. An update writes a revision snapshot into `entry_revisions` first. Status
 transitions set `publishedAt`. Uniqueness collisions surface as `ApiError.conflict`.
 
+A `code` field (`RB-0007`) is the CMS's own identifier for a piece and is **not** a column — it
+lives in `data` like any other field, and `applyGeneratedCodes` assigns it. Two consequences worth
+knowing before writing a query against one: the sequence is `max + 1` read back out of
+`json_extract(data, '$.<field>')`, ordered by *length then value* so it stays correct once the count
+outgrows the padding; and because entries are keyed by locale, a translation carries its sibling's
+code rather than taking a new one — the code names the piece, the row names one language of it. It
+is not unique in the database and nothing downstream may assume it is.
+
 ## Revisions and versions are two sets, not one
 
 `entry_revisions` is **backward-looking**: what an entry *was*, written automatically before every

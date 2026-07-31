@@ -72,5 +72,12 @@ Four touchpoints; TypeScript exhaustiveness will point at any you miss:
 
 1. `FIELD_KINDS` and the discriminated union in `packages/core/src/fields.ts`
 2. `buildEntryValidator` in the same file
-3. `blankField` in `src/pages/collection-settings.tsx`
+3. `blankField` in `src/components/fields-editor.tsx` (plus a `…Config` block there if the kind
+   carries options of its own)
 4. `FieldInput` in `src/components/field-input.tsx`
+
+A kind whose value the *CMS* assigns needs a fifth: the write path in `apps/api/src/lib/entries.ts`.
+`code` is the one that does — `applyGeneratedCodes` fills it and discards whatever a client sent, on
+create, update and revision restore alike, so the REST API, the MCP tools and the version routes all
+get the same answer. Its control here is `disabled` for that reason and not as a styling choice:
+there is no input to take, because there is no value a caller can set.

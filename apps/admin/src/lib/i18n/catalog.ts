@@ -193,6 +193,7 @@ export const en = {
   'editor.translationMissing': 'No {locale} translation yet — saving creates one.',
   'editor.approvalNotice':
     'This collection needs {levels} approval(s) before an entry can be published. Save your work as a version and submit it for review.',
+  'editor.codeOnSave': 'Assigned when you save',
 
   // Revision history — the backward-looking half of the editor's sidebar.
   'revisions.title': 'History',
@@ -379,6 +380,9 @@ export const en = {
   'picker.inCollection': 'in “{collection}”',
   'picker.noEntries': 'No entries in “{collection}” yet',
   'picker.noMatch': 'Nothing matches that search',
+  'picker.tagsPlaceholder': 'Choose or type…',
+  'picker.createTag': 'Create “{value}”',
+  'picker.allTagsUsed': 'Every value is already chosen',
   'picker.localeOnly': 'Only entries in the {locale} locale are listed.',
   'picker.draftWarning':
     'One of these is not published. The reference saves fine, but the delivery API serves nothing for it until that entry publishes.',

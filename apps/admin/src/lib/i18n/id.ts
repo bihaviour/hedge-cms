@@ -168,6 +168,7 @@ export const id: Catalog = {
   'editor.locale': 'Lokal',
   'editor.localeHint': 'Varian bahasa entri ini yang sedang Anda ubah.',
   'editor.translationMissing': 'Belum ada terjemahan {locale} — menyimpan akan membuatnya.',
+  'editor.codeOnSave': 'Diberikan saat Anda menyimpan',
 
   'preview.action': 'Pratinjau',
   'preview.opening': 'Membuka…',
@@ -257,6 +258,9 @@ export const id: Catalog = {
   'picker.inCollection': 'di “{collection}”',
   'picker.noEntries': 'Belum ada entri di “{collection}”',
   'picker.noMatch': 'Tidak ada yang cocok dengan pencarian itu',
+  'picker.tagsPlaceholder': 'Pilih atau ketik…',
+  'picker.createTag': 'Buat “{value}”',
+  'picker.allTagsUsed': 'Semua nilai sudah dipilih',
   'picker.localeOnly': 'Hanya entri dalam lokal {locale} yang ditampilkan.',
   'picker.draftWarning':
     'Salah satunya belum terbit. Referensi tetap tersimpan, tetapi delivery API tidak menyajikan apa pun untuknya sampai entri itu terbit.',

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   buildPreviewUrl,
   createPreviewTokenSchema,
+  entryPublicUrl,
   PREVIEW_TOKEN_DEFAULT_TTL_SECONDS,
   PREVIEW_TOKEN_MAX_TTL_SECONDS,
   previewPathSchema,
@@ -99,5 +100,30 @@ describe('createPreviewTokenSchema', () => {
     expect(
       createPreviewTokenSchema.safeParse({ ttlSeconds: PREVIEW_TOKEN_MAX_TTL_SECONDS + 1 }).success,
     ).toBe(false)
+  })
+})
+
+/**
+ * The canonical URL an entry defaults to. The origin is the site's `domain` and deliberately not
+ * `websiteOrigin`, which prefers `previewUrl` — a canonical URL naming a preview endpoint is worse
+ * than none, so a site that has recorded no domain gets null and the field stays empty.
+ */
+describe('entryPublicUrl', () => {
+  const entry = { collection: 'articles', slug: 'hello-world', locale: 'en' }
+
+  test('builds the page URL from the domain and the collection path shape', () => {
+    expect(entryPublicUrl({ domain: 'example.com', previewPath: null, ...entry })).toBe(
+      'https://example.com/articles/hello-world',
+    )
+    expect(
+      entryPublicUrl({ domain: 'example.com', previewPath: '/{locale}/blog/{slug}', ...entry }),
+    ).toBe('https://example.com/en/blog/hello-world')
+  })
+
+  test('invents nothing when the site has no domain, or the entry no slug yet', () => {
+    expect(entryPublicUrl({ domain: null, previewPath: null, ...entry })).toBeNull()
+    expect(
+      entryPublicUrl({ domain: 'example.com', previewPath: null, ...entry, slug: '' }),
+    ).toBeNull()
   })
 })

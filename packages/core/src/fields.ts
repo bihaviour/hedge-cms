@@ -19,6 +19,7 @@ export const FIELD_KINDS = [
   'email',
   'color',
   'json',
+  'code',
 ] as const
 
 export type FieldKind = (typeof FIELD_KINDS)[number]
@@ -102,6 +103,23 @@ export const fieldSchema = z.discriminatedUnion('kind', [
   baseField.extend({
     kind: z.literal('json'),
   }),
+  baseField.extend({
+    /**
+     * A human-readable editorial identifier — `RB-0007` — assigned by the CMS, never typed. The
+     * value is generated on the write path (`applyGeneratedCodes` in the API) the first time an
+     * entry is created and is then carried unchanged for the life of that entry, so it can be cited
+     * in prose, printed on a page, or used as a stable reference that survives a slug rename.
+     *
+     * It is deliberately *not* a `text` field with a flag: a code has no editable state at all, so
+     * every surface that renders a form has to know it is read-only, and the exhaustiveness check
+     * on `FieldKind` is what guarantees none of them forgets.
+     */
+    kind: z.literal('code'),
+    /** Prepended verbatim to the padded sequence — e.g. `RB-` produces `RB-0007`. */
+    prefix: z.string().max(16).default(''),
+    /** How many digits the sequence is padded to. Numbers past it simply get longer. */
+    padding: z.number().int().min(1).max(12).default(4),
+  }),
 ])
 
 export type Field = z.infer<typeof fieldSchema>
@@ -182,7 +200,36 @@ function validatorForField(field: Field): z.ZodTypeAny {
       return z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be a #rrggbb hex colour')
     case 'json':
       return z.unknown()
+    case 'code':
+      // Whatever the client sent is discarded before validation runs — the API assigns the value —
+      // so this only has to accept the string the API itself put there.
+      return z.string()
   }
+}
+
+/** The declared `code` fields of a collection, in declaration order. */
+export function codeFields(fields: Field[]): Extract<Field, { kind: 'code' }>[] {
+  return fields.filter((field): field is Extract<Field, { kind: 'code' }> => field.kind === 'code')
+}
+
+/** Renders one sequence number as this field's code — `RB-` + `7` at padding 4 is `RB-0007`. */
+export function formatEntryCode(field: Extract<Field, { kind: 'code' }>, sequence: number): string {
+  return `${field.prefix}${String(sequence).padStart(field.padding, '0')}`
+}
+
+/**
+ * Reads the sequence back out of a code, so the next one can continue from the highest already
+ * issued. Anything that is not this field's prefix followed by digits returns null — a code whose
+ * prefix was changed after the fact is left alone rather than restarting the count from it.
+ */
+export function parseEntryCode(
+  field: Extract<Field, { kind: 'code' }>,
+  value: unknown,
+): number | null {
+  if (typeof value !== 'string' || !value.startsWith(field.prefix)) return null
+  const digits = value.slice(field.prefix.length)
+  if (!/^\d+$/.test(digits)) return null
+  return Number.parseInt(digits, 10)
 }
 
 /** Sensible starting fields for a freshly created collection. */
