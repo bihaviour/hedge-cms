@@ -61,10 +61,14 @@ Both the deploy button's field description (root `package.json`) and the README 
 the three in step. When adding a custom domain, move `PUBLIC_URL` in the same commit as the
 `routes` entry: they are one change.
 
-`REPO_URL` is also deliberately empty. It is only ever a display value: when set to the fork a
-deployment was created from, the admin's "update available" notice (`/settings/about`) can deep-link
-that repo's *Sync fork* page. Nothing about how the Worker runs reads it, so leaving it blank costs
-only the direct link — the notice still points at the upstream release notes.
+`REPO_URL` is deliberately **not declared here at all**. The deploy button's setup page renders
+every declared var as a required field, and this one's value cannot be known before the button has
+created the clone — so nobody types it: under Workers Builds, `scripts/deploy-worker.ts` derives it
+from the checkout's git `origin` and injects it with `--var`, credentials stripped, because a CI
+remote can embed an access token and a var is readable in the dashboard. It stays a display value:
+the admin's "update available" notice (`/settings/about`) deep-links it when present and falls back
+to the upstream release notes when not. A CLI deploy sets none — its origin is usually this
+upstream, which would be a false claim; declare the var in your own copy if you want the link.
 
 ## Versioning and releases
 
@@ -150,6 +154,13 @@ admin's About page offers instructions that exist for it. Display only: nothing 
 runs reads it. Unset must keep meaning "show the dashboard update and the git fallback, claiming no
 repository" — every deployment made before it existed has it unset forever.
 
+No path asks the operator for it. The committed value is `button`, because Workers Builds deploys
+the committed config verbatim and the setup page prefills the field from it; `scripts/deploy-worker.ts`
+overrides it to `cli` when the deploy runs outside Workers Builds; the installer writes `installer`
+itself. A hand-connected Workers Builds repository also reads `button`, which is fine — it has
+exactly the button's update paths. The dashboard updater inherits the live bindings rather than
+reapplying the artifact's vars, so an update never relabels a deployment.
+
 **`WORKER_NAME` is the one var here that is functional.** A Worker is not told its own script name at
 run time, and the updater has to address the script it is running as. A button or CLI deployment is
 always the `name` at the top of `wrangler.jsonc`, so this stays empty for them; the installer lets
@@ -171,8 +182,12 @@ name could not update itself while the About page told it that it could.
 ```bash
 bunx wrangler secret put AUTH_SECRET
 bunx wrangler email sending enable yourdomain.com
-bun run deploy                    # build → migrate the remote D1 → wrangler deploy
+bun run deploy                    # build → migrate the remote D1 → scripts/deploy-worker.ts
 ```
+
+The last step is `wrangler deploy` wrapped by `scripts/deploy-worker.ts`, which labels the install
+path: outside Workers Builds it overrides `INSTALLED_BY` to `cli`; inside, it injects `REPO_URL`
+from the checkout's git origin and leaves the committed `button` standing.
 
 Migrations run *before* the deploy, which is also what Workers Builds does when it runs the `deploy`
 script for a button deployment. `d1 migrations apply` references the binding (`DB`), not the
@@ -196,10 +211,11 @@ button gets.
 
 The button **clones** the repository; it does not fork it. A clone has no upstream relationship, so
 there is no "Sync fork" button on it — instructions that mention one are wrong, and were, until #36.
-`REPO_URL` points at that clone when the operator sets it.
+`REPO_URL` points at that clone, recorded automatically on every Workers Builds deploy.
 
 **Three places describe a var and must stay in step**: the field descriptions in the root
 `package.json`, the comments in `wrangler.jsonc`, and the README. `INSTALLED_BY` and `WORKER_NAME`
 are in that set now, and the installer is a fourth reader of the second one — it fills these in
 itself, from `hedge.json`, so a var whose meaning changes here has to be checked against
-`apps/installer/src/install.ts` too.
+`apps/installer/src/install.ts` too. `scripts/deploy-worker.ts` is a fifth: it decides
+`INSTALLED_BY` and `REPO_URL` at deploy time, so those two have to be checked against it as well.

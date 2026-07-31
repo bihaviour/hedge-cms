@@ -106,8 +106,12 @@ const MANIFEST: HedgeManifest = {
     { type: 'plain_text', name: 'PUBLIC_URL', text: '' },
     { type: 'plain_text', name: 'EMAIL_FROM', text: '' },
     { type: 'plain_text', name: 'EMAIL_FROM_NAME', text: 'Hedge CMS' },
+    // Newer artifacts no longer declare `REPO_URL`, but older ones do — the installer must still
+    // blank it, because an installed deployment has no repository.
     { type: 'plain_text', name: 'REPO_URL', text: '' },
-    { type: 'plain_text', name: 'INSTALLED_BY', text: '' },
+    // Committed as `button` in `wrangler.jsonc` (what Workers Builds deploys verbatim); the
+    // installer must override a non-empty default, not just fill an empty one.
+    { type: 'plain_text', name: 'INSTALLED_BY', text: 'button' },
     // Declared empty in `wrangler.jsonc`, so it reaches the manifest — the installer must fill it
     // in rather than appending a second binding of the same name.
     { type: 'plain_text', name: 'WORKER_NAME', text: '' },
