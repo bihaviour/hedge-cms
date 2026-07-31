@@ -47,11 +47,8 @@
       "PUBLIC_URL": {
         "description": "Leave empty unless you already have a custom domain. Empty means Hedge uses the origin of whatever request it is answering, which is correct for the generated `workers.dev` subdomain. With a domain, set the **full origin including the scheme** — `https://cms.example.com`, not `cms.example.com` — and no trailing slash. A value that is not a URL is rejected when the deployment builds its auth, and every sign-in and admin request fails with a 500. Invite links, media URLs and the MCP OAuth identifier all follow this value."
       },
-      "REPO_URL": {
-        "description": "Optional. The GitHub or GitLab URL of the repository this deployment was created from, e.g. `https://github.com/you/hedge-cms`. The button *clones* rather than forks, so this is your own copy, with no upstream relationship. When set, the admin's 'update available' notice links straight to it. Safe to leave empty — the notice still links to the upstream release notes."
-      },
       "INSTALLED_BY": {
-        "description": "Optional — set it to `button`. It records how this deployment was created (`button`, `installer` or `cli`) so that **Settings → About & updates** shows the update instructions that actually apply to it: a deployment made by the Hedge installer has no repository, so it must not be told to sync one. Empty is safe and is what every older deployment has — the admin then shows both the dashboard update and the Git instructions. Display only: nothing about how the Worker runs reads this, and a wrong value costs an unhelpful instruction, never access."
+        "description": "Leave as `button`. It records how this deployment was created (`button`, `installer` or `cli`) so that **Settings → About & updates** shows the update instructions that actually apply to it; the other two install paths set their own value without asking. Display only: nothing about how the Worker runs reads this, and a wrong value costs an unhelpful instruction, never access."
       },
       "WORKER_NAME": {
         "description": "Leave empty. It is only set by the Hedge installer, which lets you name the deployment; a button deployment is always called `hedge-cms`. A Worker is not told its own script name at run time, and the dashboard updater has to address itself, so a renamed deployment records its name here."

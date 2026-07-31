@@ -11,17 +11,24 @@ export interface Bindings {
   APP_NAME: string
   PUBLIC_URL: string
   /**
-   * The deployment's own GitHub/GitLab repository — the repository the deploy button cloned. Empty
-   * by default; when set, the admin's update notice can deep-link it. It changes nothing about how
-   * the Worker runs, only where the "how do I update" link points.
+   * The deployment's own GitHub/GitLab repository — the repository the deploy button cloned. When
+   * set, the admin's update notice can deep-link it. It changes nothing about how the Worker runs,
+   * only where the "how do I update" link points.
+   *
+   * Optional because it is not declared in `wrangler.jsonc` — the setup page would demand a value
+   * nobody can know before the clone exists. A Workers Builds deploy injects it from the
+   * checkout's git origin (`scripts/deploy-worker.ts`); everywhere else it is simply absent.
    */
-  REPO_URL: string
+  REPO_URL?: string
   /**
    * How this deployment came to exist: `button`, `installer`, `cli`, or empty.
    *
    * A **display value only** — nothing about how the Worker runs reads it, and nothing trusts it. It
    * exists because the three install paths do not share an update path: an installer deployment has
    * no repository, so offering it the git fallback sends the operator somewhere that does not exist.
+   * Each path labels itself — the committed config says `button`, a CLI deploy overrides that to
+   * `cli` at deploy time (`scripts/deploy-worker.ts`), and the installer writes `installer` — so
+   * the value is never asked of the operator.
    * Empty is the honest default for every deployment that predates this, and means "show the
    * dashboard update and the git fallback, claiming no relationship to a repository". A wrong value
    * costs an unhelpful instruction, never access. See issue #39.
