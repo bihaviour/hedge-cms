@@ -14,7 +14,9 @@ export function UpdateBanner({ user }: { user: User }) {
   const isAdmin = user.permissions.includes('system:read')
   const version = useQuery({
     queryKey: ['system-version'],
-    queryFn: api.system.version,
+    // Wrapped, not passed by reference: TanStack calls this with a context object, which would
+    // arrive as `refresh` and turn the background banner check into a forced GitHub fetch.
+    queryFn: () => api.system.version(),
     // Only admins can reach the route; asking as anyone else just earns a 403.
     enabled: isAdmin,
     // The server caches the GitHub check for hours; there is no value in re-asking on every mount.
