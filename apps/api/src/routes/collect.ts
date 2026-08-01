@@ -63,6 +63,17 @@ async function collect(c: Context<AppEnv>): Promise<void> {
  * click handler**: X removed its count endpoint, Facebook's needs an app token and LinkedIn withdrew
  * theirs, so no platform reports shares back. What a website can honestly measure is someone
  * clicking its own share or copy-link control, and that is what this records.
+ *
+ * **The beacon's content type is `text/plain`, and that is load-bearing** (#104). `sendBeacon`
+ * always sends with credentials mode `include`; a body typed `application/json` is not a
+ * CORS-safelisted content type, so the request is promoted to a preflighted CORS request — which
+ * the browser then refuses, because this endpoint answers `Access-Control-Allow-Origin: *` and a
+ * wildcard is illegal once credentials are in play. Every beacon from every embedding site failed
+ * that check silently. A safelisted type keeps the request in `no-cors` mode: no preflight, no CORS
+ * check to fail, and no reader's cookies on the wire — which is the property `origin: '*'` was
+ * chosen for in the first place (`index.ts`). Widening the CORS policy instead would have traded
+ * that away. The endpoint parses the body as JSON whatever the type claims, so nothing server-side
+ * depends on it; don't "correct" it back to `application/json`.
  */
 app.get('/script.js', (c) => {
   c.header('content-type', 'application/javascript; charset=utf-8')
@@ -90,7 +101,8 @@ function script(publicUrl: string): string {
       var payload = JSON.stringify(body)
       // sendBeacon survives the page being unloaded, which a fetch from a click handler may not.
       if (n.sendBeacon) {
-        n.sendBeacon(url, new Blob([payload], { type: 'application/json' }))
+        // text/plain keeps this a no-cors request. Not cosmetic — see the note in collect.ts.
+        n.sendBeacon(url, new Blob([payload], { type: 'text/plain' }))
       } else {
         fetch(url, { method: 'POST', body: payload, keepalive: true, mode: 'no-cors' })
       }

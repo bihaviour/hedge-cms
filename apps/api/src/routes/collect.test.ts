@@ -169,4 +169,20 @@ describe('GET /collect/script.js', () => {
     // click handler is the only place share intent is observable.
     expect(body).toContain('window.hedge')
   })
+
+  // #104: `sendBeacon` always sends credentials mode `include`, so an `application/json` body is
+  // promoted to a preflighted CORS request and refused against this endpoint's wildcard
+  // `Access-Control-Allow-Origin`. Nothing reports it server-side — the request never arrives — so
+  // the collector simply recorded nothing. A safelisted type keeps it in no-cors mode.
+  test('posts the beacon with a CORS-safelisted content type', async () => {
+    const app = new Hono<AppEnv>()
+    app.route('/collect', collect)
+
+    const body = await (
+      await app.request('/collect/script.js', {}, { PUBLIC_URL: 'https://cms.example.com' })
+    ).text()
+
+    expect(body).toContain("type: 'text/plain'")
+    expect(body).not.toContain('application/json')
+  })
 })
