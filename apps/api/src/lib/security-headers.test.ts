@@ -33,15 +33,13 @@ describe('securityHeaders', () => {
     expect(await corp(ANALYTICS_SCRIPT_PATH)).toBe('cross-origin')
   })
 
-  // The beacon is posted with `sendBeacon` in no-cors mode, so CORP is checked on its 204 too. The
-  // event is already recorded by then — what `same-origin` costs is not data, it is an
-  // `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` in every reader's console on every page.
-  test('lets the beacon read the collector response', async () => {
-    expect(await corp(ANALYTICS_COLLECT_PATH)).toBe('cross-origin')
-  })
-
-  test('does not widen the rest of the collect prefix', async () => {
-    // Exact paths, not a prefix: anything added under here later has to be named to be widened.
+  // The tempting over-fix for #104 is to widen the whole `/api/v1/collect` prefix. CORP does apply
+  // to the collector — `sendBeacon` posts in no-cors mode — but only to a `204` nothing reads, and
+  // the event is recorded before the browser refuses it, so the write lands either way. Widening it
+  // would loosen the only unauthenticated write endpoint here for no gain. Exact paths, not a
+  // prefix, so a route added under `/collect/` later has to be named to be widened.
+  test('does not widen the collector or the rest of its prefix', async () => {
+    expect(await corp(ANALYTICS_COLLECT_PATH)).toBe('same-origin')
     expect(await corp(`${ANALYTICS_COLLECT_PATH}/anything-else`)).toBe('same-origin')
   })
 

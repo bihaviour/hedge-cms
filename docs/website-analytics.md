@@ -68,6 +68,10 @@ Open the site and, in the console:
    not CORS-safelisted — `sendBeacon` always sends credentials, and the endpoint answers a wildcard
    `Access-Control-Allow-Origin`, which a browser refuses in that combination.
 
+**`ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` on the beacon is expected, and is not this.** The collector
+answers a `204` that nothing reads, and your view is recorded before the browser discards that
+response — the console line is noise. If the request is there and returned `204`, it counted.
+
 If all three are fine and the dashboard is still empty, the request is arriving and being dropped
 deliberately. The endpoint answers `204` either way, so check in this order: Do Not Track or Global
 Privacy Control enabled in the browser, a user agent that looks automated (headless browsers are

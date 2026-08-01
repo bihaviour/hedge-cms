@@ -139,31 +139,38 @@ second one scoped to a narrower path, or a header set in the route handler, is s
 by the global mount. A path that needs a different policy has to be chosen inside the single
 instance that will do the writing.
 
-**Three paths get `Cross-Origin-Resource-Policy: cross-origin`**, and they are exactly the responses
-a reader's browser fetches in `no-cors` mode from *another* origin — the one mode CORP is checked on,
-which is also why the CORS headers on the delivery API do nothing for any of them:
+**Two paths get `Cross-Origin-Resource-Policy: cross-origin`** — the public media passthrough
+(`/media/*`, not `/api/v1/media`) and the analytics beacon script (`GET /api/v1/collect/script.js`).
+Both are fetched by a website on another origin *and read*: an `<img>`, and a `<script src>`. Those
+are `no-cors` requests, the one kind CORP is checked on, so the CORS headers on the delivery API do
+nothing for either.
 
-| Path | Fetched by |
-| --- | --- |
-| `/media/*` (the passthrough, not `/api/v1/media`) | an `<img>` on the website |
-| `GET /api/v1/collect/script.js` | a `<script src>` on the website |
-| `POST /api/v1/collect` | `navigator.sendBeacon` from that script |
+**The failure mode is the point: under `same-origin` neither reports an error you would find.** The
+browser makes the request, gets a 200 of the right content type, and discards the bytes — no 404, no
+CSP violation, no console error, no failed request in the network panel. A blank image, or a tracker
+script that downloads and never executes. `curl` ignores CORP entirely and a CORS `fetch()` is not
+subject to it, so **every check short of a real browser passes while the feature is dead**. That is
+how #104 shipped, reporting zero traffic on every site running the snippet.
 
-**The failure mode is the point: under `same-origin` none of these report an error you would find.**
-The browser makes the request, gets a 200 of the right content type, and discards the bytes — no 404,
-no CSP violation, no failed request in the network panel. A blank image, or a tracker script that
-downloads and never executes. `curl` ignores CORP entirely and a CORS `fetch()` is not subject to it,
-so **every check short of a real browser passes while the feature is dead** — that is how #104 shipped
-and reported zero traffic on every site for a release. `security-headers.test.ts` pins all three.
+`POST /api/v1/collect` is the one to *not* widen, and it looks like it belongs. CORP genuinely
+applies to it — `sendBeacon` posts in `no-cors` mode — but only to a `204` the script never reads,
+and the Worker records the event before the browser refuses the response, so the write lands anyway.
+Widening it would loosen the deployment's only unauthenticated write endpoint to buy nothing. The
+accepted cost is an `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` line in the reader's console per beacon —
+noise, not a symptom, and `docs/website-analytics.md` says so, so it is not re-diagnosed as this bug.
 
-The collector's `204` is on that list for a slightly different reason, worth knowing before someone
-trims it: CORP is enforced on the *response*, after the Worker has recorded the event, so
-`same-origin` there loses no data. What it costs is an `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` in
-every reader's console on every page, in exchange for protecting an empty body that carries no
-credential and no cookie.
+The carve-out is by **exact path** (except `/media/*`), so it cannot creep onto a route added under
+`/api/v1/collect/` later. `security-headers.test.ts` pins all of it.
 
-The carve-out is matched by **exact path** (except `/media/*`), so it cannot creep: a route added
-under `/api/v1/collect/` later gets the default and has to be named to lose it.
+**CORP is not the only header that silently breaks an embed.** `publicAssetHeaders` overrides CORP
+and inherits the rest of Hono's defaults, including `X-Frame-Options: SAMEORIGIN` — so a cross-origin
+`<iframe src=".../media/whitepaper.pdf">` is blocked and presents the same way, as a blank embed with
+no error. That is correct today (the website only links PDFs), but check XFO as well as CORP before
+concluding a `/media` embed should work.
+
+A newsletter open-tracking pixel would join the carve-out list and would fail identically — an
+`<img>` loaded cross-origin in webmail. Nothing tracks opens today (#74 decided against it); carve it
+out when it is added, not after someone spends a day wondering why open rates are zero.
 
 Purging the CDN is part of shipping a change here: media is served `max-age=31536000, immutable` and
 the tracker script `s-maxage=86400`, so a bad response outlives the deploy in Cloudflare's cache and
