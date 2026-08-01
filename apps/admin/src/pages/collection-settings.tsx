@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActiveSiteSlug } from '@/hooks/use-site'
+import { useActiveSiteSlug, useHasSiteRole } from '@/hooks/use-site'
 import { ApiClientError, api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 
@@ -36,6 +36,12 @@ export function CollectionSettingsPage() {
   const queryClient = useQueryClient()
 
   const siteSlug = useActiveSiteSlug()
+
+  // Editing the content model is site-admin work — `POST`, `PATCH` and `DELETE` on a collection all
+  // carry `requireSiteRole('admin')`. An editor may fill this collection but not reshape or delete
+  // it, so they are shown the fields rather than a button whose only answer is a 403 toast. The
+  // server check is what makes it true; this only keeps the UI from lying about it.
+  const canManage = useHasSiteRole('admin')
 
   const collection = useQuery({
     queryKey: ['collection', siteSlug, slug],
@@ -68,7 +74,9 @@ export function CollectionSettingsPage() {
       }),
     onSuccess: () => {
       setFieldErrors({})
-      queryClient.invalidateQueries({ queryKey: ['collection', slug] })
+      // Prefix-matched against the key this page's own query uses — it is site-scoped, so leaving
+      // the slug out here matched nothing and the saved shape only reappeared on a refetch.
+      queryClient.invalidateQueries({ queryKey: ['collection', siteSlug, slug] })
       queryClient.invalidateQueries({ queryKey: ['collections'] })
       toast.success('Collection updated')
     },
@@ -109,25 +117,36 @@ export function CollectionSettingsPage() {
         title={`${collection.data?.name ?? slug} fields`}
         description="Define the shape of entries in this collection."
         actions={
-          <>
-            <Button
-              variant="destructive"
-              disabled={remove.isPending}
-              onClick={() => {
-                setConfirmSlug('')
-                setConfirmingDelete(true)
-              }}
-            >
-              {t('collections.delete')}
-            </Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending}>
-              Save changes
-            </Button>
-          </>
+          canManage && (
+            <>
+              <Button
+                variant="destructive"
+                disabled={remove.isPending}
+                onClick={() => {
+                  setConfirmSlug('')
+                  setConfirmingDelete(true)
+                }}
+              >
+                {t('collections.delete')}
+              </Button>
+              <Button onClick={() => save.mutate()} disabled={save.isPending}>
+                Save changes
+              </Button>
+            </>
+          )
         }
       />
 
       <div className="max-w-3xl space-y-6 p-8">
+        {/* The page still renders in full for an editor — knowing the shape of a collection is
+            ordinary content work. Only the two controls that write it are gone, so the notice says
+            which access is missing rather than leaving a header that lost its buttons. */}
+        {!canManage && (
+          <p className="rounded border p-3 text-muted-foreground text-sm">
+            {t('collections.readOnly')}
+          </p>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="collection-name">Collection name</Label>
           <Input

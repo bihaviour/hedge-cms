@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { useActiveSiteSlug } from '@/hooks/use-site'
+import { useActiveSiteSlug, useSiteAuthority } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { diffFields, previewValue } from '@/lib/field-diff'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -77,13 +77,8 @@ export function EntryVersions({
     enabled: Boolean(siteSlug),
   })
 
-  // What this person may approve on this site. Its own query rather than a field on the session:
-  // approval authority is per site, and the session is not.
-  const authority = useQuery({
-    queryKey: ['review-authority', siteSlug],
-    queryFn: api.review.authority,
-    enabled: Boolean(siteSlug),
-  })
+  // What this person may approve on this site — per site, so not something the session carries.
+  const authority = useSiteAuthority()
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['entry-versions', siteSlug, collection, slug] })

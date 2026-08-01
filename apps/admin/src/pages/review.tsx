@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useActiveSiteSlug } from '@/hooks/use-site'
+import { useActiveSiteSlug, useSiteAuthority } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
 
@@ -33,11 +33,7 @@ export function ReviewPage() {
   const siteSlug = useActiveSiteSlug()
   const [cursors, setCursors] = useState<string[]>([])
 
-  const authority = useQuery({
-    queryKey: ['review-authority', siteSlug],
-    queryFn: api.review.authority,
-    enabled: Boolean(siteSlug),
-  })
+  const authority = useSiteAuthority()
 
   const queue = useQuery({
     queryKey: ['review-queue', siteSlug, cursors.at(-1) ?? null],
