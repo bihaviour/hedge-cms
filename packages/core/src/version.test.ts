@@ -24,6 +24,18 @@ describe('compareVersions', () => {
     expect(compareVersions('1.2.3', '1.2.3')).toBe(0)
     expect(compareVersions('v0.1.0', '0.1.0')).toBe(0)
   })
+
+  /**
+   * Each part is compared as a *number*, not as text. Lexicographically `'0.0.10' < '0.0.9'`, so a
+   * string comparison would tell every 0.0.9 deployment it was already current the moment the patch
+   * count reached double digits — and keep telling them, silently, for the rest of the 0.0.x line.
+   */
+  test('a double-digit part sorts numerically, not lexicographically', () => {
+    expect(compareVersions('0.0.10', '0.0.9')).toBeGreaterThan(0)
+    expect(compareVersions('0.10.0', '0.9.0')).toBeGreaterThan(0)
+    expect(compareVersions('10.0.0', '9.0.0')).toBeGreaterThan(0)
+    expect(compareVersions('1.0.100', '1.0.99')).toBeGreaterThan(0)
+  })
 })
 
 describe('isUpdateAvailable', () => {
@@ -35,6 +47,12 @@ describe('isUpdateAvailable', () => {
 
   test('a null latest (the check could not reach GitHub) is never an update', () => {
     expect(isUpdateAvailable('0.1.0', null)).toBe(false)
+  })
+
+  /** The case above, as the update notice actually sees it — running 0.0.9, latest tag v0.0.10. */
+  test('offers a double-digit patch to the release before it', () => {
+    expect(isUpdateAvailable('0.0.9', 'v0.0.10')).toBe(true)
+    expect(isUpdateAvailable('0.0.10', 'v0.0.9')).toBe(false)
   })
 })
 
