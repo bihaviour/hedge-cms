@@ -335,8 +335,9 @@ export const en = {
   'media.title': 'Media',
   'media.subtitle': 'Files stored in R2. Up to {size} each.',
   'media.upload': 'Upload',
-  'media.uploadFile': 'Upload a file',
+  'media.uploadFile': 'Upload files',
   'media.uploaded': 'Uploaded',
+  'media.dropHere': 'Drop the files to upload them',
   'media.deleted': 'Deleted',
   'media.emptyTitle': 'No files yet',
   'media.emptyDescription': 'Upload images and documents to reference them from your entries.',
@@ -368,6 +369,21 @@ export const en = {
   'media.deleteTitle': 'Delete {filename}?',
   'media.deleteDescription':
     'The file is removed from R2 for good. Any entry or published page still pointing at it will show a broken image.',
+
+  // The upload queue, shared by the media library and the picker.
+  'upload.progressTitle': 'Uploading — {done} of {total} done',
+  'upload.finishedTitle': 'Uploaded {done} of {total}',
+  'upload.clearFinished': 'Clear finished',
+  'upload.progressAria': 'Upload progress for {filename}',
+  'upload.retryAria': 'Retry {filename}',
+  'upload.dismissAria': 'Dismiss {filename}',
+  'upload.tooLarge': 'Larger than {size}',
+  'upload.unsupportedType': 'That file type cannot be uploaded',
+  'upload.notAccepted': 'Not an accepted file type for this field',
+  'upload.doneOne': 'Uploaded {filename}',
+  'upload.doneMany': 'Uploaded {count} files',
+  'upload.someFailed': 'Uploaded {count} of {total} — the rest are listed below',
+  'upload.allFailed': 'Nothing uploaded',
 
   // The media and reference pickers, and the fields they replace.
   'picker.chooseMedia': 'Choose media',
@@ -403,8 +419,7 @@ export const en = {
     'One of these is not published. The reference saves fine, but the delivery API serves nothing for it until that entry publishes.',
   'picker.altFor': 'Alt text for {filename}',
   'picker.altPlaceholder': 'Describe the image for screen readers',
-  'picker.dropHint': 'Drop a file here, or use Upload. Up to {size} each.',
-  'picker.rejectedType': '{filename} is not an accepted file type',
+  'picker.dropHint': 'Drop files here, or use Upload. Up to {size} each.',
   'meta.socialImage': 'Social image',
   'meta.socialImagePlaceholder': 'Media key or URL',
   'common.choose': 'Choose',
