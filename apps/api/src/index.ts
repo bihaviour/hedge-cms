@@ -3,7 +3,6 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from 'better-a
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
-import { secureHeaders } from 'hono/secure-headers'
 import { CMS_AUTH_BASE_PATH, getCmsAuth } from './auth/cms'
 import { getMemberAuth, MEMBER_AUTH_BASE_PATH } from './auth/member'
 import type { AppEnv, Bindings } from './env'
@@ -14,6 +13,7 @@ import { errorResponse } from './lib/errors'
 import { newId } from './lib/id'
 import { resolveMember } from './lib/member-auth'
 import { resolvePreview } from './lib/preview'
+import { securityHeaders } from './lib/security-headers'
 import { resolveSite } from './lib/site'
 import analytics from './routes/analytics'
 import apiKeys from './routes/api-keys'
@@ -108,7 +108,9 @@ app.use('*', async (c, next) => {
   await next()
 })
 app.use('*', logger())
-app.use('*', secureHeaders())
+// Path-aware, because the media passthrough needs a different cross-origin resource policy from
+// everything else here, and only one instance of `secureHeaders` can decide it. See the module.
+app.use('*', securityHeaders)
 
 // The admin SPA is same-origin, so CORS only needs to open up what a website calls: the
 // read-only delivery API and member sign-in. Both are token-authenticated rather than
