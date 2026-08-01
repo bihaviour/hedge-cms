@@ -288,6 +288,16 @@ export const en = {
     'With approvals on, an entry in this collection can no longer be published by editing it directly. Changes are written as a version, reviewed by somebody other than their author, and published from there.',
   'collections.fieldsTitle': 'Fields',
 
+  // Deleting a collection. The blast radius is named in the copy because it is the whole point:
+  // this is the only delete in the admin that takes content the operator never sees on the page
+  // they are standing on.
+  'collections.delete': 'Delete collection',
+  'collections.deleteTitle': 'Delete "{name}"?',
+  'collections.deleteDescription':
+    'Every entry in this collection is deleted with it, along with their revisions and pending versions. Anything published from it stops resolving. This cannot be undone.',
+  'collections.deleteConfirmLabel': 'Type {slug} to confirm',
+  'collections.deleted': 'Collection deleted',
+
   // Authenticated preview — seeing a saved but unpublished entry in the website's own layout.
   'preview.action': 'Preview',
   'preview.opening': 'Opening…',

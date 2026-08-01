@@ -527,4 +527,10 @@ export const id: Catalog = {
   'collections.approvalHint':
     'Dengan persetujuan aktif, entri di koleksi ini tidak lagi dapat diterbitkan dengan mengubahnya langsung. Perubahan ditulis sebagai versi, ditinjau oleh orang selain penulisnya, lalu diterbitkan dari sana.',
   'collections.fieldsTitle': 'Bidang',
+  'collections.delete': 'Hapus koleksi',
+  'collections.deleteTitle': 'Hapus "{name}"?',
+  'collections.deleteDescription':
+    'Semua entri di koleksi ini ikut terhapus, beserta revisi dan versi yang tertunda. Apa pun yang sudah diterbitkan darinya berhenti dapat diakses. Tindakan ini tidak dapat dibatalkan.',
+  'collections.deleteConfirmLabel': 'Ketik {slug} untuk mengonfirmasi',
+  'collections.deleted': 'Koleksi dihapus',
 }

@@ -6,6 +6,14 @@ import { toast } from 'sonner'
 import { type FieldRow, FieldsEditor, toFieldRows } from '@/components/fields-editor'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -70,13 +78,20 @@ export function CollectionSettingsPage() {
     },
   })
 
+  // Deleting a collection cascades to every entry in it, and to their revisions and versions.
+  // None of that is on screen here, so the dialog names it and asks for the slug back — a
+  // mis-click on a page whose other buttons are all reversible should not be able to reach it.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmSlug, setConfirmSlug] = useState('')
+
   const remove = useMutation({
     mutationFn: () => api.collections.remove(slug),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['collections'] })
-      toast.success('Collection deleted')
+      toast.success(t('collections.deleted'))
       navigate('/collections')
     },
+    onError: (error) => toast.error(error.message),
   })
 
   if (collection.isLoading) {
@@ -95,8 +110,15 @@ export function CollectionSettingsPage() {
         description="Define the shape of entries in this collection."
         actions={
           <>
-            <Button variant="outline" disabled={remove.isPending} onClick={() => remove.mutate()}>
-              Delete collection
+            <Button
+              variant="destructive"
+              disabled={remove.isPending}
+              onClick={() => {
+                setConfirmSlug('')
+                setConfirmingDelete(true)
+              }}
+            >
+              {t('collections.delete')}
             </Button>
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               Save changes
@@ -159,6 +181,41 @@ export function CollectionSettingsPage() {
           <FieldsEditor rows={rows} onChange={setRows} />
         </div>
       </div>
+
+      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t('collections.deleteTitle', { name: collection.data?.name ?? slug })}
+            </DialogTitle>
+            <DialogDescription>{t('collections.deleteDescription')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-4">
+            <Label htmlFor="confirm-slug">{t('collections.deleteConfirmLabel', { slug })}</Label>
+            <Input
+              id="confirm-slug"
+              className="font-mono"
+              autoComplete="off"
+              value={confirmSlug}
+              onChange={(event) => setConfirmSlug(event.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmingDelete(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={remove.isPending || confirmSlug !== slug}
+              onClick={() => remove.mutate()}
+            >
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
