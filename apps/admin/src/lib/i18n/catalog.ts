@@ -288,6 +288,11 @@ export const en = {
     'With approvals on, an entry in this collection can no longer be published by editing it directly. Changes are written as a version, reviewed by somebody other than their author, and published from there.',
   'collections.fieldsTitle': 'Fields',
 
+  // Shown instead of the Save and Delete buttons to someone who can fill this collection but not
+  // reshape it. Says which access is missing, so it reads as a permission rather than a bug.
+  'collections.readOnly':
+    'You can see how this collection is put together, but changing or deleting it needs admin access to this site.',
+
   // Deleting a collection. The blast radius is named in the copy because it is the whole point:
   // this is the only delete in the admin that takes content the operator never sees on the page
   // they are standing on.

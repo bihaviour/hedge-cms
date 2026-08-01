@@ -18,16 +18,9 @@ import { validateQuery } from '../lib/validate'
  */
 const app = new Hono<AppEnv>()
 
-/**
- * What the caller may approve on this site. Its own route because the entry editor needs the same
- * answer as the inbox does, to show the review actions it will actually be allowed to take rather
- * than an approve button that 403s.
- */
-app.get('/authority', requireSiteRole('viewer'), async (c) => {
-  const actor = requireUserActor(c)
-  const approvalLevel = await approvalLevelFor(c.env, actor, requireSite(c).id)
-  return c.json({ data: { approvalLevel } })
-})
+// What the caller may approve here is answered by `GET /api/v1/access`, not by a route of this
+// module's own: the entry editor and the collection settings page ask the same question about the
+// same site, and two routes answering it is two answers to keep in step.
 
 /** Who is asking, and what they may approve here — the pair both queue routes filter on. */
 async function reviewer(c: Parameters<typeof requireUserActor>[0]) {

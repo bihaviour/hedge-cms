@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActiveSiteSlug } from '@/hooks/use-site'
+import { useActiveSiteSlug, useHasSiteRole } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 
@@ -33,6 +33,9 @@ export function CollectionsPage() {
   const t = useT()
   const [open, setOpen] = useState(false)
   const siteSlug = useActiveSiteSlug()
+  // Creating one is `requireSiteRole('admin')`, like reshaping and deleting one — see
+  // collection-settings.tsx. An editor sees the collections and none of the model-editing controls.
+  const canManage = useHasSiteRole('admin')
   const collections = useQuery({
     queryKey: ['collections', siteSlug],
     queryFn: api.collections.list,
@@ -45,10 +48,12 @@ export function CollectionsPage() {
         title={t('collections.title')}
         description={t('collections.subtitle')}
         actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="size-4" />
-            {t('collections.new')}
-          </Button>
+          canManage && (
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="size-4" />
+              {t('collections.new')}
+            </Button>
+          )
         }
       />
 
@@ -65,7 +70,11 @@ export function CollectionsPage() {
           <EmptyState
             title={t('collections.emptyTitle')}
             description={t('collections.emptyDescription')}
-            action={<Button onClick={() => setOpen(true)}>{t('collections.emptyAction')}</Button>}
+            action={
+              canManage && (
+                <Button onClick={() => setOpen(true)}>{t('collections.emptyAction')}</Button>
+              )
+            }
           />
         )}
 

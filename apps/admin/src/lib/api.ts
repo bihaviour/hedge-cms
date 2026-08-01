@@ -48,6 +48,7 @@ import type {
   SendResult,
   Site,
   SiteAccess,
+  SiteAuthority,
   SiteRole,
   Subscriber,
   SystemUpdateInput,
@@ -208,6 +209,11 @@ export const api = {
     oauthClients: () => request<AuthorizedClient[]>('/auth/oauth/clients'),
     revokeOauthClient: (clientId: string) =>
       request<void>(`/auth/oauth/clients/${encodeURIComponent(clientId)}`, { method: 'DELETE' }),
+  },
+
+  /** The signed-in person's own role and approval level on the active site — what the UI gates on. */
+  access: {
+    get: () => request<SiteAuthority>('/access'),
   },
 
   sites: {
@@ -398,9 +404,8 @@ export const api = {
       ),
   },
 
-  /** The review inbox for the active site, and what the signed-in person may approve on it. */
+  /** The review inbox for the active site. What the caller may approve on it is `access` above. */
   review: {
-    authority: () => request<{ approvalLevel: number }>('/review/authority'),
     queue: (cursor?: string) =>
       requestPage<ReviewQueueItem>(
         `/review/queue${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,

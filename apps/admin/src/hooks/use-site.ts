@@ -1,4 +1,4 @@
-import type { Site } from '@hedge/core'
+import { roleAtLeast, type Site, type SiteRole } from '@hedge/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useSyncExternalStore } from 'react'
 import { getActiveSite, setActiveSite, subscribeToActiveSite } from '@/lib/active-site'
@@ -34,6 +34,37 @@ export function useActiveSite(): { site: Site | undefined; sites: Site[]; isLoad
   }, [list, match])
 
   return { site: match, sites: list, isLoading: sites.isLoading }
+}
+
+/**
+ * What the signed-in person may do on the active site: their site role, and the approval level in
+ * force for them there.
+ *
+ * Its own query rather than a field on the session, because both are per site and the session is
+ * not — the same user can be an admin on one site and a viewer on the next. Keyed on the site slug
+ * like every other site-scoped query, so switching site asks again instead of gating on the answer
+ * for the previous tenant.
+ *
+ * What it drives is cosmetic: the server checks every one of these powers for itself. It is what
+ * keeps the admin from offering a control whose only possible answer is a 403 toast.
+ */
+export function useSiteAuthority() {
+  const siteSlug = useSyncExternalStore(subscribeToActiveSite, getActiveSite)
+  return useQuery({
+    queryKey: ['site-authority', siteSlug],
+    queryFn: api.access.get,
+    enabled: Boolean(siteSlug),
+  })
+}
+
+/**
+ * Whether the person holds at least `minimum` on the active site. False while the answer is still
+ * loading — a control that appears once authority resolves is better than one that appears for
+ * everybody and then disappears for some.
+ */
+export function useHasSiteRole(minimum: SiteRole): boolean {
+  const authority = useSiteAuthority()
+  return authority.data ? roleAtLeast(authority.data.role, minimum) : false
 }
 
 /** Switching site invalidates everything — all content queries are scoped to one tenant. */

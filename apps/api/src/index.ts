@@ -15,6 +15,7 @@ import { newId } from './lib/id'
 import { resolveMember } from './lib/member-auth'
 import { resolvePreview } from './lib/preview'
 import { resolveSite } from './lib/site'
+import access from './routes/access'
 import analytics from './routes/analytics'
 import apiKeys from './routes/api-keys'
 import auth from './routes/auth'
@@ -44,6 +45,8 @@ const app = new Hono<AppEnv>()
  */
 const ADMIN_PREFIXES = [
   '/api/v1/auth',
+  // The caller's own role and approval level on the active site — a person's view of themselves.
+  '/api/v1/access',
   '/api/v1/users',
   '/api/v1/roles',
   '/api/v1/sites',
@@ -289,6 +292,8 @@ app.get(`${CMS_AUTH_BASE_PATH}/mcp/authorize`, (c) => {
 app.route('/api/v1/auth', auth)
 app.all(`${CMS_AUTH_BASE_PATH}/*`, (c) => getCmsAuth(c.env).handler(c.req.raw))
 
+// What the signed-in person may do on the active site, for the admin's own gating.
+app.route('/api/v1/access', access)
 app.route('/api/v1/users', users)
 app.route('/api/v1/roles', roles)
 app.route('/api/v1/sites', sites)

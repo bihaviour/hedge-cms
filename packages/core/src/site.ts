@@ -46,6 +46,22 @@ export const siteAccessSchema = z.object({
 
 export type SiteAccess = z.infer<typeof siteAccessSchema>
 
+/**
+ * What the signed-in person may do on the site they are working in — the role they hold there, and
+ * the approval level in force for them.
+ *
+ * Its own shape rather than a field on the session, because both answers are *per site* and the
+ * session is not: the same user can be an admin on one site and a viewer on the next. The admin
+ * reads it to gate the controls it renders, which is cosmetic — every route it gates still checks
+ * for itself — but without it a viewer is offered buttons that can only answer 403.
+ */
+export const siteAuthoritySchema = z.object({
+  role: z.enum(SITE_ROLES),
+  approvalLevel: z.number().int().min(0).max(2),
+})
+
+export type SiteAuthority = z.infer<typeof siteAuthoritySchema>
+
 export const setSiteRoleSchema = z.object({
   role: z.enum(SITE_ROLES),
   /** Omitted leaves any existing override alone; `null` clears it back to the role's default. */

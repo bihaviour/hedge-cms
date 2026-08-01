@@ -527,6 +527,8 @@ export const id: Catalog = {
   'collections.approvalHint':
     'Dengan persetujuan aktif, entri di koleksi ini tidak lagi dapat diterbitkan dengan mengubahnya langsung. Perubahan ditulis sebagai versi, ditinjau oleh orang selain penulisnya, lalu diterbitkan dari sana.',
   'collections.fieldsTitle': 'Bidang',
+  'collections.readOnly':
+    'Anda dapat melihat susunan koleksi ini, tetapi mengubah atau menghapusnya memerlukan akses admin di situs ini.',
   'collections.delete': 'Hapus koleksi',
   'collections.deleteTitle': 'Hapus "{name}"?',
   'collections.deleteDescription':

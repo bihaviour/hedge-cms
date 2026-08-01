@@ -34,6 +34,13 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
   UI gating is cosmetic; the server check is the real one, and both must exist. The same goes for
   approval authority: the version panel mirrors what `decideEntryVersion` would allow, so it never
   offers a button that 403s, but the server is what makes it true.
+- **Two authority levels, two sources.** Instance powers are on the session: `user.permissions`
+  from `useSession`, a set-membership check (the sidebar gates on it). **Site** powers are not —
+  the same person can be an admin on one site and a viewer on the next, so they come from
+  `useSiteAuthority` / `useHasSiteRole` in `hooks/use-site.ts`, one `GET /api/v1/access` per site,
+  keyed on the active slug. A control whose route carries `requireSiteRole` is gated with the
+  second, never with `user.role` — that field is only the default someone was invited with, and
+  reading it would hide controls the server would allow and show ones it would refuse.
 - **Both catalogs, always.** `catalog.test.ts` fails when an English key has no Indonesian
   translation, or when the two disagree on `{placeholders}`. A key present in one and missing from
   the other degrades silently to English and can sit unnoticed for a release, which is why it is a
