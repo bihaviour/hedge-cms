@@ -398,7 +398,12 @@ export const en = {
   'apiKeys.colPrefix': 'Prefix',
   'apiKeys.colLastUsed': 'Last used',
   'apiKeys.revoked': 'Key revoked',
+  'apiKeys.revoke': 'Revoke',
   'apiKeys.revokeAria': 'Revoke {name}',
+  'apiKeys.rename': 'Rename',
+  'apiKeys.renameAria': 'Rename {name}',
+  'apiKeys.rotate': 'Rotate',
+  'apiKeys.rotateAria': 'Rotate {name}',
 
   // Users table extras.
   'users.colSiteAccess': 'Site access',
@@ -431,7 +436,7 @@ export const en = {
   // API keys page.
   'apiKeys.title': 'API keys',
   'apiKeys.subtitle':
-    'Keys the delivery API accepts for this site. Show the secret once, at creation.',
+    'Keys the delivery API accepts for this site. The secret is shown once — rotate a key to replace one you have lost.',
   'apiKeys.new': 'New key',
   'apiKeys.colName': 'Name',
   'apiKeys.colScopes': 'Scopes',

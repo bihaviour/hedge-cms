@@ -38,6 +38,83 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>
 
+/* ------------------------------------------------------------------ *
+ * Step-up verification on an unrecognised device
+ *
+ * A correct password on a browser this account has never used is the shape a stolen password has,
+ * so it buys a mailed code rather than a session. A device that passes once is remembered for
+ * `TRUSTED_DEVICE_TTL_DAYS`, which is what keeps this from firing on every sign-in.
+ *
+ * Deliberately *not* keyed on IP address: mobile networks rotate addresses several times a day, so
+ * an IP-sensitive check would mail a code that often and train people to expect one. The device is
+ * the thing being vouched for.
+ * ------------------------------------------------------------------ */
+
+/** Digits in a mailed sign-in code. */
+export const LOGIN_CODE_LENGTH = 6
+
+/** How long a mailed code stays redeemable. Short: it is a live credential in an inbox. */
+export const LOGIN_CODE_TTL_MINUTES = 10
+
+/**
+ * Wrong codes allowed against one challenge before it is spent. Six digits is a million-wide space
+ * and this is what keeps it from being walked — the limiter alone would not, since a challenge id
+ * is a fresh key an attacker can hold while retrying.
+ */
+export const LOGIN_CODE_MAX_ATTEMPTS = 5
+
+/** How long a device stays trusted after it passes a code. */
+export const TRUSTED_DEVICE_TTL_DAYS = 30
+
+/**
+ * What `POST /auth/login` answers. Either the sign-in completed — a session cookie is set and the
+ * user comes back — or the password was right on an unrecognised device and a code is in the inbox.
+ *
+ * A discriminated union rather than a nullable user, so the admin cannot forget the second case:
+ * `verificationRequired` has to be narrowed before `id` is readable.
+ */
+export const loginResultSchema = z.discriminatedUnion('verificationRequired', [
+  z.object({ verificationRequired: z.literal(false), user: userSchema }),
+  z.object({
+    verificationRequired: z.literal(true),
+    /** Names the pending challenge. Not a credential — the code mailed alongside it is. */
+    challengeId: z.string(),
+    /** The address the code went to, already masked. The server never returns the full one here. */
+    maskedEmail: z.string(),
+    expiresAt: z.string(),
+  }),
+])
+
+export type LoginResult = z.infer<typeof loginResultSchema>
+
+export const verifyLoginCodeSchema = z.object({
+  challengeId: z.string().min(1),
+  code: z.string().regex(/^\d{6}$/, 'must be a 6-digit code'),
+  /**
+   * Whether to remember this browser. Opting out is the right answer on a shared machine, so it is
+   * asked rather than assumed — and it defaults to false for the same reason.
+   */
+  trustDevice: z.boolean().default(false),
+})
+
+export type VerifyLoginCodeInput = z.infer<typeof verifyLoginCodeSchema>
+
+export const resendLoginCodeSchema = z.object({ challengeId: z.string().min(1) })
+
+/** A browser this account has vouched for, as the account page lists them. */
+export const trustedDeviceSchema = z.object({
+  id: z.string(),
+  /** Best-effort description from the user agent. Never trusted for anything but display. */
+  label: z.string(),
+  /** Set when the request being answered came from this device. */
+  current: z.boolean(),
+  lastUsedAt: z.string(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+})
+
+export type TrustedDevice = z.infer<typeof trustedDeviceSchema>
+
 export const passwordSchema = z.string().min(12, 'must be at least 12 characters').max(200)
 
 /**
@@ -181,6 +258,17 @@ export const createApiKeySchema = z.object({
 })
 
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>
+
+/**
+ * Renaming a key. The name is a label an operator uses to recognise which consumer holds it, so it
+ * is the one field that can change in place — scopes cannot, because widening them would silently
+ * upgrade a credential already deployed somewhere. Issue another key for that.
+ */
+export const updateApiKeySchema = z.strictObject({
+  name: z.string().min(1).max(120),
+})
+
+export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>
 
 export const apiKeySchema = z.object({
   id: z.string(),

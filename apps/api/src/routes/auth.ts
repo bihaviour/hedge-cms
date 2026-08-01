@@ -2,10 +2,13 @@ import {
   type AuthorizedClient,
   acceptInviteSchema,
   inviteUserSchema,
+  type LoginResult,
   loginSchema,
   passwordSchema,
+  resendLoginCodeSchema,
   type User,
   type UserSession,
+  verifyLoginCodeSchema,
 } from '@hedge/core'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -16,11 +19,13 @@ import { getDb } from '../db/client'
 import {
   accounts,
   authTokens,
+  loginChallenges,
   oauthAccessTokens,
   oauthApplications,
   oauthConsents,
   sessions,
   users,
+  verifications,
 } from '../db/schema'
 import type { AppEnv } from '../env'
 import { requireActor, requirePermission, requireUserActor } from '../lib/auth'
@@ -28,8 +33,19 @@ import { hashPassword, hmac } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { hasCredential, sendUserInvite } from '../lib/invites'
+import {
+  completeLoginChallenge,
+  isTrustedDevice,
+  listTrustedDevices,
+  pruneExpiredChallenges,
+  resendLoginCode,
+  revokeAllTrustedDevices,
+  revokeTrustedDevice,
+  startLoginChallenge,
+} from '../lib/login-verification'
 import { permissionsForRole } from '../lib/roles'
 import { requireSite } from '../lib/site'
+import { throttle } from '../lib/throttle'
 import { inviteUser } from '../lib/users'
 import { validate } from '../lib/validate'
 
@@ -77,8 +93,75 @@ app.post('/login', async (c) => {
   const user = await userByEmail(c.env, email)
   if (!user) throw ApiError.unauthorized('Incorrect email or password')
 
+  // A correct password on a browser this account has used before completes the sign-in, as it
+  // always did. On one it has not, the password is not enough on its own — see `login-verification`.
+  if (await isTrustedDevice(c, user.id)) {
+    applyCookies(c, cookies)
+    const data: LoginResult = {
+      verificationRequired: false,
+      user: toUser(user, await permissionsForRole(c.env, user.role)),
+    }
+    return c.json({ data })
+  }
+
+  // Best-effort housekeeping on the one path that grows this table; a failure here must not be the
+  // reason somebody cannot sign in.
+  await pruneExpiredChallenges(c.env).catch((error) =>
+    console.error('[auth] pruning login challenges failed', error),
+  )
+
+  // Deliberately *not* `applyCookies`: the session exists but its cookies stay parked on the
+  // challenge until the mailed code comes back.
+  const challenge = await startLoginChallenge(c, user, cookies)
+  const data: LoginResult = { verificationRequired: true, ...challenge }
+  return c.json({ data })
+})
+
+/**
+ * The second step: the code from the email, and whether to remember this browser for
+ * `TRUSTED_DEVICE_TTL_DAYS`.
+ *
+ * Rate limited on top of the per-challenge attempt ceiling. The ceiling bounds guesses against one
+ * code; this bounds how fast someone holding a password can spin up fresh challenges to guess at.
+ */
+app.post('/login/verify', async (c) => {
+  const input = await validate(c, verifyLoginCodeSchema)
+  await throttle(c, 'login-verify', { window: 15 * 60, max: 20 })
+
+  const { userId, cookies } = await completeLoginChallenge(
+    c,
+    input.challengeId,
+    input.code,
+    input.trustDevice,
+  )
+
+  const user = await userById(c.env, userId)
   applyCookies(c, cookies)
-  return c.json({ data: toUser(user, await permissionsForRole(c.env, user.role)) })
+
+  const data: LoginResult = {
+    verificationRequired: false,
+    user: toUser(user, await permissionsForRole(c.env, user.role)),
+  }
+  return c.json({ data })
+})
+
+/** Mails the code again — it went to spam, or the first one lapsed while they looked for it. */
+app.post('/login/resend', async (c) => {
+  const { challengeId } = await validate(c, resendLoginCodeSchema)
+  // Tighter than the verify limiter: this one sends mail, so it is the mail-bomb surface.
+  await throttle(c, 'login-resend', { window: 15 * 60, max: 5 })
+
+  const db = getDb(c.env)
+  const [row] = await db
+    .select({ userId: loginChallenges.userId })
+    .from(loginChallenges)
+    .where(eq(loginChallenges.id, challengeId))
+    .limit(1)
+
+  if (!row) throw ApiError.unauthorized('That sign-in has expired. Start again.')
+
+  const user = await userById(c.env, row.userId)
+  return c.json({ data: await resendLoginCode(c, challengeId, user) })
 })
 
 app.post('/logout', async (c) => {
@@ -94,7 +177,7 @@ app.get('/me', async (c) => {
 })
 
 app.post('/change-password', async (c) => {
-  requireUserActor(c)
+  const actor = requireUserActor(c)
   const input = await validate(
     c,
     z.object({ currentPassword: z.string().min(1).max(200), newPassword: passwordSchema }),
@@ -107,8 +190,28 @@ app.post('/change-password', async (c) => {
     revokeOtherSessions: true,
   })
 
+  // …and every device vouched for under the old password, for the same reason. Ending the sessions
+  // alone would leave an attacker's browser able to sign in with a password they later learn and
+  // never be asked for a code, which is the one case this check exists for.
+  await revokeAllTrustedDevices(c, actor.id)
+
   applyCookies(c, cookies)
   return c.json({ data: { ok: true } })
+})
+
+/* ------------------------------------------------------------------ *
+ * Trusted devices — the browsers that skip the sign-in code, and the way to un-trust one.
+ * ------------------------------------------------------------------ */
+
+app.get('/devices', async (c) => {
+  const actor = requireUserActor(c)
+  return c.json({ data: await listTrustedDevices(c, actor.id) })
+})
+
+app.delete('/devices/:id', async (c) => {
+  const actor = requireUserActor(c)
+  await revokeTrustedDevice(c.env, actor.id, c.req.param('id'))
+  return c.body(null, 204)
 })
 
 /* ------------------------------------------------------------------ *
@@ -151,10 +254,16 @@ app.delete('/sessions/:id', async (c) => {
   return c.body(null, 204)
 })
 
-/** Signs the user out everywhere, including here. */
+/**
+ * Signs the user out everywhere, including here — and forgets every trusted browser with it.
+ *
+ * This is the panic button, so it has to leave nothing standing: a session revocation that kept
+ * device trust would still let whoever holds the password back in without a code.
+ */
 app.post('/sessions/revoke-all', async (c) => {
-  requireUserActor(c)
+  const actor = requireUserActor(c)
   const { cookies } = await forwardToAuth(c, getCmsAuth(c.env), '/revoke-sessions')
+  await revokeAllTrustedDevices(c, actor.id)
   applyCookies(c, cookies)
   return c.json({ data: { ok: true } })
 })
@@ -307,10 +416,24 @@ app.post('/forgot-password', async (c) => {
 app.post('/reset-password', async (c) => {
   const input = await validate(c, z.object({ token: z.string().min(1), password: passwordSchema }))
 
+  // Who the token belongs to has to be read *before* it is spent — the reset consumes the row.
+  // Best-effort by design: it reaches into how Better Auth stores a reset token, so if that ever
+  // changes the worst outcome is a device that stays trusted, not a reset that fails.
+  const userId = await userIdForResetToken(c.env, input.token)
+
   await forwardToAuth(c, getCmsAuth(c.env), '/reset-password', {
     token: input.token,
     newPassword: input.password,
   })
+
+  // A reset is how somebody who lost control recovers, which is exactly when a browser vouched for
+  // under the old password should stop being vouched for. `revokeSessionsOnPasswordReset` already
+  // ends the sessions; this ends the trust that would let a new sign-in skip the code.
+  if (userId) {
+    await revokeAllTrustedDevices(c, userId).catch((error) =>
+      console.error('[auth] clearing trusted devices after reset failed', error),
+    )
+  }
 
   return c.json({ data: { ok: true } })
 })
@@ -381,6 +504,29 @@ app.delete('/oauth/clients/:clientId', async (c) => {
 })
 
 export default app
+
+/**
+ * The user a password-reset token belongs to, or null.
+ *
+ * Better Auth parks a reset under `verifications` with the token in the identifier and the user id
+ * as the value. That is its internal shape rather than a documented contract, so every failure here
+ * — no row, a changed convention, a database error — answers null and the caller carries on. The
+ * only thing that depends on it is clearing trusted devices, which is hygiene on top of the session
+ * revocation Better Auth already performs.
+ */
+async function userIdForResetToken(env: AppEnv['Bindings'], token: string): Promise<string | null> {
+  try {
+    const [row] = await getDb(env)
+      .select({ value: verifications.value })
+      .from(verifications)
+      .where(eq(verifications.identifier, `reset-password:${token}`))
+      .limit(1)
+    return row?.value ?? null
+  } catch (error) {
+    console.error('[auth] reset token lookup failed', error)
+    return null
+  }
+}
 
 /**
  * Writes a credential for a user, in the format Better Auth's configured hasher reads back.

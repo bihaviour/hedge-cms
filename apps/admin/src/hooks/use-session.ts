@@ -28,12 +28,31 @@ export function useSetupRequired() {
   })
 }
 
+/**
+ * Signing in. The result is a union: a password can be correct and still not produce a session,
+ * because a browser the account has not been seen on is mailed a code first. Only the completed
+ * case seeds the session cache — the pending one has no user to seed it with.
+ */
 export function useLogin() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: api.auth.login,
-    onSuccess: (user) => {
-      queryClient.setQueryData(['session'], user)
+    onSuccess: (result) => {
+      if (result.verificationRequired) return
+      queryClient.setQueryData(['session'], result.user)
+      queryClient.invalidateQueries()
+    },
+  })
+}
+
+/** The second step of a sign-in: the mailed code. Succeeding here is what produces the session. */
+export function useVerifyLoginCode() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: api.auth.verifyLoginCode,
+    onSuccess: (result) => {
+      if (result.verificationRequired) return
+      queryClient.setQueryData(['session'], result.user)
       queryClient.invalidateQueries()
     },
   })

@@ -49,6 +49,33 @@ describe('renderMessage', () => {
     expect(message.text).toContain('reader@example.com')
     expect(message.text.trim().endsWith(vars.url)).toBe(true)
   })
+
+  test('the plain-text version keeps paragraphs apart', () => {
+    const message = renderMessage(
+      'Hedge',
+      { subject: 'Hi', heading: 'Hi', body: '<p>First</p><p>Second</p>', ctaLabel: null },
+      vars,
+    )
+
+    // Without a break here the two runs concatenate — `FirstSecond` — which is how a multi-paragraph
+    // template reads in every client that shows text/plain.
+    expect(message.text).toContain('First\n\nSecond')
+  })
+
+  test('the sign-in code survives into the plain-text body', () => {
+    const message = renderMessage('Hedge', DEFAULT_EMAIL_TEMPLATES.login_code, {
+      ...vars,
+      code: '493021',
+      device: 'Chrome on macOS',
+    })
+
+    // text/plain is all some clients render, and a code email with no code in it is worthless.
+    expect(message.text).toContain('493021')
+    expect(message.subject).toContain('493021')
+    expect(message.text).toContain('Chrome on macOS')
+    // It is the payload, so it must not be glued to the sentence before it.
+    expect(message.text).not.toMatch(/:\d{6}/)
+  })
 })
 
 describe('renderNewsletter', () => {

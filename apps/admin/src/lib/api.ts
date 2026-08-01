@@ -33,6 +33,7 @@ import type {
   EntryVersion,
   ListEntriesQuery,
   ListMediaQuery,
+  LoginResult,
   Media,
   Member,
   Newsletter,
@@ -52,6 +53,8 @@ import type {
   SystemUpdateInput,
   SystemUpdateResult,
   SystemVersion,
+  TrustedDevice,
+  UpdateApiKeyInput,
   UpdateCollectionInput,
   UpdateEmailConfigInput,
   UpdateEmailTemplateInput,
@@ -66,6 +69,7 @@ import type {
   UpdateSubscriberInput,
   User,
   UserSession,
+  VerifyLoginCodeInput,
 } from '@hedge/core'
 import { getActiveSite, setActiveSite, siteHeaders } from './active-site'
 
@@ -158,8 +162,16 @@ export const api = {
     setupRequired: () => request<{ setupRequired: boolean }>('/auth/setup-required'),
     setup: (input: { email: string; name: string; password: string }) =>
       request<User>('/auth/setup', { method: 'POST', ...json(input) }),
+    /**
+     * Either signs in, or reports that a code has been mailed because this browser is not one the
+     * account has been seen on. Callers have to narrow on `verificationRequired` — see `LoginResult`.
+     */
     login: (input: { email: string; password: string }) =>
-      request<User>('/auth/login', { method: 'POST', ...json(input) }),
+      request<LoginResult>('/auth/login', { method: 'POST', ...json(input) }),
+    verifyLoginCode: (input: VerifyLoginCodeInput) =>
+      request<LoginResult>('/auth/login/verify', { method: 'POST', ...json(input) }),
+    resendLoginCode: (input: { challengeId: string }) =>
+      request<{ expiresAt: string }>('/auth/login/resend', { method: 'POST', ...json(input) }),
     logout: () => request<{ ok: true }>('/auth/logout', { method: 'POST' }),
     me: () => request<User>('/auth/me'),
     invite: (input: { email: string; name: string; role: string }) =>
@@ -175,6 +187,13 @@ export const api = {
       request<{ ok: true }>('/auth/reset-password', { method: 'POST', ...json(input) }),
     changePassword: (input: { currentPassword: string; newPassword: string }) =>
       request<{ ok: true }>('/auth/change-password', { method: 'POST', ...json(input) }),
+
+    /**
+     * Browsers that skip the sign-in code. Revoking one means the next sign-in from it is mailed a
+     * code again — it does not end a session, which is what `sessions` is for.
+     */
+    devices: () => request<TrustedDevice[]>('/auth/devices'),
+    revokeDevice: (id: string) => request<void>(`/auth/devices/${id}`, { method: 'DELETE' }),
 
     /** Where this account is signed in. Revoking is by id — the token never leaves the server. */
     sessions: () => request<UserSession[]>('/auth/sessions'),
@@ -413,6 +432,15 @@ export const api = {
     list: () => request<ApiKey[]>('/api-keys'),
     create: (input: CreateApiKeyInput) =>
       request<ApiKey & { key: string }>('/api-keys', { method: 'POST', ...json(input) }),
+    /** Renames a key. Scopes are fixed at issue — see `updateApiKeySchema`. */
+    update: (id: string, input: UpdateApiKeyInput) =>
+      request<ApiKey>(`/api-keys/${id}`, { method: 'PATCH', ...json(input) }),
+    /**
+     * Issues a new secret and returns it, invalidating the old one. The only way back from a lost
+     * key: nothing stores the original, so it cannot be shown again.
+     */
+    rotate: (id: string) =>
+      request<ApiKey & { key: string }>(`/api-keys/${id}/rotate`, { method: 'POST' }),
     remove: (id: string) => request<void>(`/api-keys/${id}`, { method: 'DELETE' }),
   },
 

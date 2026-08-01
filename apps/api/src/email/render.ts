@@ -18,6 +18,10 @@ export interface TemplateVariables {
   title?: string
   /** An approver's note, or empty when they left none. Only the review templates reference it. */
   comment?: string
+  /** The sign-in code. Only `login_code` references it. */
+  code?: string
+  /** The browser a sign-in was attempted from. Only `login_code` references it. */
+  device?: string
 }
 
 /**
@@ -111,11 +115,22 @@ function interpolate(template: string, values: Record<string, string>, asHtml: b
   })
 }
 
-/** A rough text rendering of a template's heading and body, with the link on its own line. */
+/**
+ * A rough text rendering of a template's heading and body, with the link on its own line.
+ *
+ * Block-level ends become breaks before tags are stripped. Without that, a body of more than one
+ * paragraph collapses into a single run — `…to finish:498320It expires in 10 minutes` — which was
+ * invisible while every template was one paragraph and is not any more.
+ */
 function toText(heading: string, body: string, url: string): string {
   const stripped = body
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
-    .replace(/\s+/g, ' ')
+    // Collapse runs of spaces and tabs, but keep the breaks introduced above.
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
   return `${heading}\n\n${stripped}\n\n${url}\n`
 }
@@ -140,6 +155,8 @@ export function renderMessage(
     // value for — a review email with no comment should read as having no comment.
     title: variables.title ?? '',
     comment: variables.comment ?? '',
+    code: variables.code ?? '',
+    device: variables.device ?? '',
   }
   const subject = interpolate(source.subject, values, false)
   const heading = interpolate(source.heading, values, true)

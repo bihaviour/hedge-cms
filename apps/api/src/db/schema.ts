@@ -254,6 +254,86 @@ export const authTokens = sqliteTable(
 )
 
 /* ------------------------------------------------------------------ *
+ * Step-up verification on an unrecognised device
+ *
+ * Between "the password was right" and "here is a session" sits a mailed code. These two tables are
+ * that gap: one row per challenge in flight, and one per browser that has since been vouched for.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A sign-in that has passed the password and is waiting on a mailed code.
+ *
+ * `sessionCookies` holds the `Set-Cookie` values Better Auth already produced, parked here until the
+ * code is entered rather than sent to a browser that has not proved anything yet. Keeping them
+ * server-side is what lets the second step finish a sign-in it has no password for — Better Auth
+ * owns identity, and re-deriving a session cookie ourselves would be forging one of its credentials.
+ *
+ * That does put a live session credential in D1 for a few minutes, which is worth being explicit
+ * about: it is the *same* class of secret `sessions.token` already is (Better Auth stores those
+ * unhashed), so it widens no boundary — and the row is deleted the moment it is used, fails, or
+ * lapses, along with the orphaned session it refers to.
+ */
+export const loginChallenges = sqliteTable(
+  'login_challenges',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** HMAC of the mailed code. Never the code — an inbox is not the only place this leaks from. */
+    codeHash: text('code_hash').notNull(),
+    /** JSON array of the parked `Set-Cookie` values. */
+    sessionCookies: text('session_cookies', { mode: 'json' }).notNull().$type<string[]>(),
+    /** The session row those cookies address, so an abandoned challenge can take it with it. */
+    sessionToken: text('session_token'),
+    /** Wrong codes so far. At `LOGIN_CODE_MAX_ATTEMPTS` the row is spent, not merely refused. */
+    attempts: integer('attempts').notNull().default(0),
+    /** Recorded for the email's "attempted from" line, and for the device row if trust is granted. */
+    userAgent: text('user_agent'),
+    ipAddress: text('ip_address'),
+    /** Epoch seconds. */
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [index('login_challenges_user_idx').on(t.userId)],
+)
+
+/**
+ * A browser this account has vouched for with a code. Presence of a live row is what makes a
+ * sign-in skip the second step.
+ *
+ * The cookie carries an opaque random id and the row stores only `hmac(AUTH_SECRET, id)`, so a
+ * dumped table yields nothing presentable — the same construction delivery keys and invite tokens
+ * use. Trust is per user *and* device, so two accounts on one laptop vouch for it separately.
+ */
+export const trustedDevices = sqliteTable(
+  'trusted_devices',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    deviceHash: text('device_hash').notNull(),
+    /** Best-effort description from the user agent, for the account page. Display only. */
+    label: text('label').notNull(),
+    lastUsedAt: text('last_used_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    /** Epoch seconds. */
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    uniqueIndex('trusted_devices_hash_idx').on(t.deviceHash),
+    index('trusted_devices_user_idx').on(t.userId),
+  ],
+)
+
+/* ------------------------------------------------------------------ *
  * OAuth 2.1 — the MCP authorization server. Clients register themselves, users approve them, and
  * the resulting access tokens act for that user against `/api/v1/mcp`.
  * ------------------------------------------------------------------ */
@@ -868,6 +948,8 @@ export type SiteUserRow = typeof siteUsers.$inferSelect
 export type UserRow = typeof users.$inferSelect
 export type RoleRow = typeof roles.$inferSelect
 export type SessionRow = typeof sessions.$inferSelect
+export type LoginChallengeRow = typeof loginChallenges.$inferSelect
+export type TrustedDeviceRow = typeof trustedDevices.$inferSelect
 export type MemberRow = typeof members.$inferSelect
 export type MemberSiteRow = typeof memberSites.$inferSelect
 export type CollectionRow = typeof collections.$inferSelect

@@ -275,7 +275,12 @@ export const id: Catalog = {
   'apiKeys.colPrefix': 'Awalan',
   'apiKeys.colLastUsed': 'Terakhir dipakai',
   'apiKeys.revoked': 'Kunci dicabut',
+  'apiKeys.revoke': 'Cabut',
   'apiKeys.revokeAria': 'Cabut {name}',
+  'apiKeys.rename': 'Ganti nama',
+  'apiKeys.renameAria': 'Ganti nama {name}',
+  'apiKeys.rotate': 'Putar kunci',
+  'apiKeys.rotateAria': 'Putar kunci {name}',
 
   'users.colSiteAccess': 'Akses situs',
   'users.allSites': 'Semua situs',
@@ -304,7 +309,7 @@ export const id: Catalog = {
 
   'apiKeys.title': 'Kunci API',
   'apiKeys.subtitle':
-    'Kunci yang diterima API pengiriman untuk situs ini. Rahasianya ditampilkan sekali, saat dibuat.',
+    'Kunci yang diterima API pengiriman untuk situs ini. Rahasianya ditampilkan sekali — putar kunci untuk mengganti yang hilang.',
   'apiKeys.new': 'Kunci baru',
   'apiKeys.colName': 'Nama',
   'apiKeys.colScopes': 'Cakupan',

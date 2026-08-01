@@ -79,6 +79,7 @@ migration failed) rather than pretending the file rolled back.
 | --- | --- |
 | Tenancy | `sites`, `site_users` |
 | Operators (Better Auth CMS instance) | `users`, `sessions`, `accounts`, `verifications`, `rate_limits`, `auth_tokens` |
+| Step-up sign-in | `login_challenges`, `trusted_devices` |
 | MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents` |
 | Members (Better Auth member instance) | `members`, `member_sites`, `member_sessions`, `member_accounts`, `member_verifications` |
 | Content | `collections`, `entries`, `entry_revisions`, `entry_versions`, `entry_version_approvals`, `media`, `api_keys` |
@@ -86,6 +87,20 @@ migration failed) rather than pretending the file rolled back.
 
 Row types are exported at the bottom of `schema.ts` (`SiteRow`, `EntryRow`, …) — use those rather
 than re-deriving `$inferSelect` at the call site.
+
+## Step-up sign-in tables
+
+`login_challenges` is written from the sign-in path, which is unauthenticated — but it is bounded by
+construction rather than by a retention job, and both halves of that matter:
+
+- A row is only inserted **after the password has verified**, so an anonymous caller cannot write here
+  at all.
+- `startLoginChallenge` spends the user's existing challenges before inserting, so one user holds at
+  most one row. Ceiling is the user count.
+
+Lapsed rows are swept from the sign-in path (`pruneExpiredChallenges`) rather than the daily cron, so
+the table stays tidy without depending on a job that a fresh deployment may not have run yet. A
+challenge is always deleted together with the session its parked cookies address — see `auth.md`.
 
 ## Analytics rollups
 
