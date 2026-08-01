@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { ANALYTICS_COLLECT_PATH, ANALYTICS_SCRIPT_PATH } from '@hedge/core'
 import { Hono } from 'hono'
 import { secureHeaders } from 'hono/secure-headers'
 import type { AppEnv } from '../env'
@@ -23,6 +24,25 @@ describe('securityHeaders', () => {
   test('keeps every other response same-origin', async () => {
     expect(await corp('/api/v1/content/posts')).toBe('same-origin')
     expect(await corp('/')).toBe('same-origin')
+  })
+
+  // #104: the same silent failure as the media one, on a `<script src>` instead of an `<img>`. Under
+  // `same-origin` the embedding site fetched the beacon, got a 200 of the right type, and discarded
+  // it unexecuted — `window.hedge` undefined, no error anywhere, and every dashboard reading zero.
+  test('lets another origin execute the analytics beacon', async () => {
+    expect(await corp(ANALYTICS_SCRIPT_PATH)).toBe('cross-origin')
+  })
+
+  // The beacon is posted with `sendBeacon` in no-cors mode, so CORP is checked on its 204 too. The
+  // event is already recorded by then — what `same-origin` costs is not data, it is an
+  // `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` in every reader's console on every page.
+  test('lets the beacon read the collector response', async () => {
+    expect(await corp(ANALYTICS_COLLECT_PATH)).toBe('cross-origin')
+  })
+
+  test('does not widen the rest of the collect prefix', async () => {
+    // Exact paths, not a prefix: anything added under here later has to be named to be widened.
+    expect(await corp(`${ANALYTICS_COLLECT_PATH}/anything-else`)).toBe('same-origin')
   })
 
   test('does not widen the media management routes', async () => {

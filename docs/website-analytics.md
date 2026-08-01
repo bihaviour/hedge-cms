@@ -51,6 +51,28 @@ referrer, via `navigator.sendBeacon`. That is all.
 - **Unique visitors are not counted.** Doing so needs per-visitor state, even hashed; Hedge counts
   views, share clicks and referrers instead, and stores nothing per reader.
 
+### If nothing is being recorded
+
+Check it **in a browser on the site itself**, not with `curl`. The failure modes here are all
+cross-origin ones, and `curl` ignores every header that causes them — it will happily print the whole
+script while the browser is refusing to run it.
+
+Open the site and, in the console:
+
+1. `typeof window.hedge` — should be `'function'`. If it is `'undefined'` the script was fetched but
+   not executed, which is a `Cross-Origin-Resource-Policy` refusal on the script response. There is
+   no error for this: the request shows as a successful 200 in the network panel.
+2. Reload with the network panel open and look for `POST /api/v1/collect`. It should be there and
+   return `204`.
+3. If the beacon is blocked by CORS, the body's content type has been changed to something that is
+   not CORS-safelisted — `sendBeacon` always sends credentials, and the endpoint answers a wildcard
+   `Access-Control-Allow-Origin`, which a browser refuses in that combination.
+
+If all three are fine and the dashboard is still empty, the request is arriving and being dropped
+deliberately. The endpoint answers `204` either way, so check in this order: Do Not Track or Global
+Privacy Control enabled in the browser, a user agent that looks automated (headless browsers are
+filtered), `data-site` naming a slug that does not exist, or the per-site hourly rate limit.
+
 ## Counting shares
 
 **No platform reports share counts any more.** X removed its count endpoint, Facebook's needs an app

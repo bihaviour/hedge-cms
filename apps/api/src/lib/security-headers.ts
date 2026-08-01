@@ -1,3 +1,4 @@
+import { ANALYTICS_COLLECT_PATH, ANALYTICS_SCRIPT_PATH } from '@hedge/core'
 import type { MiddlewareHandler } from 'hono'
 import { secureHeaders } from 'hono/secure-headers'
 import type { AppEnv } from '../env'
@@ -26,6 +27,37 @@ const managedHeaders = secureHeaders()
 const publicAssetHeaders = secureHeaders({ crossOriginResourcePolicy: 'cross-origin' })
 
 /**
+ * The three responses a reader's browser fetches in `no-cors` mode from *another* origin, which is
+ * the one mode CORP is checked on:
+ *
+ * - the media passthrough, an `<img>` on the website this CMS serves;
+ * - the analytics beacon script, a `<script src>` on the same website (#104);
+ * - the collector's own `204`, which `sendBeacon` posts in `no-cors` mode (#104).
+ *
+ * The first two fail the same silent way under `same-origin`: the browser makes the request, gets a
+ * 200 of the right content type, and throws the bytes away. No 404, no CSP violation, no console
+ * error, no failed request in the network panel — a blank image, or a beacon that never runs and a
+ * dashboard reading zero. The CORS headers on the delivery API do not help, because a `no-cors`
+ * request never reads them; CORP is a separate gate, applied to the response rather than the request.
+ *
+ * The collector is the odd one and is here for a different reason. CORP is enforced on the
+ * *response*, after the Worker has already recorded the event, so `same-origin` there loses no data
+ * — but it fails the fetch, and a browser reports that as `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` in
+ * the console of every reader on every page of every site running the snippet. It protects nothing
+ * in exchange: the response is an empty `204` carrying no body, no credential and no cookie, so
+ * there is no cross-origin read for CORP to prevent. A permanent console error on a working feature
+ * is worse than the policy is worth.
+ *
+ * All three are matched **exactly** rather than by prefix, so the carve-out cannot creep: a route
+ * added under `/api/v1/collect/` later gets the default, and has to be named here to lose it.
+ */
+const isPublicAsset = (path: string) =>
+  path === MEDIA_PREFIX ||
+  path.startsWith(`${MEDIA_PREFIX}/`) ||
+  path === ANALYTICS_SCRIPT_PATH ||
+  path === ANALYTICS_COLLECT_PATH
+
+/**
  * One middleware, dispatching by path — deliberately, and not two `app.use` registrations.
  *
  * `secureHeaders` writes its headers *after* `await next()`, on the way back out, so with two
@@ -34,8 +66,5 @@ const publicAssetHeaders = secureHeaders({ crossOriginResourcePolicy: 'cross-ori
  * the route handler. Whatever policy a path gets, it has to be chosen before the request goes
  * down, by the single instance that will write on the way back up.
  */
-export const securityHeaders: MiddlewareHandler<AppEnv> = (c, next) => {
-  const path = c.req.path
-  const isMedia = path === MEDIA_PREFIX || path.startsWith(`${MEDIA_PREFIX}/`)
-  return isMedia ? publicAssetHeaders(c, next) : managedHeaders(c, next)
-}
+export const securityHeaders: MiddlewareHandler<AppEnv> = (c, next) =>
+  isPublicAsset(c.req.path) ? publicAssetHeaders(c, next) : managedHeaders(c, next)

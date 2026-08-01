@@ -111,8 +111,10 @@ app.use('*', async (c, next) => {
   await next()
 })
 app.use('*', logger())
-// Path-aware, because the media passthrough needs a different cross-origin resource policy from
-// everything else here, and only one instance of `secureHeaders` can decide it. See the module.
+// Path-aware, because the responses a reader's browser fetches cross-origin in `no-cors` mode — the
+// media passthrough, the analytics beacon script and the collector it posts to — need a different
+// cross-origin resource policy from everything else here, and only one instance of `secureHeaders`
+// can decide it. See the module.
 app.use('*', securityHeaders)
 
 // The admin SPA is same-origin, so CORS only needs to open up what a website calls: the

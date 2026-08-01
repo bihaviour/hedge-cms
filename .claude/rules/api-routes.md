@@ -139,16 +139,35 @@ second one scoped to a narrower path, or a header set in the route handler, is s
 by the global mount. A path that needs a different policy has to be chosen inside the single
 instance that will do the writing.
 
-The one path that does is the public media passthrough (`/media/*`, not `/api/v1/media`), which
-gets `Cross-Origin-Resource-Policy: cross-origin`. A website embeds these objects in an `<img>`,
-which is a `no-cors` request — the one kind CORP is checked on, so the CORS headers on the delivery
-API do nothing for it. Under the default `same-origin` the browser fetches the image, gets a 200 of
-the right content type, and discards it: no 404, no CSP violation, no console error, just a blank
-image. There is nothing to notice, which is why `security-headers.test.ts` pins it, and why a
-verification that checks the markup and the CSP can pass while every image on the site is broken.
+**Three paths get `Cross-Origin-Resource-Policy: cross-origin`**, and they are exactly the responses
+a reader's browser fetches in `no-cors` mode from *another* origin — the one mode CORP is checked on,
+which is also why the CORS headers on the delivery API do nothing for any of them:
 
-Purging the CDN is part of shipping a change here: media is served `max-age=31536000, immutable`,
-so a bad response outlives the deploy in Cloudflare's cache and in every visitor's browser.
+| Path | Fetched by |
+| --- | --- |
+| `/media/*` (the passthrough, not `/api/v1/media`) | an `<img>` on the website |
+| `GET /api/v1/collect/script.js` | a `<script src>` on the website |
+| `POST /api/v1/collect` | `navigator.sendBeacon` from that script |
+
+**The failure mode is the point: under `same-origin` none of these report an error you would find.**
+The browser makes the request, gets a 200 of the right content type, and discards the bytes — no 404,
+no CSP violation, no failed request in the network panel. A blank image, or a tracker script that
+downloads and never executes. `curl` ignores CORP entirely and a CORS `fetch()` is not subject to it,
+so **every check short of a real browser passes while the feature is dead** — that is how #104 shipped
+and reported zero traffic on every site for a release. `security-headers.test.ts` pins all three.
+
+The collector's `204` is on that list for a slightly different reason, worth knowing before someone
+trims it: CORP is enforced on the *response*, after the Worker has recorded the event, so
+`same-origin` there loses no data. What it costs is an `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` in
+every reader's console on every page, in exchange for protecting an empty body that carries no
+credential and no cookie.
+
+The carve-out is matched by **exact path** (except `/media/*`), so it cannot creep: a route added
+under `/api/v1/collect/` later gets the default and has to be named to lose it.
+
+Purging the CDN is part of shipping a change here: media is served `max-age=31536000, immutable` and
+the tracker script `s-maxage=86400`, so a bad response outlives the deploy in Cloudflare's cache and
+in every visitor's browser.
 
 ## Caching
 
