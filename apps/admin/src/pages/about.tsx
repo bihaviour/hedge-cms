@@ -1,7 +1,8 @@
 import { HEDGE_REPO, HEDGE_VERSION } from '@hedge/core'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,7 @@ import { UpdateDialog } from '@/components/update-dialog'
 import { useSession } from '@/hooks/use-session'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 
 const UPSTREAM_URL = `https://github.com/${HEDGE_REPO}`
 
@@ -38,12 +40,33 @@ export function AboutPage() {
   const canUpdate = permissions.includes('system:update')
 
   const [updateOpen, setUpdateOpen] = useState(false)
+  const queryClient = useQueryClient()
 
   const version = useQuery({
     queryKey: ['system-version'],
-    queryFn: api.system.version,
+    // Wrapped rather than passed by reference: TanStack calls `queryFn` with a context object, which
+    // would arrive as `refresh` and make every ordinary load a forced GitHub check.
+    queryFn: () => api.system.version(),
     enabled: isAdmin,
     staleTime: 1000 * 60 * 60,
+  })
+
+  /**
+   * "Check again" — the server answer is edge-cached for six hours, so a plain refetch would hand
+   * back the same stale result. This asks the server to skip that cache, which is what an operator
+   * who has just published a release needs and is rate limited on the other side.
+   */
+  const recheck = useMutation({
+    mutationFn: () => api.system.version(true),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(['system-version'], fresh)
+      toast.success(
+        fresh.updateAvailable
+          ? `Hedge ${fresh.latest} is available.`
+          : "You're on the latest release.",
+      )
+    },
+    onError: (error) => toast.error(error.message),
   })
 
   const data = version.data
@@ -83,18 +106,41 @@ export function AboutPage() {
               )}
 
               {version.isError && (
-                <p className="text-muted-foreground text-sm">
-                  Couldn't reach GitHub to check for a newer release. This doesn't affect the
-                  running deployment — try again later.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-muted-foreground text-sm">
+                    Couldn't reach GitHub to check for a newer release. This doesn't affect the
+                    running deployment.
+                  </p>
+                  {/* A failed check is cached too, so "try again later" used to mean six hours. */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={recheck.isPending}
+                    onClick={() => recheck.mutate()}
+                  >
+                    <RefreshCw className={cn('size-4', recheck.isPending && 'animate-spin')} />
+                    Try again
+                  </Button>
+                </div>
               )}
 
               {data && !data.updateAvailable && (
-                <p className="flex items-center gap-2 text-sm">
+                <p className="flex flex-wrap items-center gap-2 text-sm">
                   <CheckCircle2 className="size-4 text-emerald-600" />
                   {data.latest
                     ? "You're on the latest release."
                     : 'No published releases upstream yet.'}
+                  {/* The answer above is cached for six hours, so somebody who has just published a
+                      release would otherwise be told they are current and have no way to disagree. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={recheck.isPending}
+                    onClick={() => recheck.mutate()}
+                  >
+                    <RefreshCw className={cn('size-4', recheck.isPending && 'animate-spin')} />
+                    {recheck.isPending ? 'Checking…' : 'Check again'}
+                  </Button>
                 </p>
               )}
 

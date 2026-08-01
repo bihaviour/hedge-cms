@@ -559,7 +559,13 @@ export const api = {
 
   /** Deployment-level version and update awareness. Admin-only on the server. */
   system: {
-    version: () => request<SystemVersion>('/system/version'),
+    /**
+     * The running version against the latest upstream release. The server answer is edge-cached for
+     * six hours, so `refresh` is what an operator who has just published one needs — it skips that
+     * cache (and is rate limited server-side, since the budget it spends is GitHub's).
+     */
+    version: (refresh = false) =>
+      request<SystemVersion>(`/system/version${refresh ? '?refresh=1' : ''}`),
     /**
      * Move the deployment to a newer release. Owner-only on the server. The Cloudflare token is sent
      * once and never stored anywhere — not here, not on the server. The result carries a per-step

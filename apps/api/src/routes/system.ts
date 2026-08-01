@@ -34,13 +34,18 @@ interface GithubRelease {
  * the budget in minutes. Even a `null` (a failed or rate-limited fetch) is cached, so one bad
  * moment doesn't turn every subsequent admin request into another doomed call to GitHub.
  */
-async function latestRelease(): Promise<GithubRelease | null> {
+async function latestRelease(force = false): Promise<GithubRelease | null> {
   // Feature-detected: the Cache API only exists in the Workers runtime. Absent it (a test, say) the
   // check simply always hits the network, which is correct, just uncached.
   const cache = typeof caches !== 'undefined' ? caches.default : null
   const cacheKey = new Request(`https://hedge.internal/gh/${HEDGE_REPO}/latest-release`)
 
-  const hit = await cache?.match(cacheKey)
+  // `force` skips reading the cache but still writes to it, so an operator who has just published a
+  // release does not have to wait out `CHECK_TTL_SECONDS` to see it — and everyone after them gets
+  // the fresh answer. It is rate limited at the route: the cache exists because GitHub's limit is
+  // per egress IP and shared across the colo, so a refresh anyone could hold down would spend a
+  // budget that is not this deployment's alone.
+  const hit = force ? undefined : await cache?.match(cacheKey)
   if (hit) return (await hit.json()) as GithubRelease | null
 
   let release: GithubRelease | null = null
@@ -80,7 +85,15 @@ async function latestRelease(): Promise<GithubRelease | null> {
  * concern rather than a per-site one — the same reason it lives under `/api/v1/system`.
  */
 app.get('/version', requirePermission('system:read'), async (c) => {
-  const release = await latestRelease()
+  // `?refresh=1` is the "check again" button on the About page. Without it there is no way to learn
+  // about a release published inside the TTL except to wait it out, which is exactly the moment an
+  // operator most wants an answer — they have usually just cut the release themselves.
+  const force = c.req.query('refresh') === '1'
+  // Tighter than most limits here, and deliberately so: this is the one path that can reach GitHub
+  // on demand, and the budget it spends is shared with every other Worker on the colo.
+  if (force) await throttle(c, 'system-version-refresh', { window: 15 * 60, max: 5 })
+
+  const release = await latestRelease(force)
   const latest = release?.tag_name ?? null
 
   const payload: SystemVersion = {
