@@ -1,4 +1,9 @@
-import { MAX_UPLOAD_BYTES, type Media, type MediaTypeFilter } from '@hedge/core'
+import {
+  ALLOWED_UPLOAD_TYPES,
+  MAX_UPLOAD_BYTES,
+  type Media,
+  type MediaTypeFilter,
+} from '@hedge/core'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Copy, Link2, MoreVertical, Pencil, Search, Trash2, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -32,6 +37,8 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { UploadQueue } from '@/components/upload-queue'
+import { useMediaUploads } from '@/hooks/use-media-uploads'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
@@ -47,6 +54,7 @@ export function MediaPage() {
   const [type, setType] = useState<MediaTypeFilter | 'all'>('all')
   const [editing, setEditing] = useState<Media | null>(null)
   const [confirming, setConfirming] = useState<Media | null>(null)
+  const [dragDepth, setDragDepth] = useState(0)
 
   const media = useInfiniteQuery({
     queryKey: ['media', siteSlug, search, type],
@@ -62,13 +70,23 @@ export function MediaPage() {
     enabled: Boolean(siteSlug),
   })
 
-  const upload = useMutation({
-    mutationFn: (file: File) => api.media.upload(file),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media'] })
-      toast.success(t('media.uploaded'))
+  // Uploading is a queue rather than a mutation: several files at once, each with its own
+  // progress and its own outcome. The listing is refreshed per file, so the grid fills in as they
+  // land instead of all at once at the end.
+  const uploads = useMediaUploads({
+    onUploaded: () => queryClient.invalidateQueries({ queryKey: ['media'] }),
+    onSettled: ({ uploaded, failed }) => {
+      if (failed === 0) {
+        toast.success(
+          uploaded === 1 ? t('media.uploaded') : t('upload.doneMany', { count: uploaded }),
+        )
+        // Nothing to look at, so the panel gets out of the way. Failures stay on screen.
+        uploads.clear()
+        return
+      }
+      if (uploaded === 0) toast.error(t('upload.allFailed'))
+      else toast.warning(t('upload.someFailed', { count: uploaded, total: uploaded + failed }))
     },
-    onError: (error) => toast.error(error.message),
   })
 
   const remove = useMutation({
@@ -90,7 +108,7 @@ export function MediaPage() {
         title={t('media.title')}
         description={t('media.subtitle', { size: formatBytes(MAX_UPLOAD_BYTES) })}
         actions={
-          <Button onClick={() => fileInput.current?.click()} disabled={upload.isPending}>
+          <Button onClick={() => fileInput.current?.click()}>
             <Upload className="size-4" />
             {t('media.upload')}
           </Button>
@@ -101,14 +119,51 @@ export function MediaPage() {
         ref={fileInput}
         type="file"
         className="hidden"
+        multiple
+        // The deployment's own list, so the file dialog offers what the API will actually take.
+        accept={ALLOWED_UPLOAD_TYPES.join(',')}
         onChange={(event) => {
-          const file = event.target.files?.[0]
-          if (file) upload.mutate(file)
+          uploads.add(event.target.files)
           event.target.value = ''
         }}
       />
 
-      <div className="space-y-6 p-8">
+      {/** biome-ignore lint/a11y/noStaticElementInteractions: a drop target, with the Upload button as its keyboard equivalent */}
+      <div
+        className="relative space-y-6 p-8"
+        onDragOver={(event) => {
+          // Only a drag carrying files — dragging a selection of text over the page is not an
+          // upload, and claiming it is leaves the overlay stuck open.
+          if (!event.dataTransfer.types.includes('Files')) return
+          event.preventDefault()
+          setDragDepth((depth) => (depth === 0 ? 1 : depth))
+        }}
+        onDragEnter={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return
+          // Counted rather than a boolean: dragging across a child fires `dragleave` on the parent,
+          // so a boolean flickers the overlay off over every grid tile.
+          setDragDepth((depth) => depth + 1)
+        }}
+        onDragLeave={() => setDragDepth((depth) => Math.max(0, depth - 1))}
+        onDrop={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return
+          event.preventDefault()
+          setDragDepth(0)
+          uploads.add(event.dataTransfer.files)
+        }}
+      >
+        {dragDepth > 0 && (
+          // Dimming the grid rather than tinting it: the label has to be readable, and at 5%
+          // opacity it landed on top of a thumbnail and could not be read at all.
+          <div className="pointer-events-none absolute inset-4 z-10 flex items-center justify-center rounded-xl border-2 border-primary border-dashed bg-background/80">
+            <p className="rounded-full border bg-background px-4 py-2 font-medium text-sm shadow-sm">
+              {t('media.dropHere')}
+            </p>
+          </div>
+        )}
+
+        <UploadQueue uploads={uploads} />
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-56 flex-1">
             <Search className="-translate-y-1/2 absolute top-1/2 left-3 size-4 text-muted-foreground" />

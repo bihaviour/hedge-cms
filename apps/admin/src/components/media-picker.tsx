@@ -1,4 +1,4 @@
-import { MAX_UPLOAD_BYTES, type Media, matchesAccept } from '@hedge/core'
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, type Media, matchesAccept } from '@hedge/core'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, ImageOff, Loader2, Search, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -15,6 +15,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { UploadQueue } from '@/components/upload-queue'
+import { useMediaUploads } from '@/hooks/use-media-uploads'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
@@ -65,15 +67,24 @@ export function MediaPicker({
     enabled: open && Boolean(siteSlug),
   })
 
-  const upload = useMutation({
-    mutationFn: (file: File) => api.media.upload(file),
-    onSuccess: (item) => {
+  // The same queue the media library uses, so dropping several files here behaves the way it does
+  // there: one row per file, each with its own progress and its own outcome. `accept` is the
+  // field's, so a file this field cannot take is refused before it is sent rather than uploaded
+  // into the library and then filtered out of the grid it was uploaded for.
+  const uploads = useMediaUploads({
+    accept,
+    onUploaded: (item) => {
       queryClient.invalidateQueries({ queryKey: ['media'] })
-      // Uploading is a way of choosing, so the new file is already picked when it lands.
+      // Uploading is a way of choosing, so a file is already picked when it lands.
       setSelected((current) => (multiple ? [...current, item] : [item]))
-      toast.success(t('media.uploaded'))
     },
-    onError: (error) => toast.error(error.message),
+    onSettled: ({ uploaded, failed }) => {
+      if (failed > 0) return // The rows say which, and offer a retry — a toast would say less.
+      toast.success(
+        uploaded === 1 ? t('media.uploaded') : t('upload.doneMany', { count: uploaded }),
+      )
+      uploads.clear()
+    },
   })
 
   /** Alt text written at pick time is saved before the caller is handed the selection. */
@@ -98,6 +109,9 @@ export function MediaPicker({
     setSelected([])
     setAltDrafts({})
     setSearch('')
+    // Settled rows are about the batch just uploaded; the next time this dialog opens they are
+    // history. Anything still in flight keeps its row and finishes into the library regardless.
+    uploads.clear()
     onOpenChange(false)
   }
 
@@ -110,14 +124,10 @@ export function MediaPicker({
   }
 
   function uploadFiles(files: FileList | null) {
-    for (const file of Array.from(files ?? [])) {
-      if (!matchesAccept(file.type, accept, file.name)) {
-        toast.error(t('picker.rejectedType', { filename: file.name }))
-        continue
-      }
-      upload.mutate(file)
-      if (!multiple) break
-    }
+    // A single-value field takes the first file only: the rest would be uploaded into the library
+    // on the way to being discarded, which is not what dropping them onto this dialog asked for.
+    const chosen = Array.from(files ?? [])
+    uploads.add(multiple ? chosen : chosen.slice(0, 1))
   }
 
   // Filtering the grid client-side keeps `accept` honest without teaching the API every
@@ -129,7 +139,11 @@ export function MediaPicker({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="max-h-[85vh] gap-4 overflow-hidden sm:max-w-3xl">
+      {/* A column rather than the dialog's default grid: the grid sizes every row to its content,
+          so a full library — and now an upload queue under it — pushed the footer past the bottom
+          of a clipped dialog and the Select button could not be reached at all. As a column, the
+          library is the one part that gives, and the footer stays where it is. */}
+      <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t('picker.chooseMedia')}</DialogTitle>
           <DialogDescription>
@@ -147,13 +161,8 @@ export function MediaPicker({
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => fileInput.current?.click()}
-            disabled={upload.isPending}
-          >
-            {upload.isPending ? (
+          <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}>
+            {uploads.busy ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Upload className="size-4" />
@@ -167,7 +176,9 @@ export function MediaPicker({
           type="file"
           className="hidden"
           multiple={multiple}
-          accept={accept.join(',') || undefined}
+          // The field's list when it has one, and the deployment's when it does not, so the file
+          // dialog never offers something the upload would then refuse.
+          accept={accept.join(',') || ALLOWED_UPLOAD_TYPES.join(',')}
           onChange={(event) => {
             uploadFiles(event.target.files)
             event.target.value = ''
@@ -272,6 +283,8 @@ export function MediaPicker({
             </>
           )}
         </div>
+
+        <UploadQueue uploads={uploads} />
 
         {/* The moment someone picks an image for a specific place is the only moment they will
             ever write good alt text, so it is asked for here rather than left to the library. */}

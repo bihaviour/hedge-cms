@@ -46,6 +46,24 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
   the other degrades silently to English and can sit unnoticed for a release, which is why it is a
   test rather than a habit.
 
+## Uploading media
+
+Several files at once, from two places — the media library and the picker — and both drive the
+same queue (`lib/uploads.ts`, bound to React by `hooks/use-media-uploads.ts`, rendered by
+`components/upload-queue.tsx`). Three things about it are load-bearing:
+
+- **One file per request.** `POST /api/v1/media` takes one file and is unchanged; many files is
+  many calls, at `UPLOAD_CONCURRENCY`. A single multipart body would upload as one thing — one
+  progress number, and one refused file taking the batch with it — and the route streams each body
+  straight into R2, so it cannot half-succeed usefully.
+- **`api.media.upload` is the one call that uses `XMLHttpRequest`.** `fetch` reports nothing about
+  a request body going out, and per-file progress is most of the point. It mirrors `send`'s
+  unknown-site recovery by hand; if that recovery changes, change both.
+- **A file refused in the browser counts as a failure of the batch it arrived with.**
+  `uploadRejection` answers with the same inputs the route uses, so the two agree; leaving those
+  files out of the tally reported a batch as clean and let the caller clear the row saying why a
+  file is missing. `uploads.test.ts` pins it.
+
 ## Local development
 
 `bun run dev:admin` serves :5173 and proxies `/api` and `/media` to the Worker on :8787, so the SPA

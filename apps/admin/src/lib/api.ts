@@ -135,6 +135,77 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (payload as { data: T }).data
 }
 
+/**
+ * A multipart upload, with byte progress — the one call in this client that is not `fetch`.
+ *
+ * `fetch` can report a *response* arriving and nothing at all about a request body going out: a
+ * streamed body needs `duplex: 'half'`, is HTTP/2-only, and still exposes no callback. A progress
+ * bar per file is most of the value of picking ten files at once, so this path is `XMLHttpRequest`
+ * — which has had upload progress since before `fetch` existed. Same-origin cookies ride along by
+ * default, so the session is attached exactly as `send` attaches it.
+ *
+ * It mirrors `send`'s unknown-site recovery for the reason described there, which a batch upload
+ * only sharpens: a slug that outlived its site would fail every file in the queue.
+ */
+async function upload<T>(
+  path: string,
+  form: FormData,
+  onProgress?: (fraction: number) => void,
+): Promise<T> {
+  const call = () =>
+    new Promise<{ status: number; statusText: string; payload: unknown }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${BASE}${path}`)
+      for (const [key, value] of Object.entries(siteHeaders())) xhr.setRequestHeader(key, value)
+
+      // `lengthComputable` is false for the last event of some transfers; ignoring those keeps the
+      // bar from jumping back to zero on the way to `done`.
+      if (onProgress) {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total)
+        }
+      }
+
+      xhr.onload = () => {
+        let payload: unknown = null
+        try {
+          payload = JSON.parse(xhr.responseText)
+        } catch {
+          payload = null
+        }
+        resolve({ status: xhr.status, statusText: xhr.statusText, payload })
+      }
+      // A dropped connection and an aborted request are both "this file did not upload", which is
+      // what the queue renders; neither carries an API error body to read a code out of.
+      xhr.onerror = () => reject(new ApiClientError(0, 'network_error', 'Upload failed'))
+      xhr.ontimeout = () => reject(new ApiClientError(0, 'network_error', 'Upload timed out'))
+      xhr.onabort = () => reject(new ApiClientError(0, 'aborted', 'Upload cancelled'))
+
+      xhr.send(form)
+    })
+
+  let result = await call()
+  if (result.status === 404 && getActiveSite()) {
+    const body = result.payload as ApiErrorBody | null
+    if (body?.error.code === 'unknown_site') {
+      setActiveSite(null)
+      result = await call()
+    }
+  }
+
+  if (result.status < 200 || result.status >= 300) {
+    const body = result.payload as ApiErrorBody | null
+    throw new ApiClientError(
+      result.status,
+      body?.error.code ?? 'internal_error',
+      body?.error.message ?? result.statusText,
+      body?.error.details,
+    )
+  }
+
+  return (result.payload as { data: T }).data
+}
+
 function errorFrom(response: Response, payload: unknown): ApiClientError {
   const body = payload as ApiErrorBody | null
   return new ApiClientError(
@@ -422,11 +493,18 @@ export const api = {
       )
       return requestPage<Media>(`/media?${params}`)
     },
-    upload: (file: File, alt?: string) => {
+    /**
+     * One file per request, on purpose. Several files in one multipart body would upload as one
+     * thing: a single progress number, and one failure — a type the deployment refuses, a file
+     * over the cap — taking down the whole batch, since the route streams each body straight into
+     * R2 and cannot half-succeed usefully. Uploading many is therefore many calls, run as a
+     * bounded queue by `useMediaUploads`, so each file has its own progress and its own outcome.
+     */
+    upload: (file: File, alt?: string, onProgress?: (fraction: number) => void) => {
       const form = new FormData()
       form.set('file', file)
       if (alt) form.set('alt', alt)
-      return request<Media>('/media', { method: 'POST', body: form })
+      return upload<Media>('/media', form, onProgress)
     },
     update: (id: string, input: { alt?: string | null; filename?: string }) =>
       request<Media>(`/media/${id}`, { method: 'PATCH', ...json(input) }),
