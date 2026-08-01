@@ -131,6 +131,25 @@ handler, so the limiter attached to that handler doesn't apply. Counters live in
 purpose — an isolate is short-lived and there are many, so an in-memory count is a budget an
 attacker resets by being routed elsewhere.
 
+## Security headers (`lib/security-headers.ts`)
+
+`secureHeaders` is mounted **once**, through a path-aware wrapper, and that is not a style choice.
+It writes its headers after `await next()`, on the way back out, so the outermost instance wins: a
+second one scoped to a narrower path, or a header set in the route handler, is silently overwritten
+by the global mount. A path that needs a different policy has to be chosen inside the single
+instance that will do the writing.
+
+The one path that does is the public media passthrough (`/media/*`, not `/api/v1/media`), which
+gets `Cross-Origin-Resource-Policy: cross-origin`. A website embeds these objects in an `<img>`,
+which is a `no-cors` request — the one kind CORP is checked on, so the CORS headers on the delivery
+API do nothing for it. Under the default `same-origin` the browser fetches the image, gets a 200 of
+the right content type, and discards it: no 404, no CSP violation, no console error, just a blank
+image. There is nothing to notice, which is why `security-headers.test.ts` pins it, and why a
+verification that checks the markup and the CSP can pass while every image on the site is broken.
+
+Purging the CDN is part of shipping a change here: media is served `max-age=31536000, immutable`,
+so a bad response outlives the deploy in Cloudflare's cache and in every visitor's browser.
+
 ## Caching
 
 `routes/content.ts` sets a long `s-maxage` so Cloudflare's cache absorbs public delivery traffic.
