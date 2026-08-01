@@ -1,3 +1,4 @@
+import { TRUSTED_DEVICE_TTL_DAYS } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -6,7 +7,15 @@ import { PageHeader } from '@/components/page-header'
 import { PasswordInput } from '@/components/password-input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Select,
   SelectContent,
@@ -26,11 +35,11 @@ import { api } from '@/lib/api'
 import { UI_LANGUAGES, useFormatters, useLanguageSetting, useT } from '@/lib/i18n'
 
 /**
- * Your own account: display language, password, and the two security levers that are yours alone —
- * the browser sessions signed in as you and the MCP clients allowed to act as you. All of it is
- * per-user data, so it lives here rather than behind a deployment-admin gate: an editor who lost a
- * laptop still needs to end that session and revoke a client, and the account menu is the one door
- * every operator has.
+ * Your own account: display language, password, and the security levers that are yours alone — the
+ * browser sessions signed in as you, the browsers trusted to skip the sign-in code, and the MCP
+ * clients allowed to act as you. All of it is per-user data, so it lives here rather than behind a
+ * deployment-admin gate: an editor who lost a laptop still needs to end that session, forget that
+ * device and revoke a client, and the account menu is the one door every operator has.
  */
 export function AccountPage() {
   const t = useT()
@@ -41,6 +50,7 @@ export function AccountPage() {
         <LanguagePreference />
         <ChangePassword />
         <Sessions />
+        <TrustedDevices />
         <AuthorizedClients />
       </div>
     </>
@@ -76,7 +86,40 @@ function LanguagePreference() {
   )
 }
 
+/**
+ * The password card. The form itself is behind a dialog rather than sitting open on the page: it is
+ * a deliberate, occasional action, and an always-open pair of password fields on a settings page is
+ * something browsers offer to autofill on every visit.
+ */
 function ChangePassword() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Password</CardTitle>
+        <CardDescription>
+          Changing it signs out everywhere else and forgets every trusted browser — if the old one
+          leaked, this is what ends it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button variant="outline" onClick={() => setOpen(true)}>
+          Change password
+        </Button>
+      </CardContent>
+      <ChangePasswordDialog open={open} onOpenChange={setOpen} />
+    </Card>
+  )
+}
+
+function ChangePasswordDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
 
@@ -86,26 +129,39 @@ function ChangePassword() {
       toast.success('Password changed. Every other session has been signed out.')
       setCurrentPassword('')
       setNewPassword('')
+      onOpenChange(false)
     },
   })
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Password</CardTitle>
-        <CardDescription>
-          Changing it signs out everywhere else — if the old one leaked, this is what ends it.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Never leave a typed password sitting in state behind a closed dialog.
+        if (!next) {
+          setCurrentPassword('')
+          setNewPassword('')
+          change.reset()
+        }
+        onOpenChange(next)
+      }}
+    >
+      <DialogContent>
         <form
-          className="max-w-sm"
           onSubmit={(event) => {
             event.preventDefault()
             change.mutate({ currentPassword, newPassword })
           }}
         >
-          <FieldGroup>
+          <DialogHeader>
+            <DialogTitle>Change password</DialogTitle>
+            <DialogDescription>
+              You stay signed in here. Every other session ends, and every browser you had trusted
+              has to be verified by email again.
+            </DialogDescription>
+          </DialogHeader>
+
+          <FieldGroup className="py-4">
             <Field>
               <FieldLabel htmlFor="current-password">Current password</FieldLabel>
               <PasswordInput
@@ -126,17 +182,95 @@ function ChangePassword() {
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
               />
+              <FieldDescription>At least 12 characters.</FieldDescription>
             </Field>
 
             <FormError error={change.error} />
-
-            <Field>
-              <Button type="submit" disabled={change.isPending}>
-                Change password
-              </Button>
-            </Field>
           </FieldGroup>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={change.isPending}>
+              Change password
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Browsers that skip the emailed sign-in code. Separate from "Active sessions" because they answer
+ * different questions: a session is somewhere you are signed in *now*, a trusted device is somewhere
+ * that will not be challenged *next time*. Ending one does not do the other.
+ */
+function TrustedDevices() {
+  const { formatDateTime } = useFormatters()
+  const queryClient = useQueryClient()
+  const devices = useQuery({ queryKey: ['trusted-devices'], queryFn: api.auth.devices })
+
+  const revoke = useMutation({
+    mutationFn: api.auth.revokeDevice,
+    onSuccess: () => {
+      toast.success('Device forgotten. The next sign-in from it needs a code.')
+      queryClient.invalidateQueries({ queryKey: ['trusted-devices'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Trusted browsers</CardTitle>
+        <CardDescription>
+          These skip the emailed code at sign-in for {TRUSTED_DEVICE_TTL_DAYS} days. Forget any you
+          do not recognise.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {devices.data?.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No browser is trusted — every sign-in is verified by email.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Browser</TableHead>
+                <TableHead>Last used</TableHead>
+                <TableHead>Trusted until</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {devices.data?.map((device) => (
+                <TableRow key={device.id}>
+                  <TableCell>
+                    {device.label}
+                    {device.current && (
+                      <span className="ml-2 text-muted-foreground text-xs">this browser</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{formatDateTime(device.lastUsedAt)}</TableCell>
+                  <TableCell>{formatDateTime(device.expiresAt)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={revoke.isPending}
+                      onClick={() => revoke.mutate(device.id)}
+                    >
+                      Forget
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   )

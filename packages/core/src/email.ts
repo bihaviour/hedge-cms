@@ -8,6 +8,7 @@ import { z } from 'zod'
 export const EMAIL_TEMPLATE_KEYS = [
   'invite',
   'password_reset',
+  'login_code',
   'member_invite',
   'member_reset',
   'member_verify',
@@ -31,6 +32,10 @@ export const EMAIL_TEMPLATE_EXTRA_VARIABLES: Partial<Record<EmailTemplateKey, re
     version_submitted: ['title', 'comment'],
     version_approved: ['title', 'comment'],
     version_changes_requested: ['title', 'comment'],
+    // `code` is the whole point of the message and `device` is what lets someone who did not sign in
+    // recognise that. An override that drops `{{code}}` sends an unusable email, so the editor has
+    // to show it.
+    login_code: ['code', 'device'],
   }
 
 /** Every variable one template has to work with, in the order the editor should list them. */
@@ -50,7 +55,6 @@ export interface EmailTemplateContent {
 interface EmailTemplateDefinition extends EmailTemplateContent {
   label: string
   description: string
-  ctaLabel: string
 }
 
 /**
@@ -74,6 +78,18 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefi
     heading: 'Reset your password',
     body: '<p style="margin:0">We received a request to reset the password for {{to}}. This link expires in 1 hour. If you didn\'t ask for this, you can ignore this email.</p>',
     ctaLabel: 'Reset password',
+  },
+  // The one template whose payload is the code itself rather than a link, so it carries no CTA:
+  // a button here would invite someone to click through from the email on a *different* device to
+  // the one waiting for the code, which is the opposite of what the check is for.
+  login_code: {
+    label: 'Sign-in verification code',
+    description:
+      'Sent when someone signs in from a browser this account has not been seen on before.',
+    subject: 'Your {{appName}} sign-in code is {{code}}',
+    heading: 'Your sign-in code',
+    body: '<p style="margin:0">Someone signed in to {{appName}} as {{to}} from a device we don\'t recognise. Enter this code to finish:</p><p style="margin:20px 0;font-size:30px;font-weight:600;letter-spacing:.18em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{code}}</p><p style="margin:0">It expires in 10 minutes. <strong>If this wasn\'t you, someone knows your password</strong> — change it now, and it was attempted from {{device}}.</p>',
+    ctaLabel: null,
   },
   member_invite: {
     label: 'Member invite',

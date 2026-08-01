@@ -23,6 +23,7 @@ server. **Authorization is ours** and nothing in `auth/` reads `users.role` or `
 | Credential | Presented as | Resolved by | Reaches |
 | --- | --- | --- | --- |
 | Admin session | signed cookie | `resolveSessionActor` | management API |
+| Trusted-device cookie | `hedge_device` cookie | `isTrustedDevice` | nothing — it only *skips a step* |
 | Delivery API key (`content:read` only) | `Authorization: Bearer hdg_…` | `resolveDeliveryActor` | `/api/v1/content/*` only |
 | Authoring API key (any `:write` scope) | `Authorization: Bearer hdg_…` | `resolveSessionOrKeyActor` | the above, plus `/collections/*` and `/media/*` |
 | Member token | `X-Member-Token` | `resolveMember` | gated delivery content; never the admin API |
@@ -50,6 +51,40 @@ already-authenticated delivery request may see rather than authenticating one. M
 
 `Actor.kind` is *who* is acting; `Actor.via` is what they presented. Both matter — `requireUserActor`
 rejects keys and delegated clients even when the role would allow the action.
+
+## Step-up verification on an unrecognised device (`lib/login-verification.ts`)
+
+A correct password from a browser the account has never been seen on does not produce a session. It
+produces a six-digit code mailed to the address on the account, and only that finishes the sign-in.
+This is the one check aimed at a password that has already leaked — everything else in this file
+protects the credential rather than noticing a valid one arriving from somewhere new.
+
+Four things about it are load-bearing:
+
+- **The device is what is remembered, not the IP address.** A phone changes address several times a
+  day, so an IP-sensitive check would mail codes that often and train people to click through them.
+  `trusted_devices` holds `hmac(AUTH_SECRET, deviceId)` against a user, the cookie holds the opaque
+  id, and trust slides forward on each use up to `TRUSTED_DEVICE_TTL_DAYS`. Don't add an IP term.
+- **The session is created before the code and parked, not after it.** Better Auth owns identity, so
+  the second step cannot mint a session it has no password for — re-deriving one here would mean
+  forging Better Auth's own cookie. So `/sign-in/email` runs at step one and its `Set-Cookie` values
+  sit in `login_challenges.sessionCookies` until the code comes back. That is a live credential in
+  D1 for a few minutes, which is the same class of secret `sessions.token` already is (Better Auth
+  stores those unhashed), so it widens no boundary — **provided every failure path deletes the row
+  and the session it stranded**. `discardChallenge` is what keeps that true; don't add an exit that
+  skips it.
+- **Every way of failing spends the challenge.** Wrong code past `LOGIN_CODE_MAX_ATTEMPTS`, expiry,
+  and a second sign-in attempt all destroy it rather than refusing the attempt, so there is no state
+  to sit on. "No such challenge", "expired" and "wrong code" are deliberately one message: telling
+  them apart would confirm that a given password was good.
+- **A password change forgets every device**, and so do a reset and "sign out everywhere". Ending
+  the sessions while keeping the trust would leave an attacker's browser able to sign in with a
+  password they later learn and never see a code. The reset path resolves its user through Better
+  Auth's `verifications` row, which is internal shape rather than contract — it is best-effort by
+  construction, and a failure there must stay "device not forgotten", never "reset failed".
+
+`login_code` is the first email template with no CTA: a button inviting someone to click through
+from the email would land them on a *different* device from the one waiting for the code.
 
 ## Fixed policy — don't relax without a reason in the commit message
 

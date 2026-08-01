@@ -1,7 +1,7 @@
-import { API_KEY_SCOPE_LABELS, API_KEY_SCOPES, type ApiKeyScope } from '@hedge/core'
+import { API_KEY_SCOPE_LABELS, API_KEY_SCOPES, type ApiKey, type ApiKeyScope } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, KeyRound, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { Copy, KeyRound, Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +35,8 @@ export function ApiKeysPage() {
   const { formatDate } = useFormatters()
   const [open, setOpen] = useState(false)
   const [issued, setIssued] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<ApiKey | null>(null)
+  const [rotating, setRotating] = useState<ApiKey | null>(null)
   const queryClient = useQueryClient()
 
   const siteSlug = useActiveSiteSlug()
@@ -134,14 +136,35 @@ export function ApiKeysPage() {
                       {formatDate(key.lastUsedAt)}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t('apiKeys.revokeAria', { name: key.name })}
-                        onClick={() => remove.mutate(key.id)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('apiKeys.renameAria', { name: key.name })}
+                          title={t('apiKeys.rename')}
+                          onClick={() => setRenaming(key)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('apiKeys.rotateAria', { name: key.name })}
+                          title={t('apiKeys.rotate')}
+                          onClick={() => setRotating(key)}
+                        >
+                          <RefreshCw className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('apiKeys.revokeAria', { name: key.name })}
+                          title={t('apiKeys.revoke')}
+                          onClick={() => remove.mutate(key.id)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -152,13 +175,20 @@ export function ApiKeysPage() {
       </div>
 
       <CreateKeyDialog open={open} onOpenChange={setOpen} onIssued={setIssued} />
+      <RenameKeyDialog apiKey={renaming} onOpenChange={() => setRenaming(null)} />
+      <RotateKeyDialog
+        apiKey={rotating}
+        onOpenChange={() => setRotating(null)}
+        onIssued={setIssued}
+      />
 
       <Dialog open={issued !== null} onOpenChange={() => setIssued(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Copy your API key</DialogTitle>
             <DialogDescription>
-              This is the only time it will be shown. Store it somewhere safe.
+              This is the only time it will be shown — only a hash of it is stored, so it cannot be
+              displayed again. If you lose it, rotate the key to issue a replacement.
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2">
@@ -169,10 +199,7 @@ export function ApiKeysPage() {
               variant="outline"
               size="icon"
               aria-label="Copy key"
-              onClick={() => {
-                if (issued) navigator.clipboard.writeText(issued)
-                toast.success('Copied to clipboard')
-              }}
+              onClick={() => copyKey(issued)}
             >
               <Copy className="size-4" />
             </Button>
@@ -183,6 +210,144 @@ export function ApiKeysPage() {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+/**
+ * Copies a secret and reports honestly whether it worked. `navigator.clipboard` needs a secure
+ * context, so on a plain-HTTP deployment it rejects — and a success toast over a clipboard that
+ * never received the key is how somebody closes the one dialog that will ever show it.
+ */
+async function copyKey(key: string | null) {
+  if (!key) return
+  try {
+    await navigator.clipboard.writeText(key)
+    toast.success('Copied to clipboard')
+  } catch {
+    toast.error('Could not copy — select the key and copy it manually.')
+  }
+}
+
+/** Renaming is the one edit a key allows; scopes and the secret are fixed at issue. */
+function RenameKeyDialog({
+  apiKey,
+  onOpenChange,
+}: {
+  apiKey: ApiKey | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState('')
+
+  // The dialog is mounted once and fed a different key each time it opens, so the field is seeded
+  // from whichever key that is rather than from an initial value that would only ever be the first.
+  useEffect(() => {
+    if (apiKey) setName(apiKey.name)
+  }, [apiKey])
+
+  const rename = useMutation({
+    mutationFn: (input: { id: string; name: string }) =>
+      api.apiKeys.update(input.id, { name: input.name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
+      toast.success('Key renamed')
+      onOpenChange(false)
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  return (
+    <Dialog open={apiKey !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (apiKey) rename.mutate({ id: apiKey.id, name })
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Rename key</DialogTitle>
+            <DialogDescription>
+              The name is only a label. The secret, its scopes and the site it belongs to do not
+              change.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-4">
+            <Label htmlFor="rename-key">Name</Label>
+            <Input
+              id="rename-key"
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={rename.isPending || !name}>
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Rotating issues a new secret for a key whose old one was lost.
+ *
+ * Confirmed rather than done on click, because it is as disruptive as a delete for whatever still
+ * holds the old secret — a website using it starts returning errors the moment this completes.
+ */
+function RotateKeyDialog({
+  apiKey,
+  onOpenChange,
+  onIssued,
+}: {
+  apiKey: ApiKey | null
+  onOpenChange: (open: boolean) => void
+  onIssued: (key: string) => void
+}) {
+  const queryClient = useQueryClient()
+
+  const rotate = useMutation({
+    mutationFn: (id: string) => api.apiKeys.rotate(id),
+    onSuccess: (key) => {
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
+      onOpenChange(false)
+      onIssued(key.key)
+    },
+    onError: (error) => toast.error(error.message),
+  })
+
+  return (
+    <Dialog open={apiKey !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rotate “{apiKey?.name}”?</DialogTitle>
+          <DialogDescription>
+            A new secret is issued and shown once. The current one stops working immediately, so
+            anything still using it — a website, a script — fails until you paste the new one in.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={rotate.isPending}
+            onClick={() => apiKey && rotate.mutate(apiKey.id)}
+          >
+            Rotate key
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

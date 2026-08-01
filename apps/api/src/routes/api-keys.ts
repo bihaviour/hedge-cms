@@ -1,7 +1,13 @@
-import { createApiKeySchema } from '@hedge/core'
+import { createApiKeySchema, updateApiKeySchema } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { createApiKey, deleteApiKey, listApiKeys } from '../lib/api-keys'
+import {
+  createApiKey,
+  deleteApiKey,
+  listApiKeys,
+  rotateApiKey,
+  updateApiKey,
+} from '../lib/api-keys'
 import { requireActor, requireSiteRole } from '../lib/auth'
 import { requireSite } from '../lib/site'
 import { validate } from '../lib/validate'
@@ -27,6 +33,22 @@ app.post('/', async (c) => {
     actor.kind === 'user' ? actor.id : null,
   )
   return c.json({ data }, 201)
+})
+
+/** Renaming only — see `updateApiKey` for why scopes are not editable in place. */
+app.patch('/:id', async (c) => {
+  const input = await validate(c, updateApiKeySchema)
+  return c.json({ data: await updateApiKey(c.env, requireSite(c).id, c.req.param('id'), input) })
+})
+
+/**
+ * Issues a new secret for a key whose old one was lost, and returns it — the second and last place
+ * a raw key exists outside a hash. The previous secret is dead on return, so this is as destructive
+ * as a delete for anything still holding it; the admin confirms before calling it.
+ */
+app.post('/:id/rotate', async (c) => {
+  const data = await rotateApiKey(c.env, requireSite(c).id, c.req.param('id'))
+  return c.json({ data })
 })
 
 app.delete('/:id', async (c) => {
