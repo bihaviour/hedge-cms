@@ -1,9 +1,24 @@
-import { HEDGE_REPO, HEDGE_VERSION } from '@hedge/core'
+import {
+  compareVersions,
+  HEDGE_REPO,
+  HEDGE_VERSION,
+  type ReleaseNote,
+  releasesSince,
+  type SystemVersion,
+} from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpCircle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
+import {
+  ArrowUpCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  RefreshCw,
+} from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
+import { ReleaseNotes } from '@/components/release-notes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -80,7 +95,7 @@ export function AboutPage() {
     <>
       <PageHeader
         title="About & updates"
-        description="The version of Hedge this deployment runs."
+        description="The version of Hedge this deployment runs, and what has changed since."
       />
 
       <div className="flex max-w-2xl flex-col gap-6 p-4">
@@ -232,11 +247,96 @@ export function AboutPage() {
             </CardContent>
           )}
         </Card>
+
+        {isAdmin && data && data.releases.length > 0 && <Changelog data={data} />}
       </div>
 
       {data?.latest && (
         <UpdateDialog open={updateOpen} onOpenChange={setUpdateOpen} targetVersion={data.latest} />
       )}
     </>
+  )
+}
+
+/**
+ * The changelog: what an update *changes*, next to the notice that one exists.
+ *
+ * "Hedge 0.0.13 is available" is a fact nobody can act on — an operator deciding whether to redeploy
+ * a CMS their editors are working in needs to know what moves. The releases newer than the running
+ * version are therefore open by default and the ones already applied are folded away, because the
+ * question this page is open to answer is almost always the forward one.
+ *
+ * When a deployment is current there is no forward list, and the notes for the release it runs are
+ * shown instead — the same question asked after the fact, which is what somebody who has just
+ * updated (or just inherited a deployment) is looking for.
+ */
+function Changelog({ data }: { data: SystemVersion }) {
+  const [showHistory, setShowHistory] = useState(false)
+
+  // `compareVersions` rather than a string match: a tag carries a leading `v` and the running
+  // version does not, so `v0.0.12 === 0.0.12` is false exactly where it matters.
+  const isCurrent = (release: ReleaseNote) => compareVersions(release.version, data.current) === 0
+
+  // Split by version rather than by position: the list arrives newest-first, but a patch cut on an
+  // older branch after a bigger release publishes out of order, and "ahead of this deployment" is a
+  // question about versions either way.
+  const pending = releasesSince(data.current, data.releases)
+  const history = data.releases.filter(
+    (release) => compareVersions(release.version, data.current) <= 0,
+  )
+  // Nothing pending: lead with the release this deployment runs rather than an empty card.
+  const [lead, ...older] = pending.length ? [] : history
+  const folded = pending.length ? history : older
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{pending.length ? "What's new" : 'Changelog'}</CardTitle>
+        <CardDescription>
+          {pending.length === 1
+            ? 'The release this deployment has not moved to yet.'
+            : pending.length > 1
+              ? `The ${pending.length} releases this deployment has not moved to yet.`
+              : 'What changed in the release this deployment runs.'}
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-6">
+        {pending.map((release) => (
+          <ReleaseNotes key={release.version} release={release} isCurrent={false} />
+        ))}
+
+        {lead && <ReleaseNotes release={lead} isCurrent={isCurrent(lead)} />}
+
+        {folded.length > 0 && (
+          <div className="space-y-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2"
+              onClick={() => setShowHistory((open) => !open)}
+            >
+              {showHistory ? (
+                <ChevronDown className="size-4" />
+              ) : (
+                <ChevronRight className="size-4" />
+              )}
+              {showHistory ? 'Hide earlier releases' : `Earlier releases (${folded.length})`}
+            </Button>
+
+            {showHistory &&
+              folded.map((release) => (
+                <ReleaseNotes
+                  key={release.version}
+                  release={release}
+                  // The running deployment is somewhere in this list once it is behind; marking it
+                  // is what turns a list of versions into "here is where you are".
+                  isCurrent={isCurrent(release)}
+                />
+              ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
