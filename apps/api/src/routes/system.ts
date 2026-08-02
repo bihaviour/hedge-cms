@@ -3,6 +3,7 @@ import {
   HEDGE_VERSION,
   isUpdateAvailable,
   parseInstallMethod,
+  type ReleaseNote,
   type SystemVersion,
   systemUpdateSchema,
 } from '@hedge/core'
@@ -15,30 +16,58 @@ import { validate } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
-/** How long a fetched "latest release" is trusted before GitHub is asked again. */
+/** How long a fetched release list is trusted before GitHub is asked again. */
 const CHECK_TTL_SECONDS = 60 * 60 * 6
+
+/**
+ * How much of the changelog is carried, and it is a *response size* budget rather than a display
+ * one. The admin's update banner shares this query with the About page, so this payload rides along
+ * on every admin page load — and the bodies come from an upstream nobody here controls, which could
+ * one day paste a migration guide into one. Ten releases at four kilobytes each is the ceiling; a
+ * deployment further behind than that is told to read the rest on GitHub.
+ */
+const RELEASE_COUNT = 10
+const NOTES_MAX_CHARS = 4000
 
 interface GithubRelease {
   tag_name: string
+  name: string | null
+  body: string | null
   html_url: string
   published_at: string
   draft: boolean
   prerelease: boolean
 }
 
+/** Trim a release body to the cap, cutting at a line break so the last line isn't half-rendered. */
+function trimNotes(body: string): { notes: string; truncated: boolean } {
+  const notes = body.replace(/\r\n/g, '\n').trim()
+  if (notes.length <= NOTES_MAX_CHARS) return { notes, truncated: false }
+
+  const cut = notes.slice(0, NOTES_MAX_CHARS)
+  const lastBreak = cut.lastIndexOf('\n')
+  return { notes: (lastBreak > 0 ? cut.slice(0, lastBreak) : cut).trimEnd(), truncated: true }
+}
+
 /**
- * The latest upstream release, or `null` when GitHub can't be reached or the repo has none yet.
+ * Recent upstream releases, newest first — `[]` when GitHub can't be reached or the repo has none.
+ *
+ * This is one call for two questions: "is there a newer version?" is the first entry, and "what
+ * changed?" is the rest. Asking `/releases/latest` for the former and the list for the latter would
+ * double the spend on the budget the cache below exists to protect.
  *
  * The result is held in Cloudflare's edge cache: the unauthenticated GitHub API is rate-limited per
  * egress IP, and that IP is shared across every Worker on the colo, so an uncached check would burn
- * the budget in minutes. Even a `null` (a failed or rate-limited fetch) is cached, so one bad
+ * the budget in minutes. Even an empty answer (a failed or rate-limited fetch) is cached, so one bad
  * moment doesn't turn every subsequent admin request into another doomed call to GitHub.
  */
-async function latestRelease(force = false): Promise<GithubRelease | null> {
+async function recentReleases(force = false): Promise<ReleaseNote[]> {
   // Feature-detected: the Cache API only exists in the Workers runtime. Absent it (a test, say) the
   // check simply always hits the network, which is correct, just uncached.
   const cache = typeof caches !== 'undefined' ? caches.default : null
-  const cacheKey = new Request(`https://hedge.internal/gh/${HEDGE_REPO}/latest-release`)
+  // Versioned key: what is stored here changed shape when the changelog was added, and a cached
+  // answer from before that outlives the deploy that changed it.
+  const cacheKey = new Request(`https://hedge.internal/gh/${HEDGE_REPO}/releases-v2`)
 
   // `force` skips reading the cache but still writes to it, so an operator who has just published a
   // release does not have to wait out `CHECK_TTL_SECONDS` to see it — and everyone after them gets
@@ -46,38 +75,54 @@ async function latestRelease(force = false): Promise<GithubRelease | null> {
   // per egress IP and shared across the colo, so a refresh anyone could hold down would spend a
   // budget that is not this deployment's alone.
   const hit = force ? undefined : await cache?.match(cacheKey)
-  if (hit) return (await hit.json()) as GithubRelease | null
+  if (hit) return (await hit.json()) as ReleaseNote[]
 
-  let release: GithubRelease | null = null
+  let releases: ReleaseNote[] = []
   try {
-    const response = await fetch(`https://api.github.com/repos/${HEDGE_REPO}/releases/latest`, {
-      headers: {
-        accept: 'application/vnd.github+json',
-        // GitHub rejects API requests that arrive without a User-Agent.
-        'user-agent': `hedge-cms/${HEDGE_VERSION}`,
+    // A page of releases rather than `/releases/latest`: the newest is the update check, and the
+    // ones behind it are what an operator several versions back needs to read. GitHub returns them
+    // newest first, which is the order the changelog is shown in.
+    const response = await fetch(
+      `https://api.github.com/repos/${HEDGE_REPO}/releases?per_page=${RELEASE_COUNT}`,
+      {
+        headers: {
+          accept: 'application/vnd.github+json',
+          // GitHub rejects API requests that arrive without a User-Agent.
+          'user-agent': `hedge-cms/${HEDGE_VERSION}`,
+        },
       },
-    })
+    )
     if (response.ok) {
-      const body = (await response.json()) as GithubRelease
-      // A draft or prerelease is not something to nudge a self-hoster toward.
-      if (!body.draft && !body.prerelease) release = body
+      const body = await response.json()
+      const rows: GithubRelease[] = Array.isArray(body) ? body : []
+      releases = rows
+        // A draft or prerelease is not something to nudge a self-hoster toward, and it has no place
+        // in the changelog either — a note about work in progress reads as a note about a release.
+        .filter((row) => !row.draft && !row.prerelease)
+        .map((row) => ({
+          version: row.tag_name,
+          name: row.name?.trim() || null,
+          url: row.html_url,
+          publishedAt: row.published_at ?? null,
+          ...trimNotes(row.body ?? ''),
+        }))
     }
   } catch {
     // Network failure, malformed JSON, GitHub down — degrade to "no update" rather than 500 the
     // admin over a version banner.
-    release = null
+    releases = []
   }
 
   await cache?.put(
     cacheKey,
-    new Response(JSON.stringify(release), {
+    new Response(JSON.stringify(releases), {
       headers: {
         'content-type': 'application/json',
         'cache-control': `max-age=${CHECK_TTL_SECONDS}`,
       },
     }),
   )
-  return release
+  return releases
 }
 
 /**
@@ -93,15 +138,17 @@ app.get('/version', requirePermission('system:read'), async (c) => {
   // on demand, and the budget it spends is shared with every other Worker on the colo.
   if (force) await throttle(c, 'system-version-refresh', { window: 15 * 60, max: 5 })
 
-  const release = await latestRelease(force)
-  const latest = release?.tag_name ?? null
+  const releases = await recentReleases(force)
+  // Newest first, so the first row is both "the latest release" and the top of the changelog.
+  const release = releases[0] ?? null
+  const latest = release?.version ?? null
 
   const payload: SystemVersion = {
     current: HEDGE_VERSION,
     latest,
     updateAvailable: isUpdateAvailable(HEDGE_VERSION, latest),
-    notesUrl: release?.html_url ?? null,
-    publishedAt: release?.published_at ?? null,
+    notesUrl: release?.url ?? null,
+    publishedAt: release?.publishedAt ?? null,
     checkedAt: new Date().toISOString(),
     // The deployment's own repository, if it told us — so the admin can deep-link it.
     repoUrl: c.env.REPO_URL?.trim() || null,
@@ -109,6 +156,8 @@ app.get('/version', requirePermission('system:read'), async (c) => {
     // Anything unrecognised — including the empty default every older deployment has — resolves to
     // null, which the admin reads as "show both paths, claim no repository".
     installedBy: parseInstallMethod(c.env.INSTALLED_BY),
+    // The changelog: what the update actually changes, rather than only that it exists.
+    releases,
   }
   return c.json({ data: payload })
 })

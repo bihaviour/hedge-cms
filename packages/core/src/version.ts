@@ -68,6 +68,37 @@ export function parseInstallMethod(value: string | undefined | null): InstallMet
 }
 
 /**
+ * One published upstream release, as the About page's changelog shows it.
+ *
+ * `notes` is the release body verbatim — GitHub-flavoured markdown, which the admin renders itself
+ * (`lib/release-notes.ts`). It is deliberately carried as text rather than as HTML: the response is
+ * built from a third-party API, and text that only ever becomes React elements cannot inject markup
+ * however the upstream release was written.
+ */
+export const releaseNoteSchema = z.object({
+  /** The release tag, `v`-prefixed as GitHub reports it. */
+  version: z.string(),
+  /** The release title, which is often just the tag again, or `null` when it was left empty. */
+  name: z.string().nullable(),
+  url: z.string(),
+  publishedAt: z.string().nullable(),
+  notes: z.string(),
+  /** True when the body was longer than the server's cap and was cut — the admin says so. */
+  truncated: z.boolean(),
+})
+
+export type ReleaseNote = z.infer<typeof releaseNoteSchema>
+
+/**
+ * The releases a deployment running `current` has not yet moved to, newest first — what "what
+ * changed?" actually means to an operator who is several releases behind. Same ordering the list
+ * arrives in, so it is a filter and nothing more.
+ */
+export function releasesSince(current: string, releases: ReleaseNote[]): ReleaseNote[] {
+  return releases.filter((release) => compareVersions(release.version, current) > 0)
+}
+
+/**
  * What `GET /api/v1/system/version` reports: the running version, the latest upstream release if
  * the check could reach GitHub (`null` if it couldn't — the admin treats that as "no update"
  * rather than an error), and enough to show the operator an update path that exists for them.
@@ -88,6 +119,12 @@ export const systemVersionSchema = z.object({
    * A wrong value costs an unhelpful instruction, never access.
    */
   installedBy: installMethodSchema.nullable(),
+  /**
+   * Recent upstream releases, newest first — the changelog the About page renders, so "an update is
+   * available" can be read as *what* the update changes. Empty when the check couldn't reach GitHub,
+   * which is the same degradation `latest: null` already is.
+   */
+  releases: z.array(releaseNoteSchema),
 })
 
 export type SystemVersion = z.infer<typeof systemVersionSchema>

@@ -99,6 +99,22 @@ the API health route, the MCP `serverInfo` and the admin all import. `GET /api/v
 API, because the unauthenticated GitHub API is rate-limited per shared egress IP — and the admin
 surfaces "an update is available" from that.
 
+**It reads a *page* of releases, not `/releases/latest`, and carries their notes.** "0.0.13 is
+available" is not something an operator can act on; what it changes is, so the About page renders the
+changelog from the same response and a deployment several releases behind sees every one it has
+missed. One call answers both questions, which is what keeps the changelog free against the rate
+limit the cache exists to protect. Two consequences worth knowing:
+
+- **Release notes are operator-facing copy in the dashboard**, not just a GitHub page. They are
+  rendered by a deliberately small Markdown reader in the admin (`lib/release-notes.ts`) that turns
+  a body into React elements and never into markup — a release body is written upstream, and an
+  `<a href="javascript:…">` in one would otherwise be somebody else's code in an admin session.
+  It covers headings, lists, `code`, bold, and links; anything else degrades to the text it was
+  written as.
+- **The response is bounded on the server** (`RELEASE_COUNT`, `NOTES_MAX_CHARS`), because the update
+  banner shares this query and it therefore rides along on every admin page load. A body past the cap
+  is cut at a line break and flagged `truncated`, which the admin shows as a link to the rest.
+
 **The Worker can now redeploy itself** (`POST /api/v1/system/update`, issue #35). See the section
 below for what that reverses and what replaced it. Merging the upstream into a button or CLI
 deployment's repository (Workers Builds redeploys) remains a valid path; the dashboard update is the

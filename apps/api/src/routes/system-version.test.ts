@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { SystemVersion } from '@hedge/core'
 import type { AppEnv } from '../env'
 
 /**
@@ -45,13 +46,26 @@ mock.module('../lib/throttle', () => ({
   },
 }))
 
-const release = (tag: string) => ({
+const release = (tag: string, overrides: Record<string, unknown> = {}) => ({
   tag_name: tag,
+  name: tag,
+  body: `## What's Changed\n* something in ${tag}`,
   html_url: `https://github.com/x/y/releases/tag/${tag}`,
   published_at: '2026-08-01T00:00:00Z',
   draft: false,
   prerelease: false,
+  ...overrides,
 })
+
+/** Answer the release list with these rows, recording the URL that was asked for. */
+function respondWith(rows: unknown[]) {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    fetches.push(String(input))
+    return new Response(JSON.stringify(rows), {
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as typeof fetch
+}
 
 beforeEach(() => {
   cache = new FakeCache()
@@ -60,12 +74,7 @@ beforeEach(() => {
   // @ts-expect-error — the runtime global only exists in workerd; the module feature-detects it.
   globalThis.caches = { default: cache }
 
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    fetches.push(String(input))
-    return new Response(JSON.stringify(release('v1.2.3')), {
-      headers: { 'content-type': 'application/json' },
-    })
-  }) as typeof fetch
+  respondWith([release('v1.2.3')])
 })
 
 afterEach(() => {
@@ -122,6 +131,15 @@ describe('the update check', () => {
     expect(fetches).toHaveLength(1)
   })
 
+  test('asks for a page of releases, not just the latest one', async () => {
+    await getVersion()
+    // One call answers both questions the About page asks — "is there a newer version?" and "what
+    // changed?" — so the changelog costs nothing extra against GitHub's shared rate limit.
+    expect(fetches).toEqual([
+      'https://api.github.com/repos/bihaviour/hedge-cms/releases?per_page=10',
+    ])
+  })
+
   test('caches a failed check too, so one bad moment is not a retry storm', async () => {
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       fetches.push(String(input))
@@ -167,5 +185,72 @@ describe('the update check', () => {
     await getVersion('?refresh=1')
     // …while the one path that can reach GitHub on demand is bounded.
     expect(throttled).toEqual(['system-version-refresh'])
+  })
+})
+
+/**
+ * The changelog the About page renders. "A newer version exists" is not something an operator can
+ * act on; what it changes is, so the notes travel with the check rather than as a link away from it.
+ */
+describe('the changelog', () => {
+  const body = async (query = '') =>
+    (await (await getVersion(query)).json()) as { data: SystemVersion }
+
+  test('carries each release with its notes, newest first', async () => {
+    respondWith([release('v1.2.3'), release('v1.2.2')])
+
+    const { data } = await body()
+    expect(data.releases).toEqual([
+      expect.objectContaining({ version: 'v1.2.3', notes: expect.stringContaining('v1.2.3') }),
+      expect.objectContaining({ version: 'v1.2.2', truncated: false }),
+    ])
+    // The head of the same list is the update check, so the two can never disagree.
+    expect(data.latest).toBe('v1.2.3')
+  })
+
+  test('leaves drafts and prereleases out of both the check and the changelog', async () => {
+    respondWith([
+      release('v2.0.0-rc.1', { prerelease: true }),
+      release('v2.0.0-draft', { draft: true }),
+      release('v1.2.3'),
+    ])
+
+    const { data } = await body()
+    // A note about work in progress reads as a note about a release; neither belongs here.
+    expect(data.releases.map((row) => row.version)).toEqual(['v1.2.3'])
+    expect(data.latest).toBe('v1.2.3')
+  })
+
+  test('shortens an outsized body and says that it did', async () => {
+    respondWith([release('v1.2.3', { body: `${'a line about a change\n'.repeat(400)}` })])
+
+    const { data } = await body()
+    const note = data.releases[0]
+    // The banner shares this response, so it rides along on every admin page load — an upstream
+    // that one day pastes a migration guide into a release must not make that payload unbounded.
+    expect(note?.truncated).toBe(true)
+    expect(note?.notes.length).toBeLessThanOrEqual(4000)
+    // Cut at a line break, so the last line rendered is a whole one.
+    expect(note?.notes.endsWith('a line about a change')).toBe(true)
+  })
+
+  test('a release with no notes is still listed', async () => {
+    respondWith([release('v1.2.3', { body: null, name: null })])
+
+    const { data } = await body()
+    expect(data.releases).toEqual([
+      expect.objectContaining({ version: 'v1.2.3', name: null, notes: '' }),
+    ])
+  })
+
+  test('an unreachable GitHub degrades to an empty changelog, not an error', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('offline')
+    }) as unknown as typeof fetch
+
+    const { data } = await body()
+    expect(data.releases).toEqual([])
+    expect(data.latest).toBeNull()
+    expect(data.updateAvailable).toBe(false)
   })
 })
