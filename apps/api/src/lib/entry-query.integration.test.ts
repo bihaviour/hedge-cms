@@ -40,6 +40,7 @@ function seed() {
     create table entries (
       id text primary key,
       collection_id text not null,
+      translation_group_id text not null,
       slug text not null,
       status text not null,
       visibility text not null,
@@ -62,12 +63,37 @@ function seed() {
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   }
+  // A group each: these fixtures are about sorting and filtering, so every row is its own post.
   db.insert(entries)
     .values([
-      { ...base, id: 'ent_1', slug: 'about', data: { date: '1990-01-01', tags: ['about'] } },
-      { ...base, id: 'ent_2', slug: 'post-a', data: { date: '2024-05-01', tags: ['essay', 'ai'] } },
-      { ...base, id: 'ent_3', slug: 'post-b', data: { date: '2024-05-01', tags: ['essay'] } },
-      { ...base, id: 'ent_4', slug: 'post-c', data: { date: '2024-06-01', tags: ['news'] } },
+      {
+        ...base,
+        id: 'ent_1',
+        translationGroupId: 'tgr_1',
+        slug: 'about',
+        data: { date: '1990-01-01', tags: ['about'] },
+      },
+      {
+        ...base,
+        id: 'ent_2',
+        translationGroupId: 'tgr_2',
+        slug: 'post-a',
+        data: { date: '2024-05-01', tags: ['essay', 'ai'] },
+      },
+      {
+        ...base,
+        id: 'ent_3',
+        translationGroupId: 'tgr_3',
+        slug: 'post-b',
+        data: { date: '2024-05-01', tags: ['essay'] },
+      },
+      {
+        ...base,
+        id: 'ent_4',
+        translationGroupId: 'tgr_4',
+        slug: 'post-c',
+        data: { date: '2024-06-01', tags: ['news'] },
+      },
     ])
     .run()
   return db

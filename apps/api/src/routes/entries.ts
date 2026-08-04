@@ -1,4 +1,5 @@
 import {
+  attachTranslationSchema,
   createEntrySchema,
   createPreviewTokenSchema,
   listEntriesQuerySchema,
@@ -8,11 +9,14 @@ import { Hono } from 'hono'
 import type { Actor, AppEnv } from '../env'
 import { requireActor, requireScope, requireSiteRole, requireUserActor } from '../lib/auth'
 import {
+  attachTranslation,
   createEntry,
   deleteEntry,
+  detachTranslation,
   getEntry,
   listEntries,
   listEntryRevisions,
+  listTranslations,
   restoreEntryRevision,
   updateEntry,
 } from '../lib/entries'
@@ -110,6 +114,71 @@ app.post(
       c.req.param('revisionId')!,
       authorId(requireActor(c)),
       c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
+
+/**
+ * The other languages of this entry, and the two operations that change which post a row belongs to.
+ *
+ * `content:write` and `editor` rather than anything narrower: linking two entries is an ordinary
+ * editorial act on content, and it changes no text, no status and no URL — it only records that two
+ * rows are the same piece. Notably *not* `requireUserActor`: unlike approving a version, there is
+ * nothing here that has to be a human judgement rather than an automated one, and an agent tidying
+ * up a batch of imported translations is a good use of it.
+ */
+app.get(
+  '/:slug/translations',
+  requireSiteRole('viewer'),
+  requireScope('content:read'),
+  async (c) => {
+    // No `?locale=`: a slug names one post whichever language it is written in, and the admin asks
+    // this while looking at a language the post may not have yet.
+    const data = await listTranslations(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+    )
+    return c.json({ data })
+  },
+)
+
+app.post(
+  '/:slug/translations',
+  requireSiteRole('editor'),
+  requireScope('content:write'),
+  async (c) => {
+    const input = await validate(c, attachTranslationSchema)
+    const data = await attachTranslation(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+      input,
+    )
+    return c.json({ data })
+  },
+)
+
+/**
+ * Splits one language out into a post of its own. The locale is a path segment rather than the
+ * usual `?locale=` because here it is *what is being removed*, not which copy to load — the
+ * addressed entry and the detached one are the same row, and a query parameter that meant both
+ * would be the kind of ambiguity that gets read wrong once and never noticed.
+ */
+app.delete(
+  '/:slug/translations/:locale',
+  requireSiteRole('editor'),
+  requireScope('content:write'),
+  async (c) => {
+    const data = await detachTranslation(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+      c.req.param('locale'),
     )
     return c.json({ data })
   },

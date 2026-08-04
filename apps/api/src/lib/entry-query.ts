@@ -105,6 +105,40 @@ export function cursorCondition(target: SortTarget, order: 'asc' | 'desc', curso
     : sql`(${target.expr} > ${value} or (${target.expr} = ${value} and ${entries.id} > ${id}))`
 }
 
+/**
+ * The predicate for "one row per post rather than one per translation": keeps the variant a reader
+ * should be served, and drops the post's other languages from the result.
+ *
+ * The preference is `preferred` locale, then `fallback` — the site's default — then the oldest
+ * variant the post has. That last step is the one worth stating plainly: a post published *only* in
+ * a language the site does not default to still exists, and dropping it from every list would hide
+ * content somebody published. So the list never has holes, and the caller is told which locale it
+ * was actually handed rather than being left to assume it got the one it asked for.
+ *
+ * Written as a correlated `id = (select … limit 1)` rather than a `GROUP BY` because the preference
+ * is an *ordering*, not an aggregate: the chosen row has to survive the outer query's own sort, its
+ * cursor and its field filters, all of which operate on whole rows. The subquery is an indexed
+ * lookup on `entries_translation_group_idx`.
+ *
+ * `publishedOnly` has to be applied *inside* the subquery as well as outside it. A post whose
+ * Indonesian variant is still a draft should fall back to its published English one — if the filter
+ * ran only on the outer query the draft would win the pick and then be filtered away, and the post
+ * would vanish from the list instead of falling back.
+ */
+export function onePerTranslationGroup(
+  preferred: string,
+  fallback: string,
+  options: { publishedOnly?: boolean } = {},
+): SQL {
+  const visible = options.publishedOnly ? sql` and variant.status = 'published'` : sql``
+  return sql`${entries.id} = (
+    select variant.id from ${entries} as variant
+    where variant.translation_group_id = ${entries.translationGroupId}${visible}
+    order by (variant.locale = ${preferred}) desc, (variant.locale = ${fallback}) desc, variant.id asc
+    limit 1
+  )`
+}
+
 export const FILTER_OPS = ['eq', 'contains', 'gte', 'lte'] as const
 export type FilterOp = (typeof FILTER_OPS)[number]
 

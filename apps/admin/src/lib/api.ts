@@ -10,6 +10,7 @@ import type {
   AnalyticsTimeseries,
   ApiErrorBody,
   ApiKey,
+  AttachTranslationInput,
   AuthorizedClient,
   Collection,
   CreateApiKeyInput,
@@ -30,6 +31,7 @@ import type {
   EmailTemplatePreview,
   Entry,
   EntryRevision,
+  EntryTranslation,
   EntryVersion,
   ListEntriesQuery,
   ListMediaQuery,
@@ -413,6 +415,28 @@ export const api = {
       request<PreviewToken>(`/collections/${collection}/entries/${slug}/preview-token`, {
         method: 'POST',
         ...json({ locale }),
+      }),
+
+    /**
+     * The languages one post is written in. An entry and its translations are one piece with a row
+     * per language, and each row has its own slug — so this, not the slug, is what the editor's
+     * locale switcher navigates by.
+     */
+    translations: (collection: string, slug: string) =>
+      request<EntryTranslation[]>(`/collections/${collection}/entries/${slug}/translations`),
+    /**
+     * Merge an entry that already exists into this post, bringing every language it already has.
+     * Neither side takes a locale — a slug names one post whichever language it is written in.
+     */
+    linkTranslation: (collection: string, slug: string, link: AttachTranslationInput) =>
+      request<EntryTranslation[]>(`/collections/${collection}/entries/${slug}/translations`, {
+        method: 'POST',
+        ...json(link),
+      }),
+    /** Split one language out into a post of its own. The locale here is what is being removed. */
+    unlinkTranslation: (collection: string, slug: string, locale: string) =>
+      request<Entry>(`/collections/${collection}/entries/${slug}/translations/${locale}`, {
+        method: 'DELETE',
       }),
   },
 

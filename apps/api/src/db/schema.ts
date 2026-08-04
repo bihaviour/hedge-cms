@@ -583,6 +583,19 @@ export const entries = sqliteTable(
     collectionId: text('collection_id')
       .notNull()
       .references(() => collections.id, { onDelete: 'cascade' }),
+    /**
+     * Which *piece* this row is one language of. All the locale variants of one post share it, and
+     * it is what makes them a single post rather than several that happen to look alike.
+     *
+     * It is a plain column rather than a table of its own: a group has no attributes — it is an
+     * identity, and a row for it would only ever be a primary key. Deleting the last variant
+     * therefore retires the group by having nothing left that references it.
+     *
+     * Grouping used to be implied by `slug`, which is why the backfill (`0014`) is
+     * `(collection_id, slug)`. Slugs are now per-locale, so the implication no longer holds and the
+     * link has to be recorded.
+     */
+    translationGroupId: text('translation_group_id').notNull(),
     slug: text('slug').notNull(),
     status: text('status', { enum: ['draft', 'published', 'archived'] })
       .notNull()
@@ -604,6 +617,8 @@ export const entries = sqliteTable(
     uniqueIndex('entries_collection_slug_locale_idx').on(t.collectionId, t.slug, t.locale),
     index('entries_collection_status_idx').on(t.collectionId, t.status),
     index('entries_updated_at_idx').on(t.updatedAt),
+    // Reading one post's other languages, which every delivery read now does to answer a fallback.
+    index('entries_translation_group_idx').on(t.translationGroupId, t.locale),
   ],
 )
 

@@ -273,9 +273,12 @@ describe('POST /mcp', () => {
       'list_entries',
       'get_entry',
       'list_entry_revisions',
+      'list_translations',
       'list_entry_versions',
     ])
     expect(names).not.toContain('create_entry')
+    // Reading which languages a post has is `entries:read`; changing them is not.
+    expect(names).not.toContain('link_translation')
   })
 
   test('a tool outside the granted scopes is refused when called by name', async () => {

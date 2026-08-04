@@ -129,9 +129,44 @@ A `code` field (`RB-0007`) is the CMS's own identifier for a piece and is **not*
 lives in `data` like any other field, and `applyGeneratedCodes` assigns it. Two consequences worth
 knowing before writing a query against one: the sequence is `max + 1` read back out of
 `json_extract(data, '$.<field>')`, ordered by *length then value* so it stays correct once the count
-outgrows the padding; and because entries are keyed by locale, a translation carries its sibling's
-code rather than taking a new one — the code names the piece, the row names one language of it. It
-is not unique in the database and nothing downstream may assume it is.
+outgrows the padding; and a translation carries its sibling's code rather than taking a new one —
+the code names the piece, the row names one language of it. It is not unique in the database and
+nothing downstream may assume it is.
+
+## A post is a translation group, not a slug
+
+**`entries.translationGroupId` is what makes several rows one piece.** One row per language, sharing
+a group. It is a plain column and not a table: a group has no attributes of its own, so a table for
+it would be a primary key and nothing else, and deleting the last variant retires the group by
+leaving nothing that references it.
+
+This replaced grouping-by-slug, and the reason is worth keeping. Translations used to be *defined*
+as the same slug in another locale, which meant a piece could not have a URL in each language —
+`/id/halo-dunia` was unreachable, so anyone who wanted one authored a genuinely separate post. The
+group is what lets `hello-world` and `halo-dunia` be one piece. Three rules follow, all enforced in
+`lib/entries.ts` rather than by the schema:
+
+- **A slug names exactly one post, across the whole collection** (`assertSlugFree`). Not a database
+  constraint, because within one post a slug may legally repeat across languages — every deployment
+  that predates this column looks like that. But it has to hold, because the delivery API resolves a
+  slug to a *post* and then picks a language: two posts sharing a slug would make that ambiguous.
+- **A post holds one variant per language** (`assertLocaleFree`). The unique index on
+  (collection, slug, locale) catches only the case where the slugs also match; two different slugs
+  in one post both claiming Indonesian is the shape it cannot see.
+- **Creating with a slug another language already uses still joins that post.** The back-compat
+  path, and the one the admin's "no translation yet, saving creates one" flow relied on before
+  `translationOf` existed. `translationOf` is the explicit form and the only one that works when the
+  new variant is given its own slug.
+
+`attachTranslation` / `detachTranslation` are the only things that move a row between groups. They
+merge and split *whole posts*, never single rows — attaching a piece that is already a pair brings
+the pair, or the variant left behind would be stranded in a post whose sibling had walked away. A
+merge changes what rows belong to, never what they say: slugs, statuses, revisions and versions are
+untouched, so nothing published changes and no URL moves. The joined rows do adopt the surviving
+post's `code`, because the pieces are becoming one piece.
+
+The `0014` backfill is that old rule written down: every locale of one (collection, slug) became one
+group, derived from the lowest entry id in the set because SQL has no `newId()`.
 
 ## Revisions and versions are two sets, not one
 

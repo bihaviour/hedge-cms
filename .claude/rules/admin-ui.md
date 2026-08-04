@@ -91,6 +91,24 @@ Two conventions the charts share: never a dual y-axis (two measures of different
 charts), and the previous period is drawn as a recessive dashed line in the muted text colour rather
 than a second series — it is a reference, not a rival.
 
+## Translations in the editor
+
+A post's languages come from `GET .../entries/:slug/translations`, which takes **no locale** — the
+editor asks it while looking at a language the post may not have yet, so a (slug, locale) lookup
+would 404 exactly when the answer is needed. Two things follow, and both are easy to undo by
+accident:
+
+- **The locale switcher navigates by the sibling's own slug**, not the current one. Translations can
+  have URLs in their own language, so keeping this entry's slug would open a different post.
+- **Creating a translation sends `translationOf`.** Without it the link rests on the two sharing a
+  slug, and the moment somebody gives the translation a localized URL it silently becomes a separate
+  post instead.
+
+The entry list uses `groupBy=post` on a multilingual site only — one line per piece with its
+languages beside it, `LocaleChips` rendering the missing ones too, because "not translated yet" is
+what an editor is scanning for. A single-locale site keeps the plain list and pays for no extra
+query.
+
 ## Adding a field kind
 
 Four touchpoints; TypeScript exhaustiveness will point at any you miss:

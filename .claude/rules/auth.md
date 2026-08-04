@@ -175,5 +175,11 @@ Three REST powers are deliberately withheld, and `mcp.test.ts` pins the first an
   of the workflow is a second pair of *human* eyes, and an agent approving the version it has just
   written is a rubber stamp with extra steps. Say so in any new tool description that comes near it.
 
+`list_translations`, `link_translation` and `unlink_translation` are exposed in full, which is worth
+contrasting with the three above. Linking two entries changes no text, no status and no URL — it
+records that two rows are one piece — and it is reversible. There is nothing in it that has to be a
+human judgement rather than an automated one, and an agent tidying up a batch of separately-authored
+translations is a good use of it. Their gates match the REST routes: `editor` and `entries:write`.
+
 `create_api_key` returns a raw secret into a model's context. That is a real weakening versus the
 admin's show-once dialog, so the tool description says so; keep that warning if you touch it.

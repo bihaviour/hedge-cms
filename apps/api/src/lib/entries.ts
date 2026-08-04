@@ -1,10 +1,12 @@
 import {
+  type AttachTranslationInput,
   buildEntryValidator,
   type CreateEntryInput,
   codeFields,
   type Entry,
   type EntryMetadata,
   type EntryRevision,
+  type EntryTranslation,
   entryMetadataSchema,
   type Field,
   fieldsSchema,
@@ -14,7 +16,7 @@ import {
   slugify,
   type UpdateEntryInput,
 } from '@hedge/core'
-import { and, desc, eq, getTableColumns, like, type SQL, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, getTableColumns, inArray, like, ne, type SQL, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   type CollectionRow,
@@ -30,6 +32,7 @@ import {
   cursorCondition,
   decodeCursor,
   encodeCursor,
+  onePerTranslationGroup,
   orderByClause,
   parseEntryFilters,
   resolveSort,
@@ -59,11 +62,16 @@ const MANAGEMENT_SORT_COLUMNS = {
  * new entry has to land inside, and the custom-field definitions its metadata is validated against.
  */
 
-export function toEntry(row: EntryRow, collection: CollectionRow): Entry {
+export function toEntry(
+  row: EntryRow,
+  collection: CollectionRow,
+  translations?: EntryTranslation[],
+): Entry {
   return {
     id: row.id,
     collectionId: row.collectionId,
     collectionSlug: collection.slug,
+    translationGroupId: row.translationGroupId,
     slug: row.slug,
     status: row.status,
     visibility: row.visibility,
@@ -72,6 +80,22 @@ export function toEntry(row: EntryRow, collection: CollectionRow): Entry {
     metadata: entryMetadataSchema.parse(row.metadata ?? {}),
     publishedAt: row.publishedAt,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    ...(translations ? { translations } : {}),
+  }
+}
+
+/** A variant summarised for the list of its post's languages. */
+export function toEntryTranslation(row: EntryRow): EntryTranslation {
+  return {
+    id: row.id,
+    locale: row.locale,
+    slug: row.slug,
+    // The one `data` value the summary carries, because a list of languages with no titles in it is
+    // a list of locale codes. Anything but a string reads as "no title" rather than being coerced.
+    title: typeof row.data.title === 'string' ? row.data.title : null,
+    status: row.status,
+    publishedAt: row.publishedAt,
     updatedAt: row.updatedAt,
   }
 }
@@ -148,8 +172,11 @@ export function assertPublishAllowed(
  *   would then be unable to save it back. The stored value simply wins.
  * - **An existing entry keeps the code it has**, whatever the update says, including an update that
  *   renames the slug. An entry that predates the field being declared gets one on its next write.
- * - **A translation shares its siblings' code.** Entries are keyed by (collection, slug, locale),
- *   so the Indonesian version of an article is the same piece and carries the same identifier.
+ * - **A translation shares its siblings' code.** The code names the *piece*, and a piece is a
+ *   translation group — so the Indonesian version of an article carries the same identifier as the
+ *   English one. This used to be keyed on the slug, which worked only while every language of a
+ *   post was forced to share one. Now that a translation can have a URL in its own language,
+ *   `halo-dunia` and `hello-world` are the same piece and the group is what says so.
  *
  * The sequence is `max + 1` over the codes already issued in this collection, which cannot collide
  * with anything stored. Two creates racing in separate isolates can still both read the same max —
@@ -160,15 +187,15 @@ export async function applyGeneratedCodes(
   env: Bindings,
   collection: CollectionRow,
   data: Record<string, unknown>,
-  slug: string,
+  translationGroupId: string,
   existing?: EntryRow,
 ): Promise<Record<string, unknown>> {
   const fields = codeFields(fieldsSchema.parse(collection.fields))
   if (fields.length === 0) return data
 
-  // One lookup for every code field: the sibling locales of this slug, if any. On an update the
-  // entry itself is the source, so this only runs when creating.
-  const sibling = existing ?? (await findSibling(env, collection, slug))
+  // One lookup for every code field: another language of this same post, if there is one. On an
+  // update the entry itself is the source, so the query only runs when creating.
+  const sibling = existing ?? (await findGroupSibling(env, translationGroupId))
   const next: Record<string, unknown> = { ...data }
 
   for (const field of fields) {
@@ -183,18 +210,65 @@ export async function applyGeneratedCodes(
   return next
 }
 
-/** Any locale of this slug — the entry a new translation inherits its code from. */
-async function findSibling(
+/** Any language of this post — the entry a new translation inherits its code from. */
+async function findGroupSibling(
   env: Bindings,
-  collection: CollectionRow,
-  slug: string,
+  translationGroupId: string,
 ): Promise<EntryRow | undefined> {
   const [row] = await getDb(env)
     .select()
     .from(entries)
-    .where(and(eq(entries.collectionId, collection.id), eq(entries.slug, slug)))
+    .where(eq(entries.translationGroupId, translationGroupId))
     .limit(1)
   return row
+}
+
+/** Every language of one post, oldest variant first. */
+async function groupVariants(env: Bindings, translationGroupId: string): Promise<EntryRow[]> {
+  return getDb(env)
+    .select()
+    .from(entries)
+    .where(eq(entries.translationGroupId, translationGroupId))
+    .orderBy(asc(entries.id))
+}
+
+/**
+ * The post a slug belongs to, in whichever language that slug happens to be written.
+ *
+ * A slug identifies a post across the whole collection, not just within one locale — otherwise
+ * `GET /content/posts/halo-dunia?locale=en` would have no single post to resolve, and the fallback
+ * it exists to serve would be ambiguous. So this doubles as the uniqueness check below.
+ */
+async function findGroupIdBySlug(
+  env: Bindings,
+  collection: CollectionRow,
+  slug: string,
+): Promise<string | undefined> {
+  const [row] = await getDb(env)
+    .select({ translationGroupId: entries.translationGroupId })
+    .from(entries)
+    .where(and(eq(entries.collectionId, collection.id), eq(entries.slug, slug)))
+    .limit(1)
+  return row?.translationGroupId
+}
+
+/**
+ * Refuses a slug that already belongs to a *different* post. Within one post a slug may repeat
+ * across languages — that is every deployment that predates per-locale slugs, and the unique index
+ * on (collection, slug, locale) is what keeps those honest.
+ */
+async function assertSlugFree(
+  env: Bindings,
+  collection: CollectionRow,
+  slug: string,
+  translationGroupId: string,
+) {
+  const owner = await findGroupIdBySlug(env, collection, slug)
+  if (owner && owner !== translationGroupId) {
+    throw ApiError.conflict(
+      `The slug "${slug}" already belongs to another entry in "${collection.slug}"`,
+    )
+  }
 }
 
 /**
@@ -291,6 +365,14 @@ export async function listEntries(
   if (query.visibility) filters.push(eq(entries.visibility, query.visibility))
   if (query.locale) filters.push(eq(entries.locale, query.locale))
   if (query.q) filters.push(like(entries.slug, `%${query.q}%`))
+  // One row per *post* rather than per translation, so the admin's list of a multilingual
+  // collection reads as the pieces that exist instead of the same article three times. The locale
+  // filter still narrows first, so `groupBy=post&locale=id` is "the posts that have an Indonesian
+  // variant" — a filter, not a fallback. Nothing here is published-only: this is the management
+  // list, and a post whose only variant is a draft is exactly what an editor is looking for.
+  if (query.groupBy === 'post') {
+    filters.push(onePerTranslationGroup(query.locale ?? site.defaultLocale, site.defaultLocale))
+  }
   // `where[field][op]` filters live in the query string, not the parsed body, so they are read
   // straight off it here — only when the route passes it (the MCP list tool does not).
   if (searchParams) filters.push(...whereConditions(parseEntryFilters(searchParams, fields)))
@@ -309,10 +391,51 @@ export async function listEntries(
   const page = hasMore ? rows.slice(0, query.limit) : rows
   const last = page.at(-1)
 
+  // Only the grouped list needs the other languages, and it gets them in one query for the whole
+  // page rather than one per row — the same shape the delivery API resolves media with.
+  const translations =
+    query.groupBy === 'post'
+      ? await loadTranslations(
+          env,
+          page.map((row) => row.translationGroupId),
+        )
+      : null
+
   return {
-    data: page.map((row) => toEntry(row, collection)),
+    data: page.map((row) =>
+      toEntry(row, collection, translations?.get(row.translationGroupId) ?? undefined),
+    ),
     nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   }
+}
+
+/** D1 is SQLite: a query's parameters are bounded, so a large page is asked for in batches. */
+const GROUP_BATCH = 90
+
+/** Every language of every post on a page, keyed by group — one query per batch, not per row. */
+export async function loadTranslations(
+  env: Bindings,
+  groupIds: string[],
+): Promise<Map<string, EntryTranslation[]>> {
+  const byGroup = new Map<string, EntryTranslation[]>()
+  const unique = [...new Set(groupIds)]
+  if (unique.length === 0) return byGroup
+
+  const db = getDb(env)
+  for (let i = 0; i < unique.length; i += GROUP_BATCH) {
+    const rows = await db
+      .select()
+      .from(entries)
+      .where(inArray(entries.translationGroupId, unique.slice(i, i + GROUP_BATCH)))
+      .orderBy(asc(entries.locale))
+    for (const row of rows) {
+      const list = byGroup.get(row.translationGroupId) ?? []
+      list.push(toEntryTranslation(row))
+      byGroup.set(row.translationGroupId, list)
+    }
+  }
+
+  return byGroup
 }
 
 export async function getEntry(
@@ -324,7 +447,45 @@ export async function getEntry(
 ): Promise<Entry> {
   const collection = await findCollection(env, site.id, collectionSlug)
   const row = await findEntry(env, collection, slug, locale ?? site.defaultLocale)
-  return toEntry(row, collection)
+  // Reading one entry carries its other languages: this is what the editor's locale switcher is
+  // built from, and it cannot be derived from the slug any more — a sibling may have its own.
+  const variants = await groupVariants(env, row.translationGroupId)
+  return toEntry(row, collection, variants.map(toEntryTranslation))
+}
+
+/**
+ * Which post a new entry belongs to.
+ *
+ * The explicit `translationOf` is the way to say it, but the slug fallback below is what keeps every
+ * deployment that predates this column working: creating an entry with a slug another language
+ * already uses has always meant "this is that piece, in another language", and the admin's
+ * translation flow still relies on it. So it stays the rule when nothing says otherwise.
+ */
+async function resolveTranslationGroup(
+  env: Bindings,
+  collection: CollectionRow,
+  slug: string,
+  translationOf: string | undefined,
+): Promise<string> {
+  if (translationOf) {
+    const group = await findGroupIdBySlug(env, collection, translationOf)
+    if (!group) throw ApiError.notFound('Entry')
+    return group
+  }
+  return (await findGroupIdBySlug(env, collection, slug)) ?? newId('tgr')
+}
+
+/** Refuses a second variant in a language the post already has — one post, one row per language. */
+async function assertLocaleFree(env: Bindings, translationGroupId: string, locale: string) {
+  const [clash] = await getDb(env)
+    .select({ slug: entries.slug })
+    .from(entries)
+    .where(and(eq(entries.translationGroupId, translationGroupId), eq(entries.locale, locale)))
+    .limit(1)
+
+  if (clash) {
+    throw ApiError.conflict(`This entry already has a "${locale}" version, at "${clash.slug}"`)
+  }
 }
 
 export async function createEntry(
@@ -346,12 +507,24 @@ export async function createEntry(
     })
   }
 
-  // The slug is settled before validation now: a `code` field's value depends on it, because a new
-  // translation of an existing slug inherits that piece's identifier rather than taking a new one.
+  // The slug is settled before the group is resolved, and the group before validation: a `code`
+  // field's value depends on which post this is, because a new translation inherits that piece's
+  // identifier rather than taking a new one.
   const slug = input.slug ?? (slugify(String(input.data.title ?? '')) || newId())
+  const translationGroupId = await resolveTranslationGroup(
+    env,
+    collection,
+    slug,
+    input.translationOf,
+  )
+
+  // Both halves of "one post, one row per language, and a slug names one post".
+  await assertLocaleFree(env, translationGroupId, locale)
+  await assertSlugFree(env, collection, slug, translationGroupId)
+
   const data = validateData(
     collection,
-    await applyGeneratedCodes(env, collection, input.data, slug),
+    await applyGeneratedCodes(env, collection, input.data, translationGroupId),
   )
   const metadata = resolveMetadata(site, input.metadata)
 
@@ -360,10 +533,18 @@ export async function createEntry(
   assertPublishAllowed(collection, input.status, false, false)
 
   if (collection.kind === 'single') {
+    // One *post*, not one row: a single-entry collection on a multilingual site still needs its
+    // page in every language. Scoped to another group, so translating the one entry is allowed and
+    // creating a second entry beside it is not.
     const [existing] = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(eq(entries.collectionId, collection.id))
+      .where(
+        and(
+          eq(entries.collectionId, collection.id),
+          ne(entries.translationGroupId, translationGroupId),
+        ),
+      )
       .limit(1)
     if (existing) throw ApiError.conflict('Single-entry collections can only hold one entry')
   }
@@ -374,6 +555,7 @@ export async function createEntry(
     .values({
       id: newId('ent'),
       collectionId: collection.id,
+      translationGroupId,
       slug,
       status: input.status,
       visibility: input.visibility,
@@ -421,6 +603,17 @@ export async function updateEntry(
     })
   }
 
+  // Relabelling this variant's language cannot collide with a language the post already has. The
+  // unique index would catch the (slug, locale) case on its own, but not two different slugs in one
+  // post claiming the same language — and that is the shape a post is not allowed to be in.
+  if (input.locale && input.locale !== existing.locale) {
+    await assertLocaleFree(env, existing.translationGroupId, input.locale)
+  }
+  // A rename may not take a slug that names a different post.
+  if (input.slug && input.slug !== existing.slug) {
+    await assertSlugFree(env, collection, input.slug, existing.translationGroupId)
+  }
+
   const data = input.data
     ? validateData(
         collection,
@@ -428,7 +621,7 @@ export async function updateEntry(
           env,
           collection,
           input.data,
-          input.slug ?? existing.slug,
+          existing.translationGroupId,
           existing,
         ),
       )
@@ -468,6 +661,18 @@ export async function updateEntry(
     })
     .where(eq(entries.id, existing.id))
     .returning()
+    // The checks above catch a rename onto another post and a language this post already has. This
+    // is the case they cannot see: two *different* posts in this collection each already holding a
+    // variant at the incoming (slug, locale), which is the unique index's to refuse. Left as a raw
+    // D1 error it surfaced as a 500 on what is an ordinary editing mistake.
+    .catch((err: Error) => {
+      if (err.message.includes('UNIQUE')) {
+        throw ApiError.conflict(
+          `An entry with slug "${input.slug ?? existing.slug}" already exists in this locale`,
+        )
+      }
+      throw err
+    })
 
   return toEntry(row!, collection)
 }
@@ -545,7 +750,13 @@ export async function restoreEntryRevision(
     .set({
       // Restoring rolls the content back, never the identifier: a revision taken before the `code`
       // field was declared carries none, and rolling one back would otherwise reissue the piece.
-      data: await applyGeneratedCodes(env, collection, revision.data, existing.slug, existing),
+      data: await applyGeneratedCodes(
+        env,
+        collection,
+        revision.data,
+        existing.translationGroupId,
+        existing,
+      ),
       // A revision predating metadata capture leaves the live metadata as it is.
       metadata: revision.metadata ?? existing.metadata,
       status,
@@ -562,4 +773,143 @@ export async function restoreEntryRevision(
     .returning()
 
   return toEntry(row!, collection)
+}
+
+/**
+ * Merging and splitting posts.
+ *
+ * A post is a set of `entries` rows sharing a `translationGroupId`, and these two functions are the
+ * only things that move a row between sets. Everything else treats the group as given.
+ *
+ * The reason they exist: before the group column, the only way to say "these are the same piece in
+ * two languages" was to give them the same slug, so anyone who wanted `/id/halo-dunia` rather than
+ * `/id/hello-world` had to author genuinely separate posts. `attachTranslation` is the repair for
+ * those, and it is a repair rather than a migration because only a person knows which two posts are
+ * the same piece.
+ */
+
+/**
+ * Every language of the post this slug names.
+ *
+ * Takes no locale, and that is the point: the admin asks this *while looking at a language the post
+ * does not have yet* — following a link to `?locale=id` when only the English copy exists — so a
+ * lookup keyed on (slug, locale) would 404 exactly when the answer is most needed. A slug names one
+ * post whichever of its languages it is written in, which is what makes the locale unnecessary.
+ */
+export async function listTranslations(
+  env: Bindings,
+  site: SiteRow,
+  collectionSlug: string,
+  slug: string,
+): Promise<EntryTranslation[]> {
+  const collection = await findCollection(env, site.id, collectionSlug)
+  const group = await findGroupIdBySlug(env, collection, slug)
+  if (!group) throw ApiError.notFound('Entry')
+  return (await groupVariants(env, group)).map(toEntryTranslation)
+}
+
+/**
+ * Pulls an existing entry — and every language *it* already has — into the addressed post.
+ *
+ * Three things are load-bearing:
+ *
+ * - **The two posts must not share a language.** A post holds one row per language, and there is no
+ *   answer to which of two Indonesian variants wins. Refused with both slugs named, because the
+ *   caller is looking at one of them and needs to be told about the other.
+ * - **It merges whole posts, not rows.** Attaching a piece that is itself already a pair brings the
+ *   pair. Anything else would silently strand the variant that was left behind.
+ * - **The joined rows adopt this post's `code`.** A code names the piece, the pieces are becoming
+ *   one, and the addressed post is the one the caller is keeping. Slugs, statuses, revisions and
+ *   versions all stay exactly as they were: a merge changes what these rows *belong to*, never what
+ *   they say, so nothing published changes and no URL moves.
+ */
+export async function attachTranslation(
+  env: Bindings,
+  site: SiteRow,
+  collectionSlug: string,
+  slug: string,
+  input: AttachTranslationInput,
+): Promise<EntryTranslation[]> {
+  const collection = await findCollection(env, site.id, collectionSlug)
+  const db = getDb(env)
+
+  // Both by slug alone: this merges whole posts, so which language either slug is written in makes
+  // no difference to which posts they are.
+  const targetGroup = await findGroupIdBySlug(env, collection, slug)
+  const incomingGroup = await findGroupIdBySlug(env, collection, input.slug)
+  if (!targetGroup || !incomingGroup) throw ApiError.notFound('Entry')
+
+  // Idempotent: linking something already linked is the state the caller asked for, and a second
+  // click on a slow response should not be an error.
+  if (incomingGroup === targetGroup) {
+    return (await groupVariants(env, targetGroup)).map(toEntryTranslation)
+  }
+
+  const existing = await groupVariants(env, targetGroup)
+  const joining = await groupVariants(env, incomingGroup)
+
+  const taken = new Set(existing.map((row) => row.locale))
+  const clash = joining.find((row) => taken.has(row.locale))
+  if (clash) {
+    throw ApiError.conflict(
+      `Both entries already have a "${clash.locale}" version — "${slug}" and "${clash.slug}". ` +
+        'A piece holds one version per language, so delete or re-language one of them first.',
+    )
+  }
+
+  // The code the merged post keeps, read off the variant the caller addressed rather than
+  // recomputed: `applyGeneratedCodes` would only reissue what this post already carries.
+  const fields = codeFields(fieldsSchema.parse(collection.fields))
+  const carried: Record<string, unknown> = {}
+  for (const field of fields) {
+    const value = existing.find((row) => typeof row.data[field.name] === 'string')?.data[field.name]
+    if (typeof value === 'string' && value) carried[field.name] = value
+  }
+
+  const now = new Date().toISOString()
+  for (const row of joining) {
+    await db
+      .update(entries)
+      .set({
+        translationGroupId: targetGroup,
+        // Untouched when the collection declares no code field, so `data` is not rewritten for the
+        // sake of it — the merge is a relationship change and should read as one in the revisions.
+        ...(Object.keys(carried).length > 0 ? { data: { ...row.data, ...carried } } : {}),
+        updatedAt: now,
+      })
+      .where(eq(entries.id, row.id))
+  }
+
+  return (await groupVariants(env, targetGroup)).map(toEntryTranslation)
+}
+
+/**
+ * Splits one language out into a post of its own — the undo for a link, and the way to say "this
+ * was never a translation of that".
+ *
+ * It keeps its `code`. A code is assigned once and never moves, which is the rule everywhere else
+ * in this file, and an identifier that changed when an editor corrected a link would be worse than
+ * two pieces sharing one. Nothing downstream treats a code as unique.
+ */
+export async function detachTranslation(
+  env: Bindings,
+  site: SiteRow,
+  collectionSlug: string,
+  slug: string,
+  locale?: string,
+): Promise<Entry> {
+  const collection = await findCollection(env, site.id, collectionSlug)
+  const entry = await findEntry(env, collection, slug, locale ?? site.defaultLocale)
+  const variants = await groupVariants(env, entry.translationGroupId)
+
+  // Already a post of its own. Idempotent for the same reason attaching is.
+  if (variants.length <= 1) return toEntry(entry, collection, variants.map(toEntryTranslation))
+
+  const [row] = await getDb(env)
+    .update(entries)
+    .set({ translationGroupId: newId('tgr'), updatedAt: new Date().toISOString() })
+    .where(eq(entries.id, entry.id))
+    .returning()
+
+  return toEntry(row!, collection, [toEntryTranslation(row!)])
 }

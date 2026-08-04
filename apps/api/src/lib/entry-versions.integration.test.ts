@@ -108,6 +108,7 @@ async function seed(approvalLevels: number) {
   await db.insert(entries).values({
     id: 'ent_1',
     collectionId: 'col_posts',
+    translationGroupId: 'tgr_1',
     slug: 'hello',
     status: 'draft',
     visibility: 'public',
