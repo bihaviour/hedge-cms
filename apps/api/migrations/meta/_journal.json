@@ -99,6 +99,13 @@
       "when": 1785557620963,
       "tag": "0013_friendly_sage",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1785826277861,
+      "tag": "0014_pale_magdalene",
+      "breakpoints": true
     }
   ]
 }

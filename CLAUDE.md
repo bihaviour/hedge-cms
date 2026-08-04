@@ -103,6 +103,14 @@ Details are in the rule files; these are the ones worth knowing before you read 
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
   (`site_users`) are checked independently in `lib/auth.ts`.
 - **`siteId` is the tenant boundary.** A content query that doesn't filter on it is a bug.
+- **A post is a translation group; a slug is one language of it**. `entries` still holds one
+  row per language, each with its own slug, status, revisions and versions — `translationGroupId` is
+  what makes them one piece. This replaced grouping-by-slug, which had made a URL in each language
+  impossible. Two rules hold it up, both in `lib/entries.ts` because neither is expressible as a
+  constraint: a slug names exactly one post across a collection, and a post holds one variant per
+  language. **The delivery API never shows a hole** — a published post is served in the language
+  asked for, else the site default, else whatever it has, and says which it gave you. Reasoning in
+  `database.md` and `api-routes.md`.
 - **Publishing can be a step rather than a field, and a machine never takes it.** A collection with
   `approvalLevels > 0` refuses a direct transition to `published` — in `updateEntry`, so the gate
   holds for the MCP tools too — and the way through is an entry *version* somebody other than its

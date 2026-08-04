@@ -1,4 +1,4 @@
-import { type EntryStatus, localeLabel } from '@hedge/core'
+import { type Entry, type EntryStatus, localeLabel } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { Lock, Plus, Settings2 } from 'lucide-react'
 import { useState } from 'react'
@@ -40,6 +40,67 @@ const STATUS_LABEL: Record<EntryStatus, MessageKey> = {
   archived: 'entries.statusArchived',
 }
 
+/**
+ * One post's languages: which exist, what state each is in, and the ones still to write.
+ *
+ * A missing language is rendered as an outlined chip rather than left out, because "not translated
+ * yet" is the thing an editor of a multilingual site is actually scanning for — and it links
+ * straight into the editor at that language, where the empty form is the one for writing it.
+ *
+ * Each chip carries the *sibling's own* slug. Translations may have URLs in their own language now,
+ * so the row's slug is only its own, and linking every chip to it would open the wrong entry.
+ */
+function LocaleChips({
+  collection,
+  locales,
+  entry,
+  missingLabel,
+}: {
+  collection: string
+  locales: string[]
+  entry: Entry
+  missingLabel: string
+}) {
+  const written = new Map((entry.translations ?? []).map((one) => [one.locale, one]))
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {locales.map((code) => {
+        const variant = written.get(code)
+        if (!variant) {
+          return (
+            <Link
+              key={code}
+              to={`/collections/${collection}/entries/${entry.slug}?locale=${code}`}
+              title={`${missingLabel} · ${localeLabel(code)}`}
+              className="rounded border border-dashed px-1.5 py-0.5 text-muted-foreground text-xs hover:border-solid hover:text-foreground"
+            >
+              + {code}
+            </Link>
+          )
+        }
+        return (
+          <Link
+            key={code}
+            to={`/collections/${collection}/entries/${variant.slug}?locale=${code}`}
+            title={`${variant.slug} · ${localeLabel(code)}`}
+            className="rounded border px-1.5 py-0.5 text-xs hover:bg-accent"
+          >
+            {code}
+            {/* Published is the unmarked case: a dot next to the two that are not saves reading a
+                status word per language on every row. */}
+            {variant.status !== 'published' && (
+              <span className="ml-1 text-muted-foreground">
+                {variant.status === 'draft' ? '·' : '×'}
+              </span>
+            )}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
 export function EntriesPage() {
   const { collection: slug = '' } = useParams()
   const t = useT()
@@ -58,13 +119,20 @@ export function EntriesPage() {
     enabled: Boolean(siteSlug),
   })
 
+  // On a multilingual site the list is of *pieces*, not rows: one line per post, with its languages
+  // beside it. Listing every translation separately showed the same article once per language and
+  // made a collection look three times its size. A single-locale site has nothing to collapse, so
+  // it keeps the plain row-per-entry list and pays for no extra query.
+  const multilingual = locales.length > 1
+
   const entries = useQuery({
-    queryKey: ['entries', siteSlug, slug, status, locale, search],
+    queryKey: ['entries', siteSlug, slug, status, locale, search, multilingual],
     queryFn: () =>
       api.entries.list(slug, {
         ...(status === 'all' ? {} : { status }),
         ...(locale === 'all' ? {} : { locale }),
         ...(search ? { q: search } : {}),
+        ...(multilingual ? { groupBy: 'post' as const } : {}),
       }),
     enabled: Boolean(siteSlug),
   })
@@ -151,7 +219,9 @@ export function EntriesPage() {
                   <TableHead>{t('entries.colTitle')}</TableHead>
                   <TableHead className="w-32">{t('entries.colStatus')}</TableHead>
                   <TableHead className="w-32">{t('entries.colVisibility')}</TableHead>
-                  <TableHead className="w-20">{t('entries.colLocale')}</TableHead>
+                  <TableHead className={multilingual ? 'w-56' : 'w-20'}>
+                    {multilingual ? t('entries.colLanguages') : t('entries.colLocale')}
+                  </TableHead>
                   <TableHead className="w-36">{t('entries.colUpdated')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -184,7 +254,18 @@ export function EntriesPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{entry.locale}</TableCell>
+                    <TableCell>
+                      {multilingual ? (
+                        <LocaleChips
+                          collection={slug}
+                          locales={locales}
+                          entry={entry}
+                          missingLabel={t('entries.addTranslation')}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground text-sm">{entry.locale}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {formatDate(entry.updatedAt)}
                     </TableCell>

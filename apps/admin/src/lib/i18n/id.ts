@@ -141,6 +141,8 @@ export const id: Catalog = {
   'entries.colStatus': 'Status',
   'entries.colVisibility': 'Visibilitas',
   'entries.colLocale': 'Lokal',
+  'entries.colLanguages': 'Bahasa',
+  'entries.addTranslation': 'Belum diterjemahkan',
   'entries.colUpdated': 'Diperbarui',
   'entries.visMembers': 'Anggota',
   'entries.visPublic': 'Publik',
@@ -168,6 +170,17 @@ export const id: Catalog = {
   'editor.locale': 'Lokal',
   'editor.localeHint': 'Varian bahasa entri ini yang sedang Anda ubah.',
   'editor.translationMissing': 'Belum ada terjemahan {locale} — menyimpan akan membuatnya.',
+  'translations.title': 'Bahasa',
+  'translations.hint':
+    'Entri ini dan terjemahannya adalah satu tulisan, dengan satu versi per bahasa.',
+  'translations.notWritten': 'belum ditulis',
+  'translations.link': 'Tautkan sebagai terjemahan',
+  'translations.linkPlaceholder': 'Pilih entri untuk ditautkan…',
+  'translations.linkHint':
+    'Untuk terjemahan yang dulu dibuat sebagai entri terpisah. Keduanya tetap punya slug, status, dan riwayatnya sendiri.',
+  'translations.linked': 'Ditautkan sebagai terjemahan',
+  'translations.unlink': 'Jadikan entri terpisah',
+  'translations.unlinked': 'Kini menjadi entri terpisah',
   'editor.codeOnSave': 'Diberikan saat Anda menyimpan',
 
   'preview.action': 'Pratinjau',

@@ -10,11 +10,14 @@ import {
 } from '@hedge/core'
 import { z } from 'zod'
 import {
+  attachTranslation,
   createEntry,
   deleteEntry,
+  detachTranslation,
   getEntry,
   listEntries,
   listEntryRevisions,
+  listTranslations,
   restoreEntryRevision,
   updateEntry,
 } from '../lib/entries'
@@ -83,7 +86,9 @@ export const entryTools = [
       "Create an entry in a collection. `data` is keyed by the collection's field names and is " +
       'validated against them, so read the collection first if you are unsure. Defaults to a ' +
       'draft — pass `status: "published"` to publish immediately. A slug is derived from the ' +
-      'title when omitted.',
+      'title when omitted. To write a translation of an existing entry rather than a new piece, ' +
+      'pass `translationOf` naming that entry, and give this one its own `locale` and, if you ' +
+      'want a URL in its own language, its own `slug`.',
     args: createEntrySchema.extend({
       collection: slugSchema.describe('Slug of the collection to create the entry in'),
     }),
@@ -184,6 +189,77 @@ export const entryTools = [
         locale,
       )
       return { structured: data, text: `Restored ${summarise(data)} from revision ${revisionId}.` }
+    },
+  }),
+
+  /* ---------------------------------------------------------------- *
+   * Translations — which rows are the same piece in different languages.
+   *
+   * Exposed in full, unlike approving a version. Linking two entries changes no text, no status and
+   * no URL: it records that two rows are one post. That is a judgement about content, which is what
+   * an agent working through a batch of separately-authored translations is for — and it is
+   * reversible with `unlink_translation`, which approving a version is not.
+   * ---------------------------------------------------------------- */
+
+  defineTool({
+    name: 'list_translations',
+    title: 'List translations',
+    description:
+      'Every language of one post. An entry and its translations are one piece with one row per ' +
+      'language, so this is how to see which languages exist and what slug each one has — slugs ' +
+      'can differ per language.',
+    // No locale: a slug names one post whichever of its languages it is written in.
+    args: target.extend({ slug: slugSchema }).omit({ locale: true }),
+    access: { scope: MCP_SCOPES.entriesRead, site: 'viewer' },
+    annotations: { readOnlyHint: true },
+    handler: async ({ collection, slug }, ctx) => {
+      const data = await listTranslations(ctx.env, ctx.site, collection, slug)
+      return {
+        structured: data,
+        text: data.map((one) => `- ${one.locale}: ${one.slug} [${one.status}]`).join('\n'),
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'link_translation',
+    title: 'Link a translation',
+    description:
+      'Merge another entry into this one as its version in that entry’s language, for translations ' +
+      'that were authored as separate entries. Both keep their own slug, status, revisions and ' +
+      'version history — only the record of which piece they belong to changes. Refused when both ' +
+      'already have a version in the same language, since a piece holds one per language. Check ' +
+      'with `list_translations` first, and be sure the two really are the same piece: only a ' +
+      'reader of both can tell.',
+    // Neither side takes a locale: this merges whole pieces, so which language either slug is
+    // written in makes no difference to which pieces they are.
+    args: target.omit({ locale: true }).extend({
+      slug: slugSchema,
+      linkSlug: slugSchema.describe('Slug of the entry to pull into this one'),
+    }),
+    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    handler: async ({ collection, slug, linkSlug }, ctx) => {
+      const data = await attachTranslation(ctx.env, ctx.site, collection, slug, {
+        slug: linkSlug,
+      })
+      return {
+        structured: data,
+        text: `"${slug}" now has ${data.length} language(s): ${data.map((one) => one.locale).join(', ')}.`,
+      }
+    },
+  }),
+
+  defineTool({
+    name: 'unlink_translation',
+    title: 'Unlink a translation',
+    description:
+      'Split one language out of a post, making it a piece of its own. The undo for ' +
+      '`link_translation`. Nothing is deleted and the entry keeps its identifier code.',
+    args: entryTarget,
+    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    handler: async ({ collection, slug, locale }, ctx) => {
+      const data = await detachTranslation(ctx.env, ctx.site, collection, slug, locale)
+      return { structured: data, text: `${summarise(data)} is now a separate entry.` }
     },
   }),
 

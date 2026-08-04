@@ -176,6 +176,39 @@ Purging the CDN is part of shipping a change here: media is served `max-age=3153
 the tracker script `s-maxage=86400`, so a bad response outlives the deploy in Cloudflare's cache and
 in every visitor's browser.
 
+## Locale fallback on the delivery API
+
+**A reader is never shown a hole.** A published post is served in the language asked for, else the
+site's `defaultLocale`, else whatever language it does have — on the single-entry read *and* in the
+list. Half-translating a site therefore changes which language its index is in, never how many
+entries it has.
+
+Both handlers share `onePerTranslationGroup` in `lib/entry-query.ts`, a correlated
+`id = (select … order by … limit 1)` rather than a `GROUP BY`, because the preference is an ordering
+and the chosen row has to survive the outer query's sort, cursor and field filters. Four things
+about the behaviour are load-bearing:
+
+- **`publishedOnly` is applied inside the subquery as well as outside it.** A draft Indonesian
+  variant must not win the pick and then be filtered away — that drops the post from the listing
+  instead of falling back to its published English one. A test pins exactly this.
+- **`locale` on the response is always the language of the text in it**, never the one requested.
+  A caller renders `lang="…"` from it. `localeFallback` is the separate flag saying they differ.
+- **A slug that belongs to exactly one language is itself a request for that language.**
+  `GET /content/posts/halo-dunia` with no `?locale=` serves Indonesian, not the site default —
+  answering an Indonesian URL with English text would be the one clearly wrong answer. A slug
+  several languages share is ambiguous and defers to the default, exactly as it did before.
+- **`alternates` is published-only**, and deliberately not the management `loadTranslations`, which
+  includes drafts. A draft translation's slug is unpublished content; emitting it would hand every
+  reader the URL of a page nobody has approved.
+
+**Preview is exempt, on purpose.** `previewFor` still matches one exact (collection, slug, locale)
+and that row is served or nothing is. The point of a preview is to see the draft you are holding;
+quietly serving its published sibling instead is the answer that cannot be right.
+
+The management list keeps a row per translation by default and collapses only on
+`?groupBy=post` — collapsing changes what a page *counts*, and callers sweeping every row (the MCP
+list tool, the admin's field-suggestion query) need them all.
+
 ## Caching
 
 `routes/content.ts` sets a long `s-maxage` so Cloudflare's cache absorbs public delivery traffic.

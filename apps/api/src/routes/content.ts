@@ -11,7 +11,7 @@ import {
   siteMetadataSchema,
   websiteOrigin,
 } from '@hedge/core'
-import { and, eq, inArray, type SQL } from 'drizzle-orm'
+import { and, asc, eq, inArray, type SQL } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
@@ -22,6 +22,7 @@ import {
   cursorCondition,
   decodeCursor,
   encodeCursor,
+  onePerTranslationGroup,
   orderByClause,
   parseEntryFilters,
   resolveSort,
@@ -84,6 +85,7 @@ const DELIVERY_SORT_COLUMNS = {
 const DELIVERY_COLUMNS = {
   slug: entries.slug,
   locale: entries.locale,
+  translationGroupId: entries.translationGroupId,
   visibility: entries.visibility,
   data: entries.data,
   metadata: entries.metadata,
@@ -94,11 +96,58 @@ const DELIVERY_COLUMNS = {
 interface DeliveryRow {
   slug: string
   locale: string
+  translationGroupId: string
   visibility: EntryVisibility
   data: Record<string, unknown>
   metadata: Record<string, unknown> | null
   publishedAt: string | null
   updatedAt: string
+}
+
+/** One published language of a post: what a website needs to emit `hreflang` alternates. */
+interface Alternate {
+  locale: string
+  slug: string
+}
+
+/**
+ * The published languages of a set of posts, keyed by group — one query per batch, not per row.
+ *
+ * Deliberately not `loadTranslations` from `lib/entries.ts`, which is the management one and
+ * includes drafts. A draft translation's slug is unpublished content: emitting it in `alternates`
+ * would hand every reader the URL of a page nobody has approved.
+ */
+async function loadAlternates(
+  env: Bindings,
+  groupIds: string[],
+): Promise<Map<string, Alternate[]>> {
+  const byGroup = new Map<string, Alternate[]>()
+  const unique = [...new Set(groupIds)]
+  if (unique.length === 0) return byGroup
+
+  const db = getDb(env)
+  for (let i = 0; i < unique.length; i += KEY_BATCH) {
+    const rows = await db
+      .select({
+        groupId: entries.translationGroupId,
+        locale: entries.locale,
+        slug: entries.slug,
+      })
+      .from(entries)
+      .where(
+        and(
+          inArray(entries.translationGroupId, unique.slice(i, i + KEY_BATCH)),
+          eq(entries.status, 'published'),
+        ),
+      )
+    for (const row of rows) {
+      const list = byGroup.get(row.groupId) ?? []
+      list.push({ locale: row.locale, slug: row.slug })
+      byGroup.set(row.groupId, list)
+    }
+  }
+
+  return byGroup
 }
 
 /** Apply a site's title template to an entry title — `"%s · Docs"` + `"Routing"` → `"Routing · Docs"`. */
@@ -161,12 +210,25 @@ function toDelivery(
   publicUrl: string,
   websiteUrl: string | null,
   resolved?: ResolvedMediaFields,
+  /** The locale the caller asked for, when it differs from the one that could be served. */
+  requestedLocale?: string,
+  alternates?: Alternate[],
 ) {
   const locked = row.visibility === 'members' && !isMember
   const entryMeta = entryMetadataSchema.parse(row.metadata ?? {})
   return {
     slug: row.slug,
+    // Always the locale of the content in this payload, never the one that was asked for. A caller
+    // that renders `lang="..."` from it must be telling the truth about what the text is.
     locale: row.locale,
+    /**
+     * This post has no variant in the requested language, so another one was served rather than the
+     * post being hidden. Present on every entry so a caller can act on it — render a "not available
+     * in your language" note, or skip the row — without diffing locales itself.
+     */
+    localeFallback: requestedLocale !== undefined && requestedLocale !== row.locale,
+    /** Every published language of this post, for `hreflang`. Slugs differ per locale. */
+    ...(alternates ? { alternates } : {}),
     visibility: row.visibility,
     locked,
     ...(locked ? {} : { data: row.data }),
@@ -247,10 +309,17 @@ app.get('/:collection', async (c) => {
   const fields = fieldsSchema.parse(collection.fields)
   const sort = resolveSort(query.sort, fields, DELIVERY_SORT_COLUMNS)
 
+  const requestedLocale = query.locale ?? site.defaultLocale
   const filters: SQL[] = [
     eq(entries.collectionId, collection.id),
     eq(entries.status, 'published'),
-    eq(entries.locale, query.locale ?? site.defaultLocale),
+    // One row per post rather than one per translation, and the row is the best language available:
+    // the one asked for, else the site's default, else whatever the post does have. An index in
+    // Indonesian therefore lists every published post — the translated ones in Indonesian and the
+    // rest in the site's own language — instead of showing only the fraction already translated.
+    // Each item says which language it actually is, and `localeFallback` says whether that was the
+    // one asked for, so a caller that would rather show nothing can still tell.
+    onePerTranslationGroup(requestedLocale, site.defaultLocale, { publishedOnly: true }),
     ...whereConditions(parseEntryFilters(new URL(c.req.url).searchParams, fields)),
   ]
   if (query.cursor) filters.push(cursorCondition(sort, query.order, decodeCursor(query.cursor)))
@@ -275,11 +344,24 @@ app.get('/:collection', async (c) => {
     page.map((row) => (row.visibility === 'members' && !isMember ? {} : row.data)),
     websiteOrigin(site),
   )
+  const alternates = await loadAlternates(
+    c.env,
+    page.map((row) => row.translationGroupId),
+  )
 
   setCacheHeaders(c, isMember)
   return c.json({
     data: page.map((row, index) =>
-      toDelivery(row, isMember, siteMeta, c.env.PUBLIC_URL, websiteOrigin(site), resolved?.[index]),
+      toDelivery(
+        row,
+        isMember,
+        siteMeta,
+        c.env.PUBLIC_URL,
+        websiteOrigin(site),
+        resolved?.[index],
+        requestedLocale,
+        alternates.get(row.translationGroupId) ?? [],
+      ),
     ),
     nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
   })
@@ -310,17 +392,25 @@ app.get('/:collection/:slug', async (c) => {
   const site = requireSite(c)
   const collectionSlug = c.req.param('collection')
   const slug = c.req.param('slug')
-  const locale = c.req.query('locale') ?? site.defaultLocale
+  const askedFor = c.req.query('locale')
   const isMember = c.get('member') !== null
+  const db = getDb(c.env)
 
   // Only a token minted for *this* collection, slug and locale counts. Anything else — including a
-  // valid token for the entry next door — leaves the published-only view exactly as it was.
-  const preview = previewFor(c, collectionSlug, slug, locale)
+  // valid token for the entry next door — leaves the published-only view exactly as it was. A
+  // preview names one exact variant and is deliberately left out of the fallback below: the point
+  // of previewing is to see the draft you are holding, and quietly serving its published sibling
+  // instead would be the one answer that cannot be right.
+  const previewLocale = askedFor ?? site.defaultLocale
+  const preview = previewFor(c, collectionSlug, slug, previewLocale)
 
-  const [row] = await getDb(c.env)
+  // Which post this slug names, in whichever language the slug happens to be written. Not filtered
+  // by locale: `halo-dunia` and `hello-world` are two languages of one post now, and either address
+  // has to resolve to it.
+  const addressed = await db
     // The collection's fields come along for the ride: resolving media needs to know which of
     // this entry's values are keys, and the join is already here.
-    .select({ ...DELIVERY_COLUMNS, fields: collections.fields })
+    .select({ ...DELIVERY_COLUMNS, status: entries.status, fields: collections.fields })
     .from(entries)
     .innerJoin(collections, eq(collections.id, entries.collectionId))
     .where(
@@ -328,12 +418,50 @@ app.get('/:collection/:slug', async (c) => {
         eq(collections.siteId, site.id),
         eq(collections.slug, collectionSlug),
         eq(entries.slug, slug),
-        eq(entries.locale, locale),
-        // The one filter a preview lifts: draft and archived rows become readable, for this entry.
-        ...(preview ? [] : [eq(entries.status, 'published')]),
       ),
     )
-    .limit(1)
+
+  const anchor = addressed[0]
+  if (!anchor) throw ApiError.notFound('Entry')
+
+  let row: (typeof addressed)[number] | undefined
+  let requestedLocale: string
+  let alternates: Alternate[] = []
+
+  if (preview) {
+    // Exactly the row the token names, published or not.
+    row = addressed.find((candidate) => candidate.locale === previewLocale)
+    requestedLocale = previewLocale
+  } else {
+    // Every language of this post, oldest variant first, scoped to the collection so a group can
+    // never be read across one.
+    const variants = await db
+      .select({ ...DELIVERY_COLUMNS, status: entries.status, fields: collections.fields })
+      .from(entries)
+      .innerJoin(collections, eq(collections.id, entries.collectionId))
+      .where(
+        and(
+          eq(collections.siteId, site.id),
+          eq(collections.slug, collectionSlug),
+          eq(entries.translationGroupId, anchor.translationGroupId),
+        ),
+      )
+      .orderBy(asc(entries.id))
+
+    const published = variants.filter((candidate) => candidate.status === 'published')
+    alternates = published.map((candidate) => ({ locale: candidate.locale, slug: candidate.slug }))
+
+    // A slug that belongs to exactly one language *is* a request for that language — asking for
+    // `/halo-dunia` with no `?locale=` means the Indonesian one, not the site default that happens
+    // to share the URL shape. A slug several languages share (every post authored before slugs
+    // could differ) is ambiguous, so it defers to the site default, exactly as it used to.
+    requestedLocale = askedFor ?? (addressed.length === 1 ? anchor.locale : site.defaultLocale)
+
+    row =
+      published.find((candidate) => candidate.locale === requestedLocale) ??
+      published.find((candidate) => candidate.locale === site.defaultLocale) ??
+      published[0]
+  }
 
   if (!row) throw ApiError.notFound('Entry')
 
@@ -357,7 +485,16 @@ app.get('/:collection/:slug', async (c) => {
 
   setCacheHeaders(c, unlocked)
   return c.json({
-    data: toDelivery(row, unlocked, siteMeta, c.env.PUBLIC_URL, websiteOrigin(site), resolved?.[0]),
+    data: toDelivery(
+      row,
+      unlocked,
+      siteMeta,
+      c.env.PUBLIC_URL,
+      websiteOrigin(site),
+      resolved?.[0],
+      requestedLocale,
+      alternates,
+    ),
   })
 })
 

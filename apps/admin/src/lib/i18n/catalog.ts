@@ -164,6 +164,8 @@ export const en = {
   'entries.colStatus': 'Status',
   'entries.colVisibility': 'Visibility',
   'entries.colLocale': 'Locale',
+  'entries.colLanguages': 'Languages',
+  'entries.addTranslation': 'Not translated yet',
   'entries.colUpdated': 'Updated',
   'entries.visMembers': 'Members',
   'entries.visPublic': 'Public',
@@ -191,6 +193,17 @@ export const en = {
   'editor.locale': 'Locale',
   'editor.localeHint': 'Which language variant of this entry you are editing.',
   'editor.translationMissing': 'No {locale} translation yet — saving creates one.',
+  'translations.title': 'Languages',
+  'translations.hint':
+    'This entry and its translations are one piece, with one version per language.',
+  'translations.notWritten': 'not written yet',
+  'translations.link': 'Link as a translation',
+  'translations.linkPlaceholder': 'Choose an entry to link…',
+  'translations.linkHint':
+    'For a translation that was created as a separate entry. Both keep their own slug, status and history.',
+  'translations.linked': 'Linked as a translation',
+  'translations.unlink': 'Make this a separate entry',
+  'translations.unlinked': 'Now a separate entry',
   'editor.approvalNotice':
     'This collection needs {levels} approval(s) before an entry can be published. Save your work as a version and submit it for review.',
   'editor.codeOnSave': 'Assigned when you save',

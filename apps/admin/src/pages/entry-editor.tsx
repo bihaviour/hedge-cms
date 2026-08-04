@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { EntryPreview } from '@/components/entry-preview'
 import { EntryRevisions } from '@/components/entry-revisions'
+import { EntryTranslations } from '@/components/entry-translations'
 import { EntryVersions } from '@/components/entry-versions'
 import { FieldInput } from '@/components/field-input'
 import { PageHeader } from '@/components/page-header'
@@ -58,6 +59,15 @@ export function EntryEditorPage() {
   const entry = useQuery({
     queryKey: ['entry', siteSlug, collectionSlug, slug, locale],
     queryFn: () => api.entries.get(collectionSlug, slug!, locale),
+    enabled: !isNew && Boolean(siteSlug),
+  })
+
+  // The post's other languages, looked up by slug rather than by (slug, locale) — this has to
+  // answer even when the locale being edited has no variant yet, which is exactly the case the
+  // locale switcher needs it for.
+  const translations = useQuery({
+    queryKey: ['entry-translations', siteSlug, collectionSlug, slug],
+    queryFn: () => api.entries.translations(collectionSlug, slug!),
     enabled: !isNew && Boolean(siteSlug),
   })
 
@@ -150,7 +160,14 @@ export function EntryEditorPage() {
         ...(entrySlug ? { slug: entrySlug } : {}),
       }
       return creating
-        ? api.entries.create(collectionSlug, { ...payload, locale })
+        ? api.entries.create(collectionSlug, {
+            ...payload,
+            locale,
+            // Writing a language of an existing post: say which one. Without this the link would
+            // rest on the two sharing a slug, and the moment somebody gave this translation a URL
+            // in its own language it would quietly become a separate post instead.
+            ...(translationMissing ? { translationOf: slug } : {}),
+          })
         : api.entries.update(collectionSlug, slug!, payload, locale)
     },
     onSuccess: (saved) => {
@@ -161,6 +178,9 @@ export function EntryEditorPage() {
       setMetadata({ ...EMPTY_METADATA, ...saved.metadata })
       queryClient.invalidateQueries({ queryKey: ['entries', collectionSlug] })
       queryClient.invalidateQueries({ queryKey: ['entry', collectionSlug] })
+      // A save can add a language to the post or rename one's slug, and the switcher navigates by
+      // both — so the list of languages is stale the moment the save lands.
+      queryClient.invalidateQueries({ queryKey: ['entry-translations'] })
       toast.success(t('common.saved'))
       if (creating) {
         navigate(`/collections/${collectionSlug}/entries/${saved.slug}?locale=${saved.locale}`, {
@@ -183,12 +203,20 @@ export function EntryEditorPage() {
     },
   })
 
-  /** Switch which locale variant is being edited, keeping the slug (or the new-entry route). */
+  /**
+   * Switch which language of this post is being edited.
+   *
+   * Navigates to *that language's own slug*, because a translation can have a URL in its own
+   * language — keeping this entry's slug would open a different post, or nothing. A language with
+   * no variant yet keeps this one's slug, which is what makes the editor show its blank form.
+   */
   function switchLocale(next: string) {
-    const base = slug
-      ? `/collections/${collectionSlug}/entries/${slug}`
-      : `/collections/${collectionSlug}/entries/new`
-    navigate(`${base}?locale=${next}`)
+    if (!slug) {
+      navigate(`/collections/${collectionSlug}/entries/new?locale=${next}`)
+      return
+    }
+    const sibling = translations.data?.find((one) => one.locale === next)
+    navigate(`/collections/${collectionSlug}/entries/${sibling?.slug ?? slug}?locale=${next}`)
   }
 
   if (collection.isLoading || (!isNew && entry.isLoading)) {
@@ -389,6 +417,17 @@ export function EntryEditorPage() {
                   : t('editor.localeHint')}
               </p>
             </div>
+          )}
+
+          {/* Which languages this post has, and the link/unlink repair for translations that were
+              written as separate entries. Needs a saved entry to hang off, like the panels below. */}
+          {!isNew && slug && (
+            <EntryTranslations
+              collection={collectionSlug}
+              slug={slug}
+              locale={locale}
+              siteLocales={locales}
+            />
           )}
 
           <div className="space-y-2">
