@@ -26,7 +26,7 @@ export const apiKeyTools = [
     handler: async (_input, ctx) => {
       const data = await listApiKeys(ctx.env, ctx.site.id)
       return {
-        structured: data,
+        structured: { data },
         text: data.length
           ? data
               .map((key) => `- ${key.id} ${key.name} (${key.prefix}…) [${key.scopes.join(', ')}]`)

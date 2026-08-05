@@ -43,7 +43,7 @@ export const userTools = [
     handler: async (_input, ctx) => {
       const data = await listUsers(ctx.env)
       return {
-        structured: data,
+        structured: { data },
         text: data
           .map(
             (user) =>
@@ -66,7 +66,7 @@ export const userTools = [
     handler: async ({ userId }, ctx) => {
       const data = await listUserSites(ctx.env, userId)
       return {
-        structured: data,
+        structured: { data },
         text: data.length
           ? data.map((access) => `- ${access.siteSlug} [${access.role}]`).join('\n')
           : 'No per-site grants.',

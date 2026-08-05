@@ -34,7 +34,7 @@ export const collectionTools = [
     handler: async (_input, ctx) => {
       const data = await listCollections(ctx.env, ctx.site.id)
       return {
-        structured: data,
+        structured: { data },
         text: data.length
           ? data.map((col) => `- ${col.slug} (${col.name}, ${col.fields.length} fields)`).join('\n')
           : 'No collections yet.',
