@@ -56,7 +56,7 @@ export const newsletterTools = [
     handler: async (_input, ctx) => {
       const data = await listNewsletterTemplates(ctx.env, ctx.site.id)
       return {
-        structured: data,
+        structured: { data },
         text: data.length
           ? data.map((tpl) => `- ${tpl.id} ${tpl.name} — "${tpl.subject}"`).join('\n')
           : 'No templates yet.',

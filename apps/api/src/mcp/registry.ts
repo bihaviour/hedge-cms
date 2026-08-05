@@ -53,8 +53,18 @@ export interface McpContext {
 }
 
 export interface ToolResult {
-  /** The machine-readable result, returned as `structuredContent`. */
-  structured: unknown
+  /**
+   * The machine-readable result, returned as `structuredContent`.
+   *
+   * **A record, never a bare array** — the MCP spec says `structuredContent` is a JSON object, and
+   * a conforming client rejects the whole response before the model sees it rather than warning
+   * about it, so a tool that returns an array is not degraded but unusable (#114). The type is what
+   * enforces that: an array has no string index signature, so returning one is a compile error
+   * instead of something only a real client discovers. Wrap a list as `{ data }` — the shape the
+   * paginated tools already return, minus `nextCursor`, so nothing has to special-case which list
+   * it is holding.
+   */
+  structured: Record<string, unknown>
   /** A short human/model-readable summary. Keep it scannable — it lands in a context window. */
   text: string
 }

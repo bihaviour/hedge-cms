@@ -88,6 +88,26 @@ mock.module('../lib/entries', () => ({
   },
   listEntryRevisions: async () => [],
   restoreEntryRevision: async (_e: unknown, _s: unknown, _c: string, slug: string) => entry(slug),
+  listTranslations: async () => [{ locale: 'en', slug: 'hello', status: 'published' }],
+  attachTranslation: async () => [{ locale: 'en', slug: 'hello', status: 'published' }],
+  detachTranslation: async (_e: unknown, _s: unknown, _c: string, slug: string) => entry(slug),
+}))
+
+mock.module('../lib/api-keys', () => ({
+  listApiKeys: async () => [
+    { id: 'key_1', name: 'delivery', prefix: 'hdg_ab', scopes: ['content:read'] },
+  ],
+  createApiKey: async () => ({ id: 'key_2', name: 'authoring', scopes: ['content:write'] }),
+  deleteApiKey: async () => {},
+}))
+
+// Only the one read is stubbed; the rest of the module is kept as it is, since a mock that drops
+// an export the tool module imports fails the import itself rather than the call.
+const newsletterLib = await import('../lib/newsletter')
+
+mock.module('../lib/newsletter', () => ({
+  ...newsletterLib,
+  listNewsletterTemplates: async () => [{ id: 'tpl_1', name: 'Weekly', subject: 'Hello' }],
 }))
 
 const version = (id: string, status = 'draft') => ({
@@ -243,6 +263,55 @@ describe('POST /mcp', () => {
     reset()
     const names = await listTools()
     expect(new Set(names).size).toBe(names.length)
+  })
+
+  /* ---------------------------------------------------------------- *
+   * The result envelope
+   * ---------------------------------------------------------------- */
+
+  /**
+   * `structuredContent` is a JSON **object** in the MCP spec, and a conforming client enforces it:
+   * a bare array is rejected before the model sees any of the response, so a tool returning one is
+   * not degraded but unusable (#114). Every list therefore answers `{ data }` — the same shape the
+   * paginated tools already return, minus `nextCursor`, so a client holding a list never has to ask
+   * which list it is. `ToolResult.structured` makes the wrong shape a compile error; this pins the
+   * wire result, which is what the client actually validates.
+   */
+  test('every list tool returns a record, never a bare array', async () => {
+    reset()
+    const lists: [string, Record<string, unknown>][] = [
+      ['list_collections', {}],
+      ['list_sites', {}],
+      ['list_users', {}],
+      ['list_user_sites', { userId: 'usr_1' }],
+      ['list_api_keys', {}],
+      ['list_newsletter_templates', {}],
+      ['list_entries', { collection: 'posts' }],
+      ['list_entry_revisions', { collection: 'posts', slug: 'hello' }],
+      ['list_entry_versions', { collection: 'posts', slug: 'hello' }],
+      ['list_translations', { collection: 'posts', slug: 'hello' }],
+    ]
+
+    for (const [name, args] of lists) {
+      const { json } = await call(name, args)
+      const structured = json.result.structuredContent
+      expect(json.result.isError).toBeUndefined()
+      expect(Array.isArray(structured)).toBe(false)
+      expect(Array.isArray(structured.data)).toBe(true)
+    }
+  })
+
+  /** The one write that answers with a list — a merge returns the post's languages. */
+  test('link_translation answers with a record too', async () => {
+    reset()
+    const { json } = await call('link_translation', {
+      collection: 'posts',
+      slug: 'hello',
+      linkSlug: 'halo-dunia',
+    })
+    expect(json.result.isError).toBeUndefined()
+    expect(Array.isArray(json.result.structuredContent)).toBe(false)
+    expect(Array.isArray(json.result.structuredContent.data)).toBe(true)
   })
 
   /* ---------------------------------------------------------------- *

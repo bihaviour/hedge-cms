@@ -44,7 +44,7 @@ export const siteTools = [
       const rows = await accessibleSites(ctx.env, ctx.actor)
       const data = rows.map(toSite)
       return {
-        structured: data,
+        structured: { data },
         text: data
           .map(
             (site) => `- ${site.slug}${site.id === ctx.site.id ? ' (active)' : ''} — ${site.name}`,

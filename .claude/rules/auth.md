@@ -154,6 +154,15 @@ Pick the role a new tool declares by **matching the REST route that does the sam
 writes are `editor`, schema and key writes are site `admin`, user management is instance `admin`,
 deleting a site is instance `owner`. A tool whose gate is looser than its route is a hole.
 
+**A tool's `structured` result is a record, never a bare array** (#114). The spec says
+`structuredContent` is a JSON object, and a conforming client enforces it by *rejecting the whole
+response* before the model sees any of it — so a tool that answers with an array is not degraded,
+it is unusable, and nothing short of a real client notices. A list answers `{ data }`, which is what
+the paginated tools already return minus `nextCursor`, so a client never has to ask which list it
+is holding. `ToolResult.structured` in `mcp/registry.ts` is typed `Record<string, unknown>` to make
+the wrong shape a compile error rather than a documented rule; that is also why `CreateSiteResult`
+in `@hedge/core` is a type alias and not an interface.
+
 Adding an area means adding a `:read`/`:write` pair to `MCP_SCOPES` **and** a line to
 `MCP_SCOPE_LABELS` in `packages/core/src/auth.ts` — the consent screen renders from the labels, and
 a scope with no label reaches an operator as a bare `users:write` nobody can evaluate. Nothing else

@@ -46,7 +46,8 @@ export interface McpTextContent {
 
 export interface McpToolResult {
   content: McpTextContent[]
-  structuredContent?: unknown
+  /** A JSON object per the spec — never a bare array, which a conforming client rejects (#114). */
+  structuredContent?: Record<string, unknown>
   isError?: boolean
 }
 

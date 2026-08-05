@@ -157,7 +157,7 @@ export const entryTools = [
     handler: async ({ collection, slug, locale }, ctx) => {
       const data = await listEntryRevisions(ctx.env, ctx.site, collection, slug, locale)
       return {
-        structured: data,
+        structured: { data },
         text: data.length
           ? data
               .map(
@@ -215,7 +215,7 @@ export const entryTools = [
     handler: async ({ collection, slug }, ctx) => {
       const data = await listTranslations(ctx.env, ctx.site, collection, slug)
       return {
-        structured: data,
+        structured: { data },
         text: data.map((one) => `- ${one.locale}: ${one.slug} [${one.status}]`).join('\n'),
       }
     },
@@ -243,7 +243,7 @@ export const entryTools = [
         slug: linkSlug,
       })
       return {
-        structured: data,
+        structured: { data },
         text: `"${slug}" now has ${data.length} language(s): ${data.map((one) => one.locale).join(', ')}.`,
       }
     },
@@ -286,7 +286,7 @@ export const entryTools = [
     handler: async ({ collection, slug, locale, ...query }, ctx) => {
       const data = await listEntryVersions(ctx.env, ctx.site, collection, slug, query, locale)
       return {
-        structured: data,
+        structured: { data },
         text: data.length
           ? data
               .map(

@@ -209,8 +209,12 @@ export type CreateSiteInput = z.infer<typeof createSiteSchema>
  * The result of creating a site. `deliveryKey` carries the raw `key` secret and is the only time it
  * is ever returned — treat this response like the API-key create response in logging and anything
  * that records request bodies. Null when `createDeliveryKey` was false.
+ *
+ * A type alias rather than an interface because `create_site` returns it as MCP
+ * `structuredContent`, which is typed `Record<string, unknown>` to keep a bare array out of it
+ * (#114) — and an interface has no implicit index signature, so it would not assign.
  */
-export interface CreateSiteResult {
+export type CreateSiteResult = {
   site: Site
   deliveryKey: (ApiKey & { key: string }) | null
 }
