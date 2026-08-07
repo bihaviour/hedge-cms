@@ -128,7 +128,7 @@ export const id: Catalog = {
   'sites.localePickerPlaceholder': 'Pilih bahasa…',
 
   'entries.fallbackTitle': 'Entri',
-  'entries.fields': 'Bidang',
+  'entries.settings': 'Pengaturan',
   'entries.newEntry': 'Entri baru',
   'entries.searchPlaceholder': 'Cari berdasarkan slug…',
   'entries.allStatuses': 'Semua status',
@@ -553,7 +553,9 @@ export const id: Catalog = {
   'collections.approvalTwo': 'Dua persetujuan',
   'collections.approvalHint':
     'Dengan persetujuan aktif, entri di koleksi ini tidak lagi dapat diterbitkan dengan mengubahnya langsung. Perubahan ditulis sebagai versi, ditinjau oleh orang selain penulisnya, lalu diterbitkan dari sana.',
-  'collections.fieldsTitle': 'Bidang',
+  'collections.settingsTitle': 'Pengaturan {name}',
+  'collections.settingsDescription':
+    'Tentukan bentuk entri dalam koleksi ini, dan bagaimana entri diterbitkan.',
   'collections.readOnly':
     'Anda dapat melihat susunan koleksi ini, tetapi mengubah atau menghapusnya memerlukan akses admin di situs ini.',
   'collections.delete': 'Hapus koleksi',

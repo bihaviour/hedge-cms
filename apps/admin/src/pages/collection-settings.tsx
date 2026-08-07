@@ -114,8 +114,8 @@ export function CollectionSettingsPage() {
   return (
     <>
       <PageHeader
-        title={`${collection.data?.name ?? slug} fields`}
-        description="Define the shape of entries in this collection."
+        title={t('collections.settingsTitle', { name: collection.data?.name ?? slug })}
+        description={t('collections.settingsDescription')}
         actions={
           canManage && (
             <>

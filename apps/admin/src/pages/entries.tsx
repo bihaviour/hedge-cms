@@ -147,7 +147,7 @@ export function EntriesPage() {
             <Button variant="outline" asChild>
               <Link to={`/collections/${slug}/settings`}>
                 <Settings2 className="size-4" />
-                {t('entries.fields')}
+                {t('entries.settings')}
               </Link>
             </Button>
             <Button asChild>
