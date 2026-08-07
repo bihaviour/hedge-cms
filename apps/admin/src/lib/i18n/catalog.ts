@@ -151,7 +151,9 @@ export const en = {
 
   // Entries list.
   'entries.fallbackTitle': 'Entries',
-  'entries.fields': 'Fields',
+  // "Settings" rather than "Fields": the page it opens also carries the approval workflow and the
+  // delete control, so naming it after one section undersells what is behind it.
+  'entries.settings': 'Settings',
   'entries.newEntry': 'New entry',
   'entries.searchPlaceholder': 'Search by slug…',
   'entries.allStatuses': 'All statuses',
@@ -299,7 +301,9 @@ export const en = {
   'collections.approvalTwo': 'Two approvals',
   'collections.approvalHint':
     'With approvals on, an entry in this collection can no longer be published by editing it directly. Changes are written as a version, reviewed by somebody other than their author, and published from there.',
-  'collections.fieldsTitle': 'Fields',
+  'collections.settingsTitle': '{name} settings',
+  'collections.settingsDescription':
+    'Define the shape of entries in this collection, and how they are published.',
 
   // Shown instead of the Save and Delete buttons to someone who can fill this collection but not
   // reshape it. Says which access is missing, so it reads as a permission rather than a bug.
