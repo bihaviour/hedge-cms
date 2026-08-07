@@ -213,20 +213,33 @@ export async function startLoginChallenge(
     .returning()
 
   const device = describeDevice(userAgent)
-  await sendEmail(
-    c.env,
-    await renderEmail(c.env, 'login_code', {
-      to: user.email,
-      name: user.name,
-      // No link in this email by design, but `renderEmail` always has a `url` to work with — point
-      // it at the sign-in screen so an operator's override that adds a button still lands somewhere
-      // sensible rather than on `undefined`.
-      url: `${c.env.PUBLIC_URL}/login`,
-      code,
-      device,
-    }),
-    { templateKey: 'login_code' },
-  )
+  try {
+    await sendEmail(
+      c.env,
+      await renderEmail(c.env, 'login_code', {
+        to: user.email,
+        name: user.name,
+        // No link in this email by design, but `renderEmail` always has a `url` to work with — point
+        // it at the sign-in screen so an operator's override that adds a button still lands somewhere
+        // sensible rather than on `undefined`.
+        url: `${c.env.PUBLIC_URL}/login`,
+        code,
+        device,
+      }),
+      { templateKey: 'login_code' },
+    )
+  } catch (error) {
+    // The row and the session its cookies address both exist by now, so letting this escape would
+    // strand the pair — the exit `discardChallenge` is documented to have no exceptions. It also
+    // reaches the browser as a bare 500 before `challengeId` is ever returned, so the code screen
+    // never renders and a deployment with no trusted device is locked out of its own admin with
+    // nothing on screen to explain why. Spend the challenge and name the dependency that failed.
+    console.error('[auth] login code email failed', error)
+    await discardChallenge(c.env, row!)
+    throw ApiError.emailDeliveryFailed(
+      'We could not send your verification code. Check the email settings or contact your administrator.',
+    )
+  }
 
   return {
     challengeId: row!.id,
@@ -313,17 +326,29 @@ export async function resendLoginCode(
     .set({ codeHash: await hmac(c.env.AUTH_SECRET, code), expiresAt })
     .where(eq(loginChallenges.id, row.id))
 
-  await sendEmail(
-    c.env,
-    await renderEmail(c.env, 'login_code', {
-      to: user.email,
-      name: user.name,
-      url: `${c.env.PUBLIC_URL}/login`,
-      code,
-      device: describeDevice(row.userAgent),
-    }),
-    { templateKey: 'login_code' },
-  )
+  try {
+    await sendEmail(
+      c.env,
+      await renderEmail(c.env, 'login_code', {
+        to: user.email,
+        name: user.name,
+        url: `${c.env.PUBLIC_URL}/login`,
+        code,
+        device: describeDevice(row.userAgent),
+      }),
+      { templateKey: 'login_code' },
+    )
+  } catch (error) {
+    // The rotation above already made this code the only one that would work, so a failed send
+    // leaves a challenge nobody can ever complete — the caller would sit on the code screen waiting
+    // for mail that is not coming. Spend it so they start again cleanly, which is what every other
+    // failure in this file does.
+    console.error('[auth] login code resend failed', error)
+    await discardChallenge(c.env, row)
+    throw ApiError.emailDeliveryFailed(
+      'We could not resend your verification code. Sign in again to start over.',
+    )
+  }
 
   return { expiresAt: new Date(expiresAt * 1000).toISOString() }
 }

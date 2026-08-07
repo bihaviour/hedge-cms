@@ -22,6 +22,13 @@ export type ApiErrorCode =
   | 'payload_too_large'
   | 'unsupported_media_type'
   | 'rate_limited'
+  /**
+   * An email the request depended on could not be handed to the provider. Its own code because the
+   * client acts on it — the login screen says the verification code could not be sent, where a bare
+   * `internal_error` reads as "the CMS is broken" and tells an operator nothing about where to look.
+   * A 503 rather than a 500: the deployment is fine, one dependency of it is not.
+   */
+  | 'email_delivery_failed'
   | 'internal_error'
 
 export interface ApiErrorBody {
@@ -51,6 +58,7 @@ export const HTTP_STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   unsupported_media_type: 415,
   rate_limited: 429,
   internal_error: 500,
+  email_delivery_failed: 503,
 }
 
 export const SESSION_COOKIE = 'hedge_session'

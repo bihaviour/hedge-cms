@@ -4,6 +4,7 @@ import { emailLog, type SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
 import { newId } from '../lib/id'
 import { loadEmailConfig, resolveSender } from './config'
+import { loggedSubject } from './redact'
 
 export interface EmailMessage {
   to: string
@@ -48,9 +49,12 @@ export async function sendEmail(
   const config = await loadEmailConfig(env)
   const { replyTo, ...from } = resolveSender(env, config, options.site ?? null)
 
-  // Sending switched off in the config: compose and log, but never hand it to the provider.
+  // Sending switched off in the config: compose and log, but never hand it to the provider. Unlike
+  // the development branch below, this one runs in production, so the subject is redacted here too.
   if (config?.enabled === false) {
-    console.log(`[email] disabled — skipped to=${message.to} subject=${message.subject}`)
+    console.log(
+      `[email] disabled — skipped to=${message.to} subject=${loggedSubject(message.subject, options.templateKey)}`,
+    )
     await logEmail(env, message, options, 'skipped', 'Sending disabled in email config')
     return
   }
@@ -103,7 +107,7 @@ async function logEmail(
       .values({
         id: newId('elog'),
         to: message.to,
-        subject: message.subject,
+        subject: loggedSubject(message.subject, options.templateKey),
         templateKey: options.templateKey ?? null,
         newsletterId: options.newsletterId ?? null,
         status,
