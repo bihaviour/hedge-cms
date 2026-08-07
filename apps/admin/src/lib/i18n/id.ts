@@ -23,6 +23,16 @@ export const id: Catalog = {
   'common.close': 'Tutup',
   'common.actions': 'Tindakan',
 
+  // Bilah paginasi di bawah setiap tabel. Bahasa Indonesia tidak mengubah bentuk jamak, jadi kedua
+  // kunci bahasa Inggris itu menjadi kalimat yang sama di sini.
+  'pagination.showing': 'Menampilkan {from}–{to} dari {total}',
+  'pagination.rowsOne': '1 baris',
+  'pagination.rowsMany': '{total} baris',
+  'pagination.page': 'Halaman {page}',
+  'pagination.rowsPerPage': 'Baris per halaman',
+  'pagination.previous': 'Sebelumnya',
+  'pagination.next': 'Berikutnya',
+
   'language.label': 'Bahasa',
   'language.change': 'Ganti bahasa',
 
@@ -531,7 +541,6 @@ export const id: Catalog = {
   'review.colAuthor': 'Penulis',
   'review.colSubmitted': 'Diajukan',
   'review.open': 'Buka',
-  'review.loadMore': 'Muat lagi',
   'review.noAuthority':
     'Anda tidak menyetujui versi di situs ini. Admin dapat mengubahnya dari Pengguna → Akses situs.',
   'nav.review': 'Tinjauan',

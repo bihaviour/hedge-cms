@@ -9,6 +9,7 @@ import { Mail, Plus, Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { EmptyState, PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -46,6 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { useKeysetPage } from '@/hooks/use-paged-query'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/i18n'
@@ -69,13 +71,13 @@ export function NewslettersPage() {
   const [sending, setSending] = useState<Newsletter | null>(null)
   const siteSlug = useActiveSiteSlug()
 
-  const newsletters = useQuery({
+  const newsletters = useKeysetPage<Newsletter>({
     queryKey: ['newsletters', siteSlug],
-    queryFn: () => api.newsletters.list(),
     enabled: Boolean(siteSlug),
+    fetchPage: (page) => api.newsletters.list(page),
   })
 
-  const rows = newsletters.data?.data ?? []
+  const rows = newsletters.rows
 
   return (
     <>
@@ -93,7 +95,7 @@ export function NewslettersPage() {
       <div className="p-8">
         {newsletters.isLoading && <Skeleton className="h-48 w-full" />}
 
-        {!newsletters.isLoading && rows.length === 0 && (
+        {!newsletters.isLoading && newsletters.isEmpty && (
           <EmptyState
             title="No newsletters yet"
             description="Draft your first campaign and send it to your list."
@@ -101,7 +103,7 @@ export function NewslettersPage() {
           />
         )}
 
-        {rows.length > 0 && (
+        {!newsletters.isLoading && !newsletters.isEmpty && (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -145,6 +147,7 @@ export function NewslettersPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={newsletters.pagination} />
           </div>
         )}
       </div>

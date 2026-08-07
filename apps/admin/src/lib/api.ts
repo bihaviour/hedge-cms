@@ -44,6 +44,8 @@ import type {
   NewsletterDelivery,
   NewsletterPreview,
   NewsletterTemplate,
+  PageQuery,
+  Paginated,
   PreviewToken,
   ReviewQueueItem,
   RoleDefinition,
@@ -305,11 +307,8 @@ export const api = {
 
   /** Admin-side management of one site's members. `pending` means they have not set a password. */
   members: {
-    list: (query: { q?: string; cursor?: string } = {}) => {
-      const params = new URLSearchParams(
-        Object.entries(query).filter(([, value]) => value) as [string, string][],
-      )
-      return requestPage<Member & { pending: boolean }>(`/members?${params}`)
+    list: (query: PageQuery & { q?: string } = {}) => {
+      return requestPage<Member & { pending: boolean }>(`/members${listParams(query)}`)
     },
     create: (input: CreateMemberInput) =>
       request<Member & { pending: boolean }>('/members', { method: 'POST', ...json(input) }),
@@ -501,10 +500,8 @@ export const api = {
 
   /** The review inbox for the active site. What the caller may approve on it is `access` above. */
   review: {
-    queue: (cursor?: string) =>
-      requestPage<ReviewQueueItem>(
-        `/review/queue${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
-      ),
+    queue: (query: PageQuery = {}) =>
+      requestPage<ReviewQueueItem>(`/review/queue${listParams(query)}`),
     count: () => request<{ count: number }>('/review/queue/count'),
   },
 
@@ -567,8 +564,7 @@ export const api = {
         ...json(input),
       }),
 
-    log: (cursor?: string) =>
-      requestPage<EmailLog>(`/email/log${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+    log: (query: PageQuery = {}) => requestPage<EmailLog>(`/email/log${listParams(query)}`),
 
     config: () => request<EmailConfig>('/email/config'),
     updateConfig: (input: UpdateEmailConfigInput) =>
@@ -577,12 +573,8 @@ export const api = {
 
   /** Per-site newsletter subscriber list. `pending` has no meaning here — everyone is just an email. */
   subscribers: {
-    list: (query: { q?: string; cursor?: string } = {}) => {
-      const params = new URLSearchParams(
-        Object.entries(query).filter(([, value]) => value) as [string, string][],
-      )
-      return requestPage<Subscriber>(`/subscribers?${params}`)
-    },
+    list: (query: PageQuery & { q?: string } = {}) =>
+      requestPage<Subscriber>(`/subscribers${listParams(query)}`),
     create: (input: CreateSubscriberInput) =>
       request<Subscriber>('/subscribers', { method: 'POST', ...json(input) }),
     update: (id: string, input: UpdateSubscriberInput) =>
@@ -592,10 +584,7 @@ export const api = {
 
   /** Per-site newsletter campaigns. */
   newsletters: {
-    list: (cursor?: string) =>
-      requestPage<Newsletter>(
-        `/newsletters${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
-      ),
+    list: (query: PageQuery = {}) => requestPage<Newsletter>(`/newsletters${listParams(query)}`),
     get: (id: string) => request<Newsletter>(`/newsletters/${id}`),
     create: (input: CreateNewsletterInput) =>
       request<Newsletter>('/newsletters', { method: 'POST', ...json(input) }),
@@ -683,12 +672,28 @@ export const api = {
   },
 }
 
-/** Same as `request`, but preserves the `nextCursor` alongside the rows. */
-async function requestPage<T>(path: string): Promise<{ data: T[]; nextCursor: string | null }> {
+/**
+ * Same as `request`, but preserves the whole page envelope — `nextCursor` to page with, and `total`
+ * to render "of 137" from. `request` unwraps to `data` and would drop both.
+ */
+/**
+ * Query string for a list request, dropping anything unset so `?limit=&cursor=` never goes out and
+ * a page-one request stays a clean cache key.
+ */
+function listParams(query: Record<string, string | number | undefined>): string {
+  const params = new URLSearchParams(
+    Object.entries(query)
+      .filter(([, value]) => value !== undefined && value !== '')
+      .map(([key, value]) => [key, String(value)]),
+  )
+  return params.size ? `?${params}` : ''
+}
+
+async function requestPage<T>(path: string): Promise<Paginated<T>> {
   const response = await send(path)
   const payload = await response.json().catch(() => null)
 
   if (!response.ok) throw errorFrom(response, payload)
 
-  return payload as { data: T[]; nextCursor: string | null }
+  return payload as Paginated<T>
 }

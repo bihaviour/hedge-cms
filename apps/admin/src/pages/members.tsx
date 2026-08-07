@@ -1,8 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { Member } from '@hedge/core'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Ban, CircleCheck, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { EmptyState, PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useKeysetPage } from '@/hooks/use-paged-query'
 import { useActiveSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -40,10 +43,10 @@ export function MembersPage() {
   const queryClient = useQueryClient()
   const { site } = useActiveSite()
 
-  const members = useQuery({
+  const members = useKeysetPage<Member & { pending: boolean }>({
     queryKey: ['members', site?.slug, search],
-    queryFn: () => api.members.list(search ? { q: search } : {}),
     enabled: Boolean(site),
+    fetchPage: (page) => api.members.list({ ...page, ...(search ? { q: search } : {}) }),
   })
 
   const setStatus = useMutation({
@@ -94,7 +97,7 @@ export function MembersPage() {
 
         {members.isLoading && <Skeleton className="h-64 w-full" />}
 
-        {members.data?.data.length === 0 && (
+        {!members.isLoading && members.isEmpty && (
           <EmptyState
             title={t('members.emptyTitle')}
             description={
@@ -106,7 +109,7 @@ export function MembersPage() {
           />
         )}
 
-        {members.data && members.data.data.length > 0 && (
+        {!members.isLoading && !members.isEmpty && (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -119,7 +122,7 @@ export function MembersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.data.data.map((member) => (
+                {members.rows.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell className="font-medium">{member.name}</TableCell>
                     <TableCell className="text-muted-foreground">{member.email}</TableCell>
@@ -185,6 +188,7 @@ export function MembersPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={members.pagination} />
           </div>
         )}
       </div>

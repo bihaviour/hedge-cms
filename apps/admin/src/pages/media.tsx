@@ -100,6 +100,12 @@ export function MediaPage() {
   })
 
   const items = media.data?.pages.flatMap((page) => page.data) ?? []
+
+  // The library keeps "Load more" rather than taking the pager every table has (#124): this is a
+  // grid someone scans, and the media picker runs the same query inside a dialog, where paging is
+  // worse than scrolling. The count is the part it was missing — every page carries the same
+  // `total`, so the first one answers it.
+  const total = media.data?.pages[0]?.total
   const isEmpty = !media.isLoading && items.length === 0
 
   return (
@@ -312,6 +318,14 @@ export function MediaPage() {
               </div>
             ))}
           </div>
+        )}
+
+        {items.length > 0 && total !== undefined && (
+          <p className="text-center text-muted-foreground text-sm">
+            {total === 1
+              ? t('pagination.rowsOne')
+              : t('pagination.showing', { from: 1, to: items.length, total })}
+          </p>
         )}
 
         {media.hasNextPage && (

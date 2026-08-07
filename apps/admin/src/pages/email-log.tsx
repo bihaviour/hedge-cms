@@ -1,8 +1,7 @@
 import { DEFAULT_EMAIL_TEMPLATES, type EmailLog, type EmailStatus } from '@hedge/core'
-import { useInfiniteQuery } from '@tanstack/react-query'
 import { EmptyState, PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -12,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useKeysetPage } from '@/hooks/use-paged-query'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/i18n'
 
@@ -27,14 +27,12 @@ function templateLabel(key: EmailLog['templateKey']): string {
 
 export function EmailLogPage() {
   const { formatDate } = useFormatters()
-  const log = useInfiniteQuery({
+  const log = useKeysetPage<EmailLog>({
     queryKey: ['email-log'],
-    queryFn: ({ pageParam }) => api.email.log(pageParam),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    fetchPage: (page) => api.email.log(page),
   })
 
-  const rows = log.data?.pages.flatMap((page) => page.data) ?? []
+  const rows = log.rows
 
   return (
     <>
@@ -46,14 +44,14 @@ export function EmailLogPage() {
       <div className="p-8">
         {log.isLoading && <Skeleton className="h-64 w-full" />}
 
-        {!log.isLoading && rows.length === 0 && (
+        {!log.isLoading && log.isEmpty && (
           <EmptyState
             title="No emails yet"
             description="Invites, password resets and verification emails will appear here once sent."
           />
         )}
 
-        {rows.length > 0 && (
+        {!log.isLoading && !log.isEmpty && (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -88,18 +86,7 @@ export function EmailLogPage() {
                 ))}
               </TableBody>
             </Table>
-          </div>
-        )}
-
-        {log.hasNextPage && (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="outline"
-              disabled={log.isFetchingNextPage}
-              onClick={() => log.fetchNextPage()}
-            >
-              {log.isFetchingNextPage ? 'Loading…' : 'Load more'}
-            </Button>
+            <TablePagination state={log.pagination} />
           </div>
         )}
       </div>

@@ -1,9 +1,8 @@
-import { clearedLevels } from '@hedge/core'
-import { useQuery } from '@tanstack/react-query'
+import { clearedLevels, type ReviewQueueItem } from '@hedge/core'
 import { AlertTriangle } from 'lucide-react'
-import { useState } from 'react'
 import { Link } from 'react-router'
 import { PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -15,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useKeysetPage } from '@/hooks/use-paged-query'
 import { useActiveSiteSlug, useSiteAuthority } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -31,14 +31,16 @@ export function ReviewPage() {
   const t = useT()
   const { formatDateTime } = useFormatters()
   const siteSlug = useActiveSiteSlug()
-  const [cursors, setCursors] = useState<string[]>([])
 
   const authority = useSiteAuthority()
 
-  const queue = useQuery({
-    queryKey: ['review-queue', siteSlug, cursors.at(-1) ?? null],
-    queryFn: () => api.review.queue(cursors.at(-1)),
+  // The one paged list with no total: "waiting on you" is not a countable predicate, so the bar
+  // shows which page this is rather than a denominator it would have to guess at. See
+  // `Paginated.total` and `listReviewQueue`.
+  const queue = useKeysetPage<ReviewQueueItem>({
+    queryKey: ['review-queue', siteSlug],
     enabled: Boolean(siteSlug),
+    fetchPage: (page) => api.review.queue(page),
   })
 
   return (
@@ -54,7 +56,12 @@ export function ReviewPage() {
 
         {queue.isLoading ? (
           <Skeleton className="h-64 w-full" />
-        ) : queue.data && queue.data.data.length > 0 ? (
+        ) : queue.isEmpty ? (
+          <div className="rounded-lg border p-8 text-center">
+            <p className="font-medium">{t('review.emptyTitle')}</p>
+            <p className="text-muted-foreground text-sm">{t('review.emptyDescription')}</p>
+          </div>
+        ) : (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -68,7 +75,7 @@ export function ReviewPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {queue.data.data.map((item) => (
+                {queue.rows.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">
                       {item.title}
@@ -109,21 +116,8 @@ export function ReviewPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={queue.pagination} />
           </div>
-        ) : (
-          <div className="rounded-lg border p-8 text-center">
-            <p className="font-medium">{t('review.emptyTitle')}</p>
-            <p className="text-muted-foreground text-sm">{t('review.emptyDescription')}</p>
-          </div>
-        )}
-
-        {queue.data?.nextCursor && (
-          <Button
-            variant="outline"
-            onClick={() => setCursors((current) => [...current, queue.data.nextCursor!])}
-          >
-            {t('review.loadMore')}
-          </Button>
         )}
       </div>
     </>

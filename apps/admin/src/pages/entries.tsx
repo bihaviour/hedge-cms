@@ -4,6 +4,7 @@ import { Lock, Plus, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EmptyState, PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useKeysetPage } from '@/hooks/use-paged-query'
 import { useActiveSite, useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -125,16 +127,20 @@ export function EntriesPage() {
   // it keeps the plain row-per-entry list and pays for no extra query.
   const multilingual = locales.length > 1
 
-  const entries = useQuery({
+  // Paged, and the page size is the reader's (#122). This list used to take the server's first
+  // page and drop `nextCursor`, so a collection's twenty-first entry existed and could not be
+  // reached from here.
+  const entries = useKeysetPage<Entry>({
     queryKey: ['entries', siteSlug, slug, status, locale, search, multilingual],
-    queryFn: () =>
+    enabled: Boolean(siteSlug),
+    fetchPage: (page) =>
       api.entries.list(slug, {
+        ...page,
         ...(status === 'all' ? {} : { status }),
         ...(locale === 'all' ? {} : { locale }),
         ...(search ? { q: search } : {}),
         ...(multilingual ? { groupBy: 'post' as const } : {}),
       }),
-    enabled: Boolean(siteSlug),
   })
 
   return (
@@ -199,7 +205,7 @@ export function EntriesPage() {
 
         {entries.isLoading && <Skeleton className="h-64 w-full" />}
 
-        {entries.data?.data.length === 0 && (
+        {!entries.isLoading && entries.isEmpty && (
           <EmptyState
             title={t('entries.emptyTitle')}
             description={t('entries.emptyDescription')}
@@ -211,7 +217,7 @@ export function EntriesPage() {
           />
         )}
 
-        {entries.data && entries.data.data.length > 0 && (
+        {!entries.isLoading && !entries.isEmpty && (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -226,7 +232,7 @@ export function EntriesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.data.data.map((entry) => (
+                {entries.rows.map((entry) => (
                   <TableRow key={entry.id}>
                     <TableCell>
                       <Link
@@ -273,6 +279,7 @@ export function EntriesPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={entries.pagination} />
           </div>
         )}
       </div>
