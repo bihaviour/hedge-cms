@@ -40,7 +40,12 @@ const originalFetch = globalThis.fetch
  * shared GitHub budget.
  */
 const throttled: string[] = []
+// The replacement keeps every export the real module has. `mock.module` is process-wide and
+// outlives this file, so an export dropped here is an import error in whichever file runs next —
+// which is where it surfaces, a long way from the line that caused it.
+const realThrottle = await import('../lib/throttle')
 mock.module('../lib/throttle', () => ({
+  ...realThrottle,
   throttle: async (_c: unknown, action: string) => {
     throttled.push(action)
   },

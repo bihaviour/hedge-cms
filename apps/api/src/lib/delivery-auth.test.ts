@@ -32,7 +32,9 @@ mock.module('../db/client', () => ({
 // `lib/crypto` is deliberately not mocked. Bun has real Web Crypto, the lookup below ignores the
 // `where` clause anyway, and stubbing it broke an unrelated suite that needs its other exports.
 
+const realCmsAuth = await import('../auth/cms')
 mock.module('../auth/cms', () => ({
+  ...realCmsAuth,
   getCmsAuth: () => ({ api: { getSession: async () => session } }),
 }))
 
