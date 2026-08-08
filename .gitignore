@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 artifact/
+hedge-cms-template/
 .wrangler/
 .dev.vars
 .dev.vars.*

@@ -131,6 +131,11 @@ Cutting a release (SemVer):
    artifact, so a release without it can be *seen* by the update check but not *applied* — confirm
    the two assets are attached before announcing the release. `bun run build:artifact` reproduces
    them locally from a clean tree if the workflow needs re-running.
+4. If the template has landed in `cloudflare/templates`, regenerate and re-submit it:
+   `bun run build:template -- --install`, then the sequence in `docs/cloudflare-template.md`. Their
+   `templates.json` records a `package_json_hash` per template and their CI deploys live demos, so a
+   copy that stops matching this repository is a bad advert running under Cloudflare's name. The
+   generator is what makes this a step rather than a project.
 
 The check ignores drafts and prereleases, so work-in-progress tags don't nudge self-hosters.
 
@@ -204,6 +209,30 @@ always the `name` at the top of `wrangler.jsonc`, so this stays empty for them; 
 the operator choose a name and records it here. Without it, a deployment installed under any other
 name could not update itself while the About page told it that it could.
 
+## The generated Cloudflare template — a fourth install shape, and a fourth reader of these vars
+
+`scripts/build-template.ts` writes `hedge-cms-template/`: a flattened, npm-installable copy of this
+repository for submission to [`cloudflare/templates`](https://github.com/cloudflare/templates)
+(epic #54). It is **generated, never hand-maintained** — the same argument the release artifact makes.
+It is not a fourth *install path*: a deployment made from the gallery is a Workers Builds clone and
+carries `INSTALLED_BY: "button"`, which is exactly true of it. The runbook is
+`docs/cloudflare-template.md`.
+
+**`WORKER_NAME` is set to `hedge-cms-template` there, and the reason is the whole of it** (#49).
+Their linter forces `wrangler.name`, `package.json` `name` and the directory to be the same string,
+so a gallery deployment's script is called `hedge-cms-template` rather than `hedge-cms`. Leaving
+`WORKER_NAME` empty is what tells the dashboard updater "I am the `name` at the top of
+`wrangler.jsonc`" — which would be a lie in a copy whose name their CI chose, and would make
+Settings → About offer an update that addressed a script that does not exist. The alternative — make
+the updater fall back to the running script name — is not available: the runtime is not told its own
+name, which is why this var exists at all. So the template sets it, at no cost, and About stays
+truthful for anyone who deploys from the gallery.
+
+That makes the generator the **fourth** reader of the three-places-must-agree rule below, and the
+place where the agreement is enforced: `TEMPLATE_BINDING_OVERRIDES` in `scripts/template-lib.ts`
+rewrites the `WORKER_NAME` description, because the root `package.json`'s "leave empty, a button
+deployment is always `hedge-cms`" stops being true the moment the copy is renamed.
+
 ## Assets and routing
 
 `not_found_handling: "single-page-application"` serves the admin, with
@@ -256,3 +285,5 @@ are in that set now, and the installer is a fourth reader of the second one — 
 itself, from `hedge.json`, so a var whose meaning changes here has to be checked against
 `apps/installer/src/install.ts` too. `scripts/deploy-worker.ts` is a fifth: it decides
 `INSTALLED_BY` and `REPO_URL` at deploy time, so those two have to be checked against it as well.
+`scripts/template-lib.ts` is a sixth, for the generated Cloudflare template — it carries the copy
+that has to differ there, and `scripts/template-lib.test.ts` fails if it stops differing.

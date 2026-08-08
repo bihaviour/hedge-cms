@@ -12,7 +12,8 @@
       "!**/.wrangler",
       "!**/node_modules",
       "!**/worker-configuration.d.ts",
-      "!**/apps/admin/src/components/ui"
+      "!**/apps/admin/src/components/ui",
+      "!templates/hedge-cms-template.spec.ts"
     ]
   },
   "formatter": {
