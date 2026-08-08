@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
+import type { SiteRow } from '../db/schema'
 import type { Actor, AppEnv } from '../env'
 import { errorResponse } from '../lib/errors'
 
@@ -22,10 +23,6 @@ mock.module('../lib/auth', () => ({
   requireSiteRole: () => async (_c: unknown, next: () => Promise<void>) => await next(),
   requireScope: () => async (_c: unknown, next: () => Promise<void>) => await next(),
   approvalLevelFor: async () => 2,
-}))
-
-mock.module('../lib/site', () => ({
-  requireSite: () => ({ id: 'site_1', slug: 'blog', defaultLocale: 'en', locales: ['en'] }),
 }))
 
 const version = { id: 'ver_1', title: 'Added the interview section', status: 'in_review' }
@@ -68,6 +65,9 @@ function appAs(actor: Actor) {
   const app = new Hono<AppEnv>()
   app.use('*', async (c, next) => {
     c.set('actor', actor)
+    // Set on the context rather than by stubbing `lib/site`, which is process-wide and would decide
+    // how every other suite resolves a tenant.
+    c.set('site', { id: 'site_1', slug: 'blog', defaultLocale: 'en', locales: ['en'] } as SiteRow)
     await next()
   })
   app.route('/collections/:collection/entries/:slug/versions', versions)

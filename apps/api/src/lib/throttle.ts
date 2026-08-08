@@ -27,8 +27,12 @@ export async function throttle(
   c: Context<AppEnv>,
   action: string,
   rule: ThrottleRule,
+  subject?: string,
 ): Promise<void> {
-  const key = `${action}:${clientIp(c) ?? 'unknown'}`
+  // Who is being counted. The caller's address by default — but a route that sends mail wants the
+  // *recipient* counted too, because an inbox has to be protected from a caller that keeps moving,
+  // and an IP-keyed limit is the one an attacker resets for free. See `POST /member/magic-link`.
+  const key = `${action}:${subject ?? clientIp(c) ?? 'unknown'}`
   const db = getDb(c.env)
   const now = Date.now()
 
@@ -59,6 +63,7 @@ export async function throttle(
     .where(eq(rateLimits.key, key))
 }
 
-function clientIp(c: Context<AppEnv>): string | null {
+/** The caller's address, as Cloudflare reports it. Also what the mint route records in its log. */
+export function clientIp(c: Context<AppEnv>): string | null {
   return c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0] ?? null
 }

@@ -1,6 +1,8 @@
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
+import { MEMBER_MAGIC_LINK_TTL_MINUTES } from '@hedge/core'
 import { betterAuth } from 'better-auth'
 import { bearer } from 'better-auth/plugins'
+import { magicLink } from 'better-auth/plugins/magic-link'
 import { and, eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
@@ -148,8 +150,99 @@ function createMemberAuth(env: Bindings) {
        * body a website already expects.
        */
       bearer(),
+
+      /**
+       * Sign-in by emailed link, for the reader who lands on a gated page from a search result and
+       * has no application to be handed over from (#108).
+       *
+       * Three things here are decisions rather than defaults:
+       *
+       * - **`disableSignUp`.** Left off, the plugin creates an account at *verify* time for any
+       *   address a link was sent to. The facade knows the site and refuses an unknown address
+       *   before a link is ever mailed; the plugin does not, so an invite-only site would collect
+       *   an identity per address anyone typed into the form and then refuse each of them a grant.
+       *   Registering stays `POST /member/register`, which is an act the reader takes on purpose.
+       * - **`storeToken: 'hashed'`.** The raw token sits in an inbox; only its digest is worth
+       *   keeping here, for the same reason a password is not stored as one.
+       * - **A verified sign-in.** Redeeming the link flips `emailVerified`, because clicking a link
+       *   in an inbox is a more direct proof of the address than the verification mail is. Better
+       *   Auth also **drops the password** on an account that was not yet verified: a credential
+       *   set before anybody proved they own the mailbox is not evidence of anything, and the
+       *   member is left signed in and able to choose a new one. It surfaces as the account
+       *   showing *invited* again in the admin, which is honest — it has no password.
+       */
+      magicLink({
+        expiresIn: MEMBER_MAGIC_LINK_TTL_MINUTES * 60,
+        disableSignUp: true,
+        storeToken: 'hashed',
+        /**
+         * The plugin builds a link at Better Auth's own base path; the one that gets mailed points
+         * at the facade instead, because the facade is what applies the site's grant rules before
+         * a token becomes a signed-in reader. Both the site and the landing page ride along in the
+         * URL — nothing else survives the round trip through the reader's inbox.
+         */
+        sendMagicLink: async ({ email, url, token, metadata }) => {
+          const site = currentRequestSite()
+          const verify = new URL(`${env.PUBLIC_URL}/api/v1/member/magic-link/verify`)
+          verify.searchParams.set('token', token)
+          if (site) verify.searchParams.set('site', site.slug)
+
+          // `callbackURL` is the facade's already-validated landing page. The plugin defaults it to
+          // "/" when none was asked for, which is not a page on anybody's website.
+          const redirect = callbackFrom(url)
+          if (redirect && /^https?:\/\//.test(redirect))
+            verify.searchParams.set('redirect', redirect)
+
+          const name = typeof metadata?.name === 'string' ? metadata.name : email
+
+          await sendEmail(
+            env,
+            await renderEmail(env, 'member_magic_link', {
+              to: email,
+              name,
+              url: verify.toString(),
+            }),
+            { templateKey: 'member_magic_link', site },
+          )
+        },
+      }),
     ],
   })
+}
+
+/**
+ * Creates a member session directly, for a caller that has authenticated the reader somewhere else
+ * (`POST /api/v1/member-sessions`, #108).
+ *
+ * It goes through Better Auth's own session creation rather than writing `member_sessions` by hand,
+ * so the row is the one a sign-in would have produced — same `mss` id, same token generation, same
+ * expiry — and `/member/me`, logout and the daily rotation cannot tell the two apart. Anything
+ * hand-rolled here would be a second definition of a session to keep in step with the first.
+ *
+ * **Minting a session is not knowing a credential.** Nothing here reads or sets a password, so the
+ * rule that only a member ever knows theirs survives intact; the caller is asserting an identity it
+ * has already proven for itself, which is what every SSO handoff does.
+ */
+export async function mintMemberSession(
+  env: Bindings,
+  memberId: string,
+  request: { ipAddress?: string | null; userAgent?: string | null } = {},
+): Promise<{ token: string; expiresAt: string }> {
+  const ctx = await getMemberAuth(env).$context
+  const session = await ctx.internalAdapter.createSession(memberId, false, {
+    // The trusted server's address and agent, not the reader's — this session was created for its
+    // request, and recording the reader's browser would be a guess dressed up as a fact.
+    ipAddress: request.ipAddress ?? '',
+    userAgent: request.userAgent ?? '',
+  })
+
+  return { token: session.token, expiresAt: new Date(session.expiresAt).toISOString() }
+}
+
+/** Ends one member session by its token. Used where a session was minted and then refused. */
+export async function revokeMemberSession(env: Bindings, token: string): Promise<void> {
+  const ctx = await getMemberAuth(env).$context
+  await ctx.internalAdapter.deleteSession(token)
 }
 
 /**

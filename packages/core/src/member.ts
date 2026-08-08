@@ -69,3 +69,52 @@ export const updateMemberSchema = z.object({
 })
 
 export type UpdateMemberInput = z.infer<typeof updateMemberSchema>
+
+/* ------------------------------------------------------------------ *
+ * Signing a reader in without a Hedge password (#108)
+ *
+ * Two ways, for two arrivals. A reader who comes *from* an application that already knows who they
+ * are is signed in by that application, server to server. A reader who lands on a gated page from a
+ * search result has no such handoff, and gets a link in their inbox instead.
+ * ------------------------------------------------------------------ */
+
+/**
+ * What a trusted server posts to mint a session for one of its readers.
+ *
+ * There is no `expiresIn`, and its absence is deliberate rather than pending: a member session is
+ * refreshed on use (`updateAge`), and that refresh resets the expiry to the instance-wide session
+ * lifetime — so a session minted with a shorter one would quietly become a 30-day session the first
+ * time it was used. A TTL the runtime does not keep is worse than the honest default.
+ *
+ * Strict, so a caller sending `expiresIn` or a password is told it was refused rather than watching
+ * it be dropped and believing in a shorter session than it got.
+ */
+export const mintMemberSessionSchema = z.strictObject({ memberId: z.string().min(1) })
+
+export type MintMemberSessionInput = z.infer<typeof mintMemberSessionSchema>
+
+/** How long a magic link stays redeemable. Short: it is a live credential sitting in an inbox. */
+export const MEMBER_MAGIC_LINK_TTL_MINUTES = 15
+
+/**
+ * Asking for a sign-in link. `callbackURL` is where the reader lands afterwards and is checked
+ * against the site's own domain, the same way `redirectTo` on a password reset is — a link mailed
+ * on nothing but an address would otherwise be an open redirect anyone could aim anywhere.
+ */
+export const memberMagicLinkSchema = z.object({
+  email: z.email(),
+  callbackURL: z.url().optional(),
+})
+
+export type MemberMagicLinkInput = z.infer<typeof memberMagicLinkSchema>
+
+/**
+ * The fragment the verify route hands the token back in, e.g.
+ * `https://example.com/welcome#hedge_member_token=…&hedge_member_expires=…`.
+ *
+ * A fragment rather than a query string because a fragment is never sent to a server: it stays out
+ * of the website's access logs, out of `Referer` on the next navigation, and out of any proxy in
+ * between. The page reads it, stores the token, and clears the hash.
+ */
+export const MEMBER_TOKEN_FRAGMENT_KEY = 'hedge_member_token'
+export const MEMBER_TOKEN_EXPIRY_FRAGMENT_KEY = 'hedge_member_expires'

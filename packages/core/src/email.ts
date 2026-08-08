@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MEMBER_MAGIC_LINK_TTL_MINUTES } from './member'
 
 /**
  * The system emails Hedge sends. Each has a built-in default (below) an operator can override from
@@ -12,6 +13,7 @@ export const EMAIL_TEMPLATE_KEYS = [
   'member_invite',
   'member_reset',
   'member_verify',
+  'member_magic_link',
   'version_submitted',
   'version_approved',
   'version_changes_requested',
@@ -114,6 +116,17 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<EmailTemplateKey, EmailTemplateDefi
     heading: 'Confirm your email address',
     body: '<p style="margin:0">Confirm {{to}} so we know we can reach you. This link expires in 24 hours.</p>',
     ctaLabel: 'Confirm email',
+  },
+  // The expiry is interpolated from the constant the plugin is configured with, so the copy cannot
+  // drift from the behaviour — a link that says an hour and dies in fifteen minutes reads as a bug
+  // in the CMS rather than as an out-of-date sentence.
+  member_magic_link: {
+    label: 'Member sign-in link',
+    description: 'Sent to a website member who asked to sign in with a link instead of a password.',
+    subject: 'Your sign-in link',
+    heading: 'Sign in to {{appName}}',
+    body: `<p style="margin:0">Use the link below to sign in as {{to}}. It works once and expires in ${MEMBER_MAGIC_LINK_TTL_MINUTES} minutes. If you didn't ask for it, you can ignore this email.</p>`,
+    ctaLabel: 'Sign in',
   },
   // The three review notifications. These are *operator* email — staff mail about the CMS itself —
   // so they go out as the deployment's sender, never a site's. See `sendEmail`'s `site` option.

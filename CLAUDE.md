@@ -87,8 +87,8 @@ Details are in the rule files; these are the ones worth knowing before you read 
 
 - **Credentials are separated by route prefix, in middleware** (`apps/api/src/index.ts`), so a
   delivery API key cannot reach the management API even if a route's own check is wrong. Three
-  tiers: the delivery API takes any key, `KEY_MANAGED_PREFIXES` (content and media) takes a session
-  or a *write-scoped* key, `ADMIN_PREFIXES` takes a session only. **A new management route must be
+  tiers: the delivery API takes any key, `KEY_MANAGED_PREFIXES` (content, media, and minting a
+  member session) takes a session or a key issued to *act*, `ADMIN_PREFIXES` takes a session only. **A new management route must be
   added to one of the two lists** — pick `ADMIN_PREFIXES` unless a machine is meant to reach it.
   A *public* route is a fourth thing and gets its own prefix rather than an exception inside the
   middleware: `/api/v1/newsletter` and `/api/v1/collect` are the two.
@@ -100,6 +100,11 @@ Details are in the rule files; these are the ones worth knowing before you read 
   is wrong however convenient it is.
 - **Operators and website members are two Better Auth instances over separate tables.** A member
   token isn't rejected by the admin API, it's unresolvable there.
+- **Nobody ever knows somebody else's password — but a trusted server may assert who they are.**
+  A site's own backend mints a member session (`POST /api/v1/member-sessions`, scope
+  `members:session`), and a reader with no application to arrive from asks for a magic link instead.
+  Both end at `grantForSignIn`, so the tenant boundary is checked after the identity is, and neither
+  reads or sets a credential. Reasoning in `auth.md`.
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
   (`site_users`) are checked independently in `lib/auth.ts`.
 - **`siteId` is the tenant boundary.** A content query that doesn't filter on it is a bug.

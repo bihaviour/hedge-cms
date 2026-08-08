@@ -346,6 +346,7 @@ curl -X POST https://your-worker.workers.dev/api/v1/collections/posts/entries \
 | `content:write` | Creating, editing and deleting entries |
 | `media:read` / `media:write` | Listing media, and uploading or deleting it |
 | `collections:write` | Creating, changing and deleting collections |
+| `members:session` | Signing a reader in — see [Members and gated content](#members-and-gated-content) |
 
 An authoring key wants `content:read` **and** `content:write`: the first is what lets it read back
 what it wrote, including drafts.
@@ -353,7 +354,13 @@ what it wrote, including drafts.
 A key with no write scope is confined to the delivery API and never sees a draft — that is the
 credential a public website holds, and the separation is enforced by which middleware runs on which
 path prefix, not by each route remembering to check. **No key of any kind** reaches users, sites,
-members, email, or the API key routes themselves; those need a signed-in person.
+email, or the API key routes themselves; those need a signed-in person.
+
+`members:session` is the one exception worth reading twice, and it is why it is a scope of its own
+rather than something the admin role carries. **A key that holds it can sign in as any member of
+its site**, and therefore read anything that site gates behind membership. It grants nothing else —
+not the member list, not an address, not a password — but grant it only to a server you would
+trust with the content it unlocks, and to nothing that runs in a browser.
 
 ## Managing the CMS over MCP
 
@@ -500,6 +507,8 @@ curl https://your-worker.workers.dev/api/v1/content/posts/members-only-deep-dive
 | `POST /api/v1/member/login`                 | Exchange credentials for a token            |
 | `POST /api/v1/member/logout`                | Revoke the presented token                  |
 | `GET /api/v1/member/me`                     | The signed-in member                        |
+| `POST /api/v1/member/magic-link`            | Email a sign-in link instead of a password  |
+| `GET /api/v1/member/magic-link/verify`      | Redeem that link                            |
 | `POST /api/v1/member/forgot-password`       | Email a reset link                          |
 | `POST /api/v1/member/reset-password`        | Set a new password from that link's token   |
 | `POST /api/v1/member/send-verification-email` | Re-send the confirmation email            |
@@ -522,6 +531,53 @@ Responses that carry a member token are returned `private, no-store`, so gated c
 in a shared cache. Members have no access to the admin API at all — they authenticate against a
 separate Better Auth instance over separate tables, so a member token is not merely refused there,
 it cannot be resolved.
+
+### Signing readers in without a second password
+
+A site whose readers are already signed in somewhere else — the application it documents, a customer
+portal — should not make them hold a Hedge password as well. Two routes cover the two ways they
+arrive, and neither one lets anybody set or learn somebody else's password.
+
+**From the application.** Its backend mints a session for a member it has already authenticated:
+
+```bash
+curl -X POST https://your-worker.workers.dev/api/v1/member-sessions \
+  -H "Authorization: Bearer hdg_..." -H 'content-type: application/json' -H 'X-Hedge-Site: blog' \
+  -d '{"memberId":"mem_..."}'
+# → { "data": { "token": "…", "expiresAt": "…", "member": { … } } }
+```
+
+The answer is the one `POST /member/login` gives, and the session it names is the same kind of
+session — `/member/me`, logout and the daily rotation cannot tell them apart. It needs a key with
+`members:session`, or a signed-in site admin; it refuses a blocked member and a site that is
+invite-only exactly as a sign-in does; and it works for a member who has never set a password,
+because a password is the thing this flow exists to avoid. Every mint is logged with the credential
+that asked for it — this is the one route in Hedge that issues a credential to someone other than
+its owner.
+
+**From a search result.** A reader who lands on a gated page cold has no application to be handed
+over from, so they ask for a link instead:
+
+```bash
+curl -X POST https://your-worker.workers.dev/api/v1/member/magic-link \
+  -H 'content-type: application/json' -H 'X-Hedge-Site: blog' \
+  -d '{"email":"reader@example.com","callbackURL":"https://blog.example.com/welcome"}'
+# → { "data": { "ok": true } }   ← the same answer for an address that is nobody
+```
+
+The link works once, expires in fifteen minutes, and lands the reader back on your site with the
+token in the URL **fragment** — `#hedge_member_token=…&hedge_member_expires=…` — which no browser
+sends to a server, so it stays out of your access logs and out of `Referer`. Read it from
+`location.hash`, store it, and clear the hash. `callbackURL` must be on the site's own domain or it
+falls back to the site root, the same check a reset link goes through; with no domain configured
+there is nowhere to land, so the session comes back as JSON instead. Both routes are rate limited,
+the link by recipient as well as by caller.
+
+Redeeming a link marks the address verified — clicking something in an inbox proves it more
+directly than the confirmation mail does. On an account that was **not** yet verified it also drops
+the password, which is Better Auth's rule and a sound one: a password set before anyone proved they
+own the mailbox is not evidence of anything. That member shows as *invited* again in the admin,
+signed in, and free to choose a new password.
 
 **One account, many sites.** A member identity belongs to the deployment, and `member_sites` records
 which sites they may read. A reader of your blog who also reads your docs site keeps one password,

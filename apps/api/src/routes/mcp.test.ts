@@ -1,4 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { Hono } from 'hono'
+import type { SiteRow } from '../db/schema'
+import type { AppEnv } from '../env'
 
 // The route's DB-backed dependencies are mocked so the test exercises the HTTP + JSON-RPC wiring,
 // the OAuth challenge, and the per-tool authorisation — not D1. The services themselves are covered
@@ -20,15 +23,27 @@ const created: unknown[] = []
 const deleted: string[] = []
 const invited: unknown[] = []
 
-mock.module('../lib/site', () => ({
-  requireSite: () => ({ id: 'site_1', slug: 'blog', defaultLocale: 'en', locales: ['en'] }),
-}))
+/**
+ * Every replacement keeps the real module's other exports. `mock.module` is process-wide and
+ * outlives this file, so a stub that drops an export decides what *another* suite imports — which
+ * surfaces there as `Export named 'x' not found`, a long way from the file that caused it.
+ */
+const realCmsAuth = await import('../auth/cms')
+const realAuth = await import('../lib/auth')
+const realCollections = await import('../lib/collections')
+const realEntries = await import('../lib/entries')
+const realApiKeys = await import('../lib/api-keys')
+const realNewsletter = await import('../lib/newsletter')
+const realEntryVersions = await import('../lib/entry-versions')
+const realUsers = await import('../lib/users')
 
 mock.module('../auth/cms', () => ({
+  ...realCmsAuth,
   getCmsAuth: () => ({ api: { getMcpSession: async () => token } }),
 }))
 
 mock.module('../lib/auth', () => ({
+  ...realAuth,
   userRole: async () => (token ? instanceRole : null),
   currentSiteRole: async () => siteRole,
   siteRoleFor: async () => siteRole,
@@ -48,6 +63,7 @@ const collection = (slug: string) => ({
 })
 
 mock.module('../lib/collections', () => ({
+  ...realCollections,
   listCollections: async () => [collection('posts')],
   getCollection: async (_e: unknown, _s: string, slug: string) => collection(slug),
   createCollection: async (_e: unknown, _s: string, input: { slug: string }) => {
@@ -76,6 +92,7 @@ const entry = (slug: string, status = 'draft') => ({
 })
 
 mock.module('../lib/entries', () => ({
+  ...realEntries,
   listEntries: async () => ({ data: [entry('hello')], nextCursor: null }),
   getEntry: async (_e: unknown, _s: unknown, _c: string, slug: string) => entry(slug),
   createEntry: async (_e: unknown, _s: unknown, _c: string, input: { slug?: string }) => {
@@ -94,6 +111,7 @@ mock.module('../lib/entries', () => ({
 }))
 
 mock.module('../lib/api-keys', () => ({
+  ...realApiKeys,
   listApiKeys: async () => [
     { id: 'key_1', name: 'delivery', prefix: 'hdg_ab', scopes: ['content:read'] },
   ],
@@ -106,6 +124,7 @@ mock.module('../lib/api-keys', () => ({
 const newsletterLib = await import('../lib/newsletter')
 
 mock.module('../lib/newsletter', () => ({
+  ...realNewsletter,
   ...newsletterLib,
   listNewsletterTemplates: async () => [{ id: 'tpl_1', name: 'Weekly', subject: 'Hello' }],
 }))
@@ -133,12 +152,14 @@ const version = (id: string, status = 'draft') => ({
 })
 
 mock.module('../lib/entry-versions', () => ({
+  ...realEntryVersions,
   listEntryVersions: async () => [version('ver_1')],
   createEntryVersion: async () => version('ver_2'),
   submitEntryVersion: async () => version('ver_2', 'in_review'),
 }))
 
 mock.module('../lib/users', () => ({
+  ...realUsers,
   listUsers: async () => [
     {
       id: 'usr_1',
@@ -174,7 +195,20 @@ mock.module('../lib/users', () => ({
   removeUserSiteRole: async () => {},
 }))
 
-const { default: app } = await import('./mcp')
+const { default: mcp } = await import('./mcp')
+
+/**
+ * The MCP endpoint with the tenant the request middleware would have resolved.
+ *
+ * The site is set on the context rather than by stubbing `lib/site`: `mock.module` is process-wide
+ * and outlives this file, so a stub there would decide how every other suite resolves a tenant.
+ */
+const app = new Hono<AppEnv>()
+app.use('*', async (c, next) => {
+  c.set('site', { id: 'site_1', slug: 'blog', defaultLocale: 'en', locales: ['en'] } as SiteRow)
+  await next()
+})
+app.route('/', mcp)
 
 // biome-ignore lint/suspicious/noExplicitAny: test assertions reach into the JSON-RPC response
 type RpcJson = any

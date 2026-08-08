@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
+import type { SiteRow } from '../db/schema'
 import type { Actor, AppEnv } from '../env'
 import { errorResponse } from '../lib/errors'
 
@@ -25,10 +26,6 @@ mock.module('../lib/auth', () => ({
   currentSiteRole: async () => siteRole,
   approvalLevelFor: async (_env: unknown, actor: Actor) =>
     actor.kind === 'user' && actor.via === 'session' && siteRole === 'admin' ? 2 : 0,
-}))
-
-mock.module('../lib/site', () => ({
-  requireSite: () => ({ id: 'site_1', slug: 'blog' }),
 }))
 
 const { default: access } = await import('./access')
@@ -60,6 +57,10 @@ function get(actor: Actor) {
   const app = new Hono<AppEnv>()
   app.use('*', async (c, next) => {
     c.set('actor', actor)
+    // The site the middleware in `index.ts` would have resolved. Set on the context rather than by
+    // stubbing `lib/site`: `mock.module` is process-wide, and a stub of that module decides how
+    // every *other* suite resolves a tenant.
+    c.set('site', { id: 'site_1', slug: 'blog' } as SiteRow)
     await next()
   })
   app.route('/access', access)
