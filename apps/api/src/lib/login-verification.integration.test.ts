@@ -24,8 +24,11 @@ mock.module('../db/client', () => ({ getDb: () => db }))
 
 /** Captures what would have been mailed, so a test can read the code out of it. */
 let sent: { to: string; code: string }[] = []
+/** When set, the send rejects — standing in for a provider that refuses the message. */
+let sendFailure: Error | null = null
 mock.module('../email/send', () => ({
   sendEmail: async (_env: unknown, message: { to: string; text: string }) => {
+    if (sendFailure) throw sendFailure
     // The default template puts the code in the body; pull the first 6-digit run out of the text.
     sent.push({ to: message.to, code: /\d{6}/.exec(message.text)?.[0] ?? '' })
   },
@@ -39,6 +42,7 @@ const {
   maskEmail,
   pruneExpiredChallenges,
   revokeAllTrustedDevices,
+  resendLoginCode,
   revokeTrustedDevice,
   sessionTokenFromCookies,
   startLoginChallenge,
@@ -127,6 +131,7 @@ beforeEach(async () => {
   migrate(sqlite)
   db = drizzle(sqlite, { casing: 'snake_case' })
   sent = []
+  sendFailure = null
 
   await db.insert(users).values([user, other])
   // The session those parked cookies address. Its presence is what lets the orphan tests mean
@@ -160,6 +165,23 @@ describe('starting a challenge', () => {
     expect(row!.codeHash).not.toContain(code)
     expect(row!.sessionCookies).toEqual(SESSION_COOKIES)
     expect(row!.sessionToken).toBe('tok_abc')
+  })
+
+  /**
+   * The row and the parked session both exist before the send is attempted, so a provider that
+   * refuses must take them with it. Letting the error escape instead left the pair behind *and*
+   * reached the browser as a bare 500 before `challengeId` was returned — so the code screen never
+   * rendered and a deployment with no trusted device could not sign in at all. Issue #117.
+   */
+  test('a refused email spends the challenge and the session it stranded', async () => {
+    sendFailure = new Error('destination address is not a verified address')
+
+    await expect(
+      withContext((c) => startLoginChallenge(c, user, SESSION_COOKIES)),
+    ).rejects.toMatchObject({ code: 'email_delivery_failed' })
+
+    expect(await db.select().from(loginChallenges)).toHaveLength(0)
+    expect(await db.select().from(sessions)).toHaveLength(0)
   })
 
   test('masks the address it reports back, so a wrong password learns nothing', async () => {
@@ -384,5 +406,37 @@ describe('helpers', () => {
     expect(sessionTokenFromCookies(SESSION_COOKIES)).toBe('tok_abc')
     expect(sessionTokenFromCookies(['other=value; Path=/'])).toBeNull()
     expect(sessionTokenFromCookies([])).toBeNull()
+  })
+})
+
+describe('resending a code', () => {
+  test('replaces the old code rather than leaving two that work', async () => {
+    const { challengeId, code } = await start()
+    await withContext((c) => resendLoginCode(c, challengeId, user))
+
+    const fresh = sent.at(-1)!.code
+    expect(fresh).not.toBe(code)
+
+    // The old code is dead: only the new one matches the stored hash.
+    await expect(
+      withContext((c) => completeLoginChallenge(c, challengeId, code, false)),
+    ).rejects.toThrow()
+  })
+
+  /**
+   * The rotation lands before the send, so a refused email leaves a challenge whose only working
+   * code was never delivered — a screen waiting for mail that is not coming. Spending it is what
+   * every other failure in this file does. Issue #117.
+   */
+  test('a refused email spends the challenge rather than bricking it', async () => {
+    const { challengeId } = await start()
+    sendFailure = new Error('destination address is not a verified address')
+
+    await expect(withContext((c) => resendLoginCode(c, challengeId, user))).rejects.toMatchObject({
+      code: 'email_delivery_failed',
+    })
+
+    expect(await db.select().from(loginChallenges)).toHaveLength(0)
+    expect(await db.select().from(sessions)).toHaveLength(0)
   })
 })

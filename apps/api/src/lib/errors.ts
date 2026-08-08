@@ -67,6 +67,15 @@ export class ApiError extends Error {
     return new ApiError('rate_limited', message)
   }
 
+  /**
+   * The provider refused an email the request could not complete without. Distinct from
+   * `internal_error` so the caller can name the dependency that failed instead of reporting that
+   * everything did.
+   */
+  static emailDeliveryFailed(message: string) {
+    return new ApiError('email_delivery_failed', message)
+  }
+
   static fromZod(error: ZodError): ApiError {
     const details: Record<string, string[]> = {}
     for (const issue of error.issues) {
