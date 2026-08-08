@@ -238,6 +238,17 @@ export const API_KEY_SCOPES = [
   // Managing collection schemas — creating, editing and deleting collections, which takes their
   // entries with them. A site-admin power, and issuing any key already requires being one.
   'collections:write',
+  /**
+   * Minting a member session for a reader the holder has already authenticated elsewhere — the
+   * server-to-server half of member sign-in (#108).
+   *
+   * It carries no other member power: a key holding it cannot list members, read their addresses or
+   * change them. It is its own scope rather than part of a `members:write` precisely because it is
+   * the one thing here that hands out somebody else's credential, and the deployments that need it
+   * — a site whose readers are already signed in to the application it documents — need nothing
+   * else from the member API.
+   */
+  'members:session',
 ] as const
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]
 
@@ -249,6 +260,8 @@ export const API_KEY_SCOPE_LABELS: Record<ApiKeyScope, string> = {
   'media:read': 'List uploaded media',
   'media:write': 'Upload, rename and delete media',
   'collections:write': 'Create, change and delete collections — and the entries inside them',
+  'members:session':
+    'Sign readers in: mint a session for any member of this site, without their password',
 }
 
 export const createApiKeySchema = z.object({

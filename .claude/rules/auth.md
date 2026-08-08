@@ -26,6 +26,7 @@ server. **Authorization is ours** and nothing in `auth/` reads `users.role` or `
 | Trusted-device cookie | `hedge_device` cookie | `isTrustedDevice` | nothing — it only *skips a step* |
 | Delivery API key (`content:read` only) | `Authorization: Bearer hdg_…` | `resolveDeliveryActor` | `/api/v1/content/*` only |
 | Authoring API key (any `:write` scope) | `Authorization: Bearer hdg_…` | `resolveSessionOrKeyActor` | the above, plus `/collections/*` and `/media/*` |
+| Sign-in API key (`members:session`) | `Authorization: Bearer hdg_…` | `resolveSessionOrKeyActor` | the delivery API, plus `/member-sessions` |
 | Member token | `X-Member-Token` | `resolveMember` | gated delivery content; never the admin API |
 | Preview token | `X-Hedge-Preview` | `resolvePreview` | one unpublished entry, on `/api/v1/content/*` only |
 | MCP OAuth token | `Authorization: Bearer` | inside `routes/mcp.ts` | `/api/v1/mcp` only |
@@ -41,9 +42,52 @@ user per site, null meaning "derive from the site role" (`approvalLevelForSiteRo
 a site through `sites:access_all` has no grant row and resolves to site admin, hence level 2 — by
 construction, not by exemption, which is the same shape the MCP owner case has.
 
-The two key rows are the *same credential type* separated by what it was issued to do. A key with
-no write scope never leaves the delivery API, so the credential a public website holds still cannot
-see a draft. Neither kind reaches users, sites, members, email, or the key routes themselves.
+The three key rows are the *same credential type* separated by what it was issued to do. A key with
+no scope beyond `content:read` never leaves the delivery API, so the credential a public website
+holds still cannot see a draft. None of them reaches users, sites, email, or the key routes
+themselves, and none of them reaches `/api/v1/members` — the member *list*, with its addresses,
+stays a person's route.
+
+## Signing a reader in without their password (#108)
+
+Two additions, for the two ways a reader arrives at gated content. Both are built on the principle
+the member API already had — **nobody but the member ever knows their password** — and neither
+weakens it, because minting a session is not knowing a credential.
+
+**`POST /api/v1/member-sessions`** takes a trusted server's word that it has authenticated somebody.
+Four things about it are load-bearing:
+
+- **Its own prefix, not `POST /members/:id/session`.** The prefix is what decides which credential
+  is resolved at all, and `/api/v1/members` is session-only for a good reason. A route that needs a
+  *wider* credential than its prefix grants cannot say so in the route — only a narrower one can —
+  so it moves. `/api/v1/newsletter` beside `/api/v1/newsletters` is the same split.
+- **Its own scope.** `members:session` reaches this route and nothing else, and `roleForScopes` maps
+  it to site `admin` for the same reason `collections:write` maps there: issuing any key already
+  requires being a site admin, so this manufactures no authority its creator lacked. A key holding
+  it can read anything that site gates behind membership, which is a real widening and is why it is
+  a scope an operator grants deliberately rather than a power the admin role gained.
+- **The session is Better Auth's own** (`mintMemberSession`), created through `internalAdapter`
+  rather than by writing `member_sessions` by hand. `/member/me`, logout and the daily rotation
+  cannot tell it from a password sign-in, and there is no second definition of a session to keep in
+  step. There is **no `expiresIn`**: `updateAge` resets a session's expiry to the instance-wide
+  lifetime on first use, so a shorter TTL would be a promise the runtime breaks within a day.
+- **A `pending` member is minted for.** They have no password — which is the point — and the caller
+  has already authenticated them. Refusing would make just-in-time provisioning impossible. It is
+  the surprising half of the decision, so it is written down in the route.
+
+**`POST /api/v1/member/magic-link`** and its `GET …/verify` cover the reader who arrives from a
+search result with nothing to be handed over from. `disableSignUp` is on: the facade refuses an
+unknown address before any mail is sent, because the plugin would otherwise mint an identity per
+address typed into a form, including on an invite-only site. The token comes back to the website in
+the URL **fragment**, which browsers never send to a server.
+
+Both routes end at `grantForSignIn`, which is the tenant boundary: blocked is refused, invite-only
+is refused, an open site is joined. On the magic-link path Better Auth has already created a session
+by the time that runs, so **a refusal deletes it** — a live token nobody was handed is still a live
+token. Redeeming a link also flips `emailVerified` and, on an unverified account, deletes the
+password (`revokeUnprovenAccountAccess`): a credential set before anyone proved they own the mailbox
+is not evidence of anything. Say so anywhere this behaviour is surfaced; it reads as data loss
+otherwise.
 
 A preview token resolves no actor at all — it sets `preview`, not `actor`, so it widens what an
 already-authenticated delivery request may see rather than authenticating one. Minting it is

@@ -16,13 +16,21 @@ import { hmac } from './crypto'
  * admin (`routes/api-keys.ts`), so this cannot manufacture an authority its creator lacked.
  */
 function roleForScopes(scopes: string[]): Role {
-  if (scopes.includes('collections:write')) return 'admin'
+  if (scopes.includes('collections:write') || scopes.includes('members:session')) return 'admin'
   if (scopes.some((scope) => scope.endsWith(':write'))) return 'editor'
   return 'viewer'
 }
 
-/** True for a key issued to change things, as opposed to one that only serves a public website. */
-const carriesWriteScope = (scopes: string[]) => scopes.some((scope) => scope.endsWith(':write'))
+/**
+ * True for a key issued to *act*, as opposed to one that only serves a public website.
+ *
+ * Any `:write` scope, plus `members:session` — which writes nothing but signs a reader in, and is
+ * held by a site's own backend rather than by its frontend. What this predicate exists to exclude
+ * is the delivery credential: a key carrying `content:read` and nothing else lives in a public
+ * website's environment variables and must never resolve on a management route.
+ */
+const carriesActingScope = (scopes: string[]) =>
+  scopes.includes('members:session') || scopes.some((scope) => scope.endsWith(':write'))
 
 /**
  * Looks up the API key on the request, or `null` when there isn't one, it is unknown, or it has
@@ -77,11 +85,11 @@ export const resolveDeliveryActor: MiddlewareHandler<AppEnv> = async (c, next) =
 }
 
 /**
- * Resolves either an admin session or a **write-scoped** API key, for the handful of management
- * routes a machine is meant to reach: content and media, never identity, tenancy or configuration
- * (`KEY_MANAGED_PREFIXES` in `index.ts`).
+ * Resolves either an admin session or an **acting** API key, for the handful of management routes a
+ * machine is meant to reach: content, media and minting a member session, never identity, tenancy
+ * or configuration (`KEY_MANAGED_PREFIXES` in `index.ts`).
  *
- * The write-scope condition is the load-bearing part. A key carrying only `content:read` is the
+ * The scope condition is the load-bearing part. A key carrying only `content:read` is the
  * credential that sits in a public website's environment variables — the least protected place any
  * Hedge credential lives — and it stays confined to `/api/v1/content/*`, which serves *published*
  * entries only. Without this condition that same key would reach `GET /collections/:c/entries` and
@@ -94,7 +102,7 @@ export const resolveSessionOrKeyActor: MiddlewareHandler<AppEnv> = async (c, nex
   const key = await apiKeyActor(c)
 
   if (key) {
-    c.set('actor', carriesWriteScope(key.scopes) ? key : null)
+    c.set('actor', carriesActingScope(key.scopes) ? key : null)
     await next()
     return
   }

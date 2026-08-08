@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { Hono } from 'hono'
 import { collections, entries, type SiteRow, sites } from '../db/schema'
-import type { AppEnv } from '../env'
+import type { Actor, AppEnv } from '../env'
 import { errorResponse } from '../lib/errors'
 
 /**
@@ -22,7 +22,10 @@ import { errorResponse } from '../lib/errors'
 
 let db: ReturnType<typeof drizzle>
 
-mock.module('../db/client', () => ({ getDb: () => db }))
+// Keeps every export the real module has: `mock.module` is process-wide and outlives this file,
+// so one dropped here is an import error in whichever file runs next.
+const realClient = await import('../db/client')
+mock.module('../db/client', () => ({ ...realClient, getDb: () => db }))
 
 const site: SiteRow = {
   id: 'site_1',
@@ -45,21 +48,27 @@ const site: SiteRow = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-const actualAuth = await import('../lib/auth')
-
-mock.module('../lib/auth', () => ({
-  ...actualAuth,
-  requireSiteRole: () => async (_c: unknown, next: () => Promise<void>) => await next(),
-  requireScope: () => async (_c: unknown, next: () => Promise<void>) => await next(),
-}))
-
-mock.module('../lib/site', () => ({ requireSite: () => site }))
-
-// Previewing is a separate path with its own tests (`lib/preview.test.ts`); every request here is
-// an ordinary public read.
-mock.module('../lib/preview', () => ({ previewFor: () => null }))
-
 const { default: content } = await import('./content')
+const { resolveSite } = await import('../lib/site')
+
+/**
+ * The credential a public website holds, presented the way the middleware in `index.ts` sets it —
+ * so the delivery API's own `requireSiteRole` and `requireScope` run for real.
+ *
+ * `lib/auth`, `lib/site` and `lib/preview` used to be replaced with stubs here. `mock.module` is
+ * process-wide and outlives this file, so those stubs decided how *other* suites resolved a site
+ * and checked a role — see the same warning in `lib/delivery-auth.test.ts`. Nothing is stubbed now
+ * but the database.
+ */
+const deliveryKey: Actor = {
+  kind: 'api_key',
+  via: 'api_key',
+  id: 'key_1',
+  role: 'viewer',
+  permissions: [],
+  scopes: ['content:read'],
+  siteId: 'site_1',
+}
 
 const MIGRATIONS = join(import.meta.dir, '../../migrations')
 
@@ -125,9 +134,14 @@ async function seed() {
 const app = new Hono<AppEnv>()
 app.onError((err, c) => errorResponse(c, err))
 app.use('*', async (c, next) => {
+  c.set('actor', deliveryKey)
   c.set('member', null)
+  // Previewing is a separate path with its own tests (`lib/preview.test.ts`); every request here is
+  // an ordinary public read, which is what an unset preview means.
+  c.set('preview', null)
   await next()
 })
+app.use('*', resolveSite)
 app.route('/', content)
 
 const env = { PUBLIC_URL: 'https://cms.example.com' } as never

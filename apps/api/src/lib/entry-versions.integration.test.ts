@@ -20,7 +20,10 @@ let db: ReturnType<typeof drizzle>
 // The service reaches the database through `getDb`, so pointing that at an in-memory SQLite is all
 // it takes to run the real queries. Notifications are stubbed: they are covered by their own
 // module, and an email attempt here would only drag the email config tables in.
-mock.module('../db/client', () => ({ getDb: () => db }))
+// Keeps every export the real module has: `mock.module` is process-wide and outlives this file,
+// so one dropped here is an import error in whichever file runs next.
+const realClient = await import('../db/client')
+mock.module('../db/client', () => ({ ...realClient, getDb: () => db }))
 mock.module('./review-notifications', () => ({
   notifyVersionSubmitted: async () => {},
   notifyVersionDecided: async () => {},

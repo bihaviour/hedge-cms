@@ -1,15 +1,24 @@
 import {
   createMemberSchema,
+  MEMBER_TOKEN_EXPIRY_FRAGMENT_KEY,
+  MEMBER_TOKEN_FRAGMENT_KEY,
   type Member,
   memberLoginSchema,
+  memberMagicLinkSchema,
   memberRegisterSchema,
+  mintMemberSessionSchema,
   passwordSchema,
   updateMemberSchema,
 } from '@hedge/core'
 import { and, count, desc, eq, like, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getMemberAuth, hasCredential } from '../auth/member'
+import {
+  getMemberAuth,
+  hasCredential,
+  mintMemberSession,
+  revokeMemberSession,
+} from '../auth/member'
 import { getDb } from '../db/client'
 import {
   type MemberRow,
@@ -21,13 +30,13 @@ import {
   type SiteRow,
 } from '../db/schema'
 import type { AppEnv, Bindings } from '../env'
-import { requireSiteRole } from '../lib/auth'
+import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
 import { hashPassword } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
 import { memberGrant, requireMember } from '../lib/member-auth'
 import { requireSite } from '../lib/site'
-import { throttle } from '../lib/throttle'
+import { clientIp, throttle } from '../lib/throttle'
 import { validate, validateQuery } from '../lib/validate'
 
 /**
@@ -252,6 +261,93 @@ memberAuth.get('/verify-email', async (c) => {
   return site?.domain ? c.redirect(`https://${site.domain}/`) : c.json({ data: { ok: true } })
 })
 
+/**
+ * Emails a sign-in link, for a reader with no Hedge password or no wish to type one.
+ *
+ * Answers `{ ok: true }` whichever way it goes — an address that is not a member of anything gets
+ * no mail and no different answer, so this cannot be used to ask who reads a site.
+ */
+memberAuth.post('/magic-link', async (c) => {
+  const site = requireSite(c)
+  const input = await validate(c, memberMagicLinkSchema)
+  const email = input.email.toLowerCase()
+
+  await throttle(c, `member-magic-link:${site.id}`, { window: 900, max: 10 })
+  // And again per recipient, keyed on the address instead of the caller: the limit above is one an
+  // attacker resets by moving, and the thing being protected is somebody's inbox.
+  await throttle(c, `member-magic-link-to:${site.id}`, { window: 900, max: 3 }, email)
+
+  const member = await memberByEmail(c.env, email)
+  if (member) {
+    await getMemberAuth(c.env).api.signInMagicLink({
+      body: {
+        email,
+        callbackURL: siteLanding(site, input.callbackURL) ?? undefined,
+        // The greeting. `sendMagicLink` is handed an address and nothing else, and the member is
+        // already loaded here.
+        metadata: { name: member.name },
+      },
+      headers: c.req.raw.headers,
+    })
+  }
+
+  return c.json({ data: { ok: true } })
+})
+
+/**
+ * The link itself. Redeems the token, applies this site's grant rules, and hands the reader back to
+ * the website with a member token.
+ *
+ * The token travels in the URL **fragment**, which is never sent to a server: it stays out of the
+ * website's logs, out of `Referer`, and out of every proxy between the two. A website reads it from
+ * `location.hash`, stores it, and clears the hash. With no domain configured there is nowhere to
+ * send anyone, so the session comes back as JSON in the shape `/member/login` answers with.
+ */
+memberAuth.get('/magic-link/verify', async (c) => {
+  const site = requireSite(c)
+  const token = c.req.query('token')
+  if (!token) throw ApiError.badRequest('token is required')
+
+  await throttle(c, `member-magic-verify:${site.id}`, { window: 900, max: 30 })
+
+  const verified = await getMemberAuth(c.env)
+    .api.magicLinkVerify({ query: { token }, headers: c.req.raw.headers })
+    .catch(() => null)
+
+  // One message for expired, already-used and never-existed alike. Telling them apart would confirm
+  // which addresses have been mailed a link.
+  if (!verified?.token) throw ApiError.unauthorized('That sign-in link is invalid or has expired')
+
+  const [member] = await getDb(c.env)
+    .select()
+    .from(members)
+    .where(eq(members.id, verified.user.id))
+    .limit(1)
+  if (!member) throw ApiError.unauthorized('That sign-in link is invalid or has expired')
+
+  // Redeeming the link proved an address; it did not decide whether this site takes that reader.
+  // A session already exists by now, so a refusal has to take it with it — a live token nobody was
+  // handed is still a live token.
+  const grant = await grantForSignIn(c.env, site, member.id).catch(async (error) => {
+    await revokeMemberSession(c.env, verified.token)
+    throw error
+  })
+
+  const expiresAt = await sessionExpiry(c.env, verified.token)
+  const landing = siteLanding(site, c.req.query('redirect'))
+
+  if (!landing)
+    return c.json({ data: { token: verified.token, expiresAt, member: toMember(member, grant) } })
+
+  const url = new URL(landing)
+  url.hash = new URLSearchParams({
+    [MEMBER_TOKEN_FRAGMENT_KEY]: verified.token,
+    [MEMBER_TOKEN_EXPIRY_FRAGMENT_KEY]: expiresAt,
+  }).toString()
+
+  return c.redirect(url.toString())
+})
+
 memberAuth.post('/send-verification-email', async (c) => {
   const site = requireSite(c)
   const input = await validate(c, z.object({ email: z.email() }))
@@ -436,6 +532,90 @@ app.delete('/:id', requireSiteRole('admin'), async (c) => {
 
 export default app
 
+/* ------------------------------------------------------------------ *
+ * Minting a session server to server, mounted at /api/v1/member-sessions (#108).
+ *
+ * Its own prefix rather than `POST /members/:id/session`, because the prefix is what decides which
+ * credential is resolved at all: `/api/v1/members` is session-only on purpose — a machine has no
+ * business reading a site's member list — and this is the one member route a machine *is* meant to
+ * reach. `/api/v1/newsletter` beside `/api/v1/newsletters` is the same split for the same reason.
+ * ------------------------------------------------------------------ */
+
+export const memberSessionMint = new Hono<AppEnv>()
+
+/**
+ * Signs a reader in on the word of a caller that has already authenticated them — the site's own
+ * application, a customer portal, anything first-party that knows who they are. It answers exactly
+ * what `POST /member/login` answers, so a website's existing handling of a token is unchanged.
+ *
+ * **A session is not a password.** Nothing here reads, sets or needs the member's credential, so
+ * the rule that an admin never chooses somebody's password is untouched — this is the SSO handoff
+ * that rule made impossible, not a way around it.
+ *
+ * Two gates, both of which have to hold:
+ *
+ * - `requireSiteRole('admin')`, which for a key means the scope below (`roleForScopes`), and for a
+ *   person means a site admin. Handing out a reader's session is not editorial work.
+ * - `requireScope('members:session')`, so an authoring key that reaches this prefix for content and
+ *   media cannot mint one by virtue of living next door. The prefix decides what is *resolved*; the
+ *   route decides what is *allowed*.
+ *
+ * **A `pending` member is minted for, deliberately.** They have never set a password — but a
+ * password is precisely what this flow exists to avoid, and the caller has already authenticated
+ * the person by other means. Refusing would make just-in-time provisioning impossible: add the
+ * member, sign them in, never mail them anything. It is the surprising choice of the two, which is
+ * why it is written down rather than left to be inferred from the absence of a check.
+ */
+memberSessionMint.post(
+  '/',
+  requireSiteRole('admin'),
+  requireScope('members:session'),
+  async (c) => {
+    const site = requireSite(c)
+    const actor = requireActor(c)
+    const input = await validate(c, mintMemberSessionSchema)
+
+    await throttle(c, `member-mint:${site.id}`, { window: 60, max: 60 })
+
+    const [member] = await getDb(c.env)
+      .select()
+      .from(members)
+      .where(eq(members.id, input.memberId))
+      .limit(1)
+    if (!member) throw ApiError.notFound('Member')
+
+    // The same grant rules a password sign-in goes through: blocked is refused, an invite-only site
+    // is refused, an open one is joined, and `lastLoginAt` moves — because this *is* a sign-in.
+    const grant = await grantForSignIn(c.env, site, member.id)
+
+    const session = await mintMemberSession(c.env, member.id, {
+      ipAddress: clientIp(c),
+      userAgent: c.req.header('user-agent') ?? null,
+    })
+
+    /**
+     * The one route in Hedge that issues a credential to somebody other than its owner, so it says so
+     * where an operator can find it afterwards: which key or user minted what, for whom.
+     *
+     * The token itself is never logged. Naming the session's id would be enough to correlate a log
+     * line with a row without writing a live credential into a log sink.
+     */
+    console.info(
+      '[member-session] minted',
+      JSON.stringify({
+        requestId: c.get('requestId'),
+        siteId: site.id,
+        memberId: member.id,
+        by: { kind: actor.kind, via: actor.via, id: actor.id },
+        ip: clientIp(c),
+        expiresAt: session.expiresAt,
+      }),
+    )
+
+    return c.json({ data: { ...session, member: toMember(member, grant) } }, 201)
+  },
+)
+
 /** Signs a member in and normalises what Better Auth hands back into our wire shape. */
 async function signIn(c: { env: Bindings }, email: string, password: string) {
   const result = await getMemberAuth(c.env)
@@ -481,6 +661,27 @@ function resetRedirect(env: Bindings, site: SiteRow, requested?: string): string
 
   if (!requested) return fallback
   if (!site.domain) return fallback
+
+  try {
+    return new URL(requested).host === site.domain ? requested : fallback
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * A page on the site's own domain to send a reader to, or `null` when the site has no domain and
+ * therefore no website to land on.
+ *
+ * The same open-redirect argument as `resetRedirect`: a sign-in link is emailed on nothing but an
+ * address, so a `callbackURL` nobody checked would let anyone aim one anywhere. It is validated
+ * when the link is minted *and* again when it is redeemed, because the two are separated by a round
+ * trip through an inbox and only the second one is the redirect that actually happens.
+ */
+function siteLanding(site: SiteRow, requested?: string | null): string | null {
+  if (!site.domain) return null
+  const fallback = `https://${site.domain}/`
+  if (!requested) return fallback
 
   try {
     return new URL(requested).host === site.domain ? requested : fallback

@@ -9,8 +9,9 @@ handlers remembering to check. Three tiers, narrowing as authority grows:
 
 - `/api/v1/content/*` → `resolveDeliveryActor` — **any** API key (`hdg_…`, HMAC'd with
   `AUTH_SECRET`), serving published content only
-- the `KEY_MANAGED_PREFIXES` list (`/collections`, `/media`) → `resolveSessionOrKeyActor` — an admin
-  session, **or** a key that carries a `:write` scope
+- the `KEY_MANAGED_PREFIXES` list (`/collections`, `/media`, `/member-sessions`) →
+  `resolveSessionOrKeyActor` — an admin session, **or** a key that carries a `:write` scope or
+  `members:session`
 - the `ADMIN_PREFIXES` list → `resolveSessionActor` — admin session cookie only
 - `/api/v1/mcp` → resolves its own OAuth bearer token inside the route
 - everything else → `actor = null`
@@ -28,11 +29,17 @@ management API even if a route's own authorization check is wrong. **A new manag
 added to one of the two lists** or it will resolve no actor at all; `ADMIN_PREFIXES` is the default,
 and `KEY_MANAGED_PREFIXES` only for authoring routes a machine is meant to reach.
 
-The write-scope condition on the second tier is load-bearing, not a nicety. A `content:read`-only
-key is the delivery credential; resolving it there would hand it `GET /collections/:c/entries`,
-which returns **drafts** — something the delivery API deliberately never serves.
+The scope condition on the second tier is load-bearing, not a nicety. A `content:read`-only key is
+the delivery credential; resolving it there would hand it `GET /collections/:c/entries`, which
+returns **drafts** — something the delivery API deliberately never serves. `members:session` writes
+nothing and still passes the condition, because what it excludes is that delivery credential rather
+than every key that does not author: a key holding it belongs to a site's own backend, and the mint
+route lives on this tier (see `auth.md`).
 
-**A prefix decides what is *resolved*, not what is *allowed*.** The entry-version routes
+**A prefix decides what is *resolved*, not what is *allowed*.** `/api/v1/member-sessions` resolves
+any acting key, and the mint route inside it carries `requireScope('members:session')` so an
+authoring key that reaches the tier for content and media cannot sign a reader in by living next
+door. The entry-version routes
 (`routes/entry-versions.ts`, #62) sit under `/collections`, so a write-scoped key resolves on all of
 them — right for authoring a version, wrong for approving one. The approve, reject and publish
 handlers therefore carry `requireUserActor` themselves rather than trusting where they live, and a

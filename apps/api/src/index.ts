@@ -26,7 +26,7 @@ import email from './routes/email'
 import entries from './routes/entries'
 import mcp from './routes/mcp'
 import media from './routes/media'
-import members, { memberAuth } from './routes/members'
+import members, { memberAuth, memberSessionMint } from './routes/members'
 import newsletterPublic from './routes/newsletter-public'
 import newsletterTemplates from './routes/newsletter-templates'
 import newsletters, { subscribers } from './routes/newsletters'
@@ -67,15 +67,20 @@ const ADMIN_PREFIXES = [
 ]
 
 /**
- * Management routes an admin session **or a write-scoped API key** may reach — the authoring
- * surface, so an import script or another service can create content without a person's password.
+ * Management routes an admin session **or an acting API key** may reach — the surface another
+ * service drives, so an import script or a website's own backend can work without a person's
+ * password.
  *
- * Only content and media, deliberately: a key that can write entries still cannot invite a user,
- * create a site, read a member's email or mint another key. A key with no write scope is not
- * resolved here at all, so the credential a public website holds stays confined to the delivery
- * API and its published-only view. See `resolveSessionOrKeyActor`.
+ * Content, media, and minting a member session: a key that can write entries still cannot invite a
+ * user, create a site, read a member's email or mint another key. A key with no scope beyond
+ * `content:read` is not resolved here at all, so the credential a public website holds stays
+ * confined to the delivery API and its published-only view. See `resolveSessionOrKeyActor`.
+ *
+ * `/api/v1/member-sessions` is here and `/api/v1/members` deliberately is not: signing a reader in
+ * is the one member-shaped thing a machine is meant to do, and reading or editing a site's members
+ * is not. Being resolved here is not permission — the mint route carries its own scope check.
  */
-const KEY_MANAGED_PREFIXES = ['/api/v1/collections', '/api/v1/media']
+const KEY_MANAGED_PREFIXES = ['/api/v1/collections', '/api/v1/media', '/api/v1/member-sessions']
 
 const DELIVERY_PREFIX = '/api/v1/content'
 const MEMBER_PREFIX = '/api/v1/member/'
@@ -325,6 +330,9 @@ app.route('/api/v1/mcp', mcp)
 app.route('/api/v1/member', memberAuth)
 app.all(`${MEMBER_AUTH_BASE_PATH}/*`, (c) => getMemberAuth(c.env).handler(c.req.raw))
 app.route('/api/v1/members', members)
+// Signing a reader in from a server that has already authenticated them. Its own prefix because it
+// is the one member route an API key may reach — see `KEY_MANAGED_PREFIXES` above.
+app.route('/api/v1/member-sessions', memberSessionMint)
 
 /**
  * Public media passthrough. Objects are written with an immutable cache-control header, so

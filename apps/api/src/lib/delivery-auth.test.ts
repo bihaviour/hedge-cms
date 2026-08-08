@@ -32,7 +32,9 @@ mock.module('../db/client', () => ({
 // `lib/crypto` is deliberately not mocked. Bun has real Web Crypto, the lookup below ignores the
 // `where` clause anyway, and stubbing it broke an unrelated suite that needs its other exports.
 
+const realCmsAuth = await import('../auth/cms')
 mock.module('../auth/cms', () => ({
+  ...realCmsAuth,
   getCmsAuth: () => ({ api: { getSession: async () => session } }),
 }))
 
@@ -88,6 +90,11 @@ describe('resolveDeliveryActor', () => {
     expect((await actorFrom(resolveDeliveryActor, withKey()))?.role).toBe('admin')
   })
 
+  test('members:session raises it to admin, because minting a reader’s session is one', async () => {
+    keyRow!.scopes = ['members:session']
+    expect((await actorFrom(resolveDeliveryActor, withKey()))?.role).toBe('admin')
+  })
+
   test('an expired key resolves to nothing', async () => {
     keyRow!.expiresAt = '2020-01-01T00:00:00.000Z'
     expect(await actorFrom(resolveDeliveryActor, withKey())).toBeNull()
@@ -131,6 +138,20 @@ describe('resolveSessionOrKeyActor', () => {
   test('media:write alone is enough to be an authoring key', async () => {
     keyRow!.scopes = ['media:write']
     expect((await actorFrom(resolveSessionOrKeyActor, withKey()))?.role).toBe('editor')
+  })
+
+  /**
+   * `members:session` writes nothing, so it is not a `:write` scope — but it is held by a site's own
+   * backend rather than by its frontend, and the mint route lives on this tier. What the condition
+   * excludes is the delivery credential above, not every key that does not author.
+   */
+  test('members:session alone resolves here, as a site’s own backend', async () => {
+    keyRow!.scopes = ['members:session']
+    expect(await actorFrom(resolveSessionOrKeyActor, withKey())).toMatchObject({
+      kind: 'api_key',
+      role: 'admin',
+      siteId: 'site_1',
+    })
   })
 
   test('falls back to the session when no key is presented', async () => {
