@@ -1,9 +1,10 @@
 import type { Subscriber } from '@hedge/core'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { EmptyState, PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useKeysetPage } from '@/hooks/use-paged-query'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters } from '@/lib/i18n'
@@ -36,15 +38,13 @@ export function NewsletterSubscribersPage() {
   const queryClient = useQueryClient()
   const siteSlug = useActiveSiteSlug()
 
-  const subscribers = useInfiniteQuery({
+  const subscribers = useKeysetPage<Subscriber>({
     queryKey: ['subscribers', siteSlug, search],
-    queryFn: ({ pageParam }) => api.subscribers.list({ q: search || undefined, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: Boolean(siteSlug),
+    fetchPage: (page) => api.subscribers.list({ ...page, q: search || undefined }),
   })
 
-  const rows = subscribers.data?.pages.flatMap((page) => page.data) ?? []
+  const rows = subscribers.rows
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['subscribers'] })
 
@@ -87,7 +87,7 @@ export function NewsletterSubscribersPage() {
 
         {subscribers.isLoading && <Skeleton className="h-48 w-full" />}
 
-        {!subscribers.isLoading && rows.length === 0 && (
+        {!subscribers.isLoading && subscribers.isEmpty && (
           <EmptyState
             title="No subscribers yet"
             description="Add someone manually, or embed a signup form that posts to the public subscribe endpoint."
@@ -95,7 +95,7 @@ export function NewsletterSubscribersPage() {
           />
         )}
 
-        {rows.length > 0 && (
+        {!subscribers.isLoading && !subscribers.isEmpty && (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -153,18 +153,7 @@ export function NewsletterSubscribersPage() {
                 ))}
               </TableBody>
             </Table>
-          </div>
-        )}
-
-        {subscribers.hasNextPage && (
-          <div className="flex justify-center">
-            <Button
-              variant="outline"
-              disabled={subscribers.isFetchingNextPage}
-              onClick={() => subscribers.fetchNextPage()}
-            >
-              {subscribers.isFetchingNextPage ? 'Loading…' : 'Load more'}
-            </Button>
+            <TablePagination state={subscribers.pagination} />
           </div>
         )}
       </div>

@@ -32,6 +32,16 @@ export const en = {
   'common.error': 'Something went wrong',
   'common.done': 'Done',
 
+  // The pagination bar under every table (#124). Two singular/plural keys rather than one with a
+  // count in it: English inflects the noun and Indonesian does not, which a placeholder cannot say.
+  'pagination.showing': 'Showing {from}–{to} of {total}',
+  'pagination.rowsOne': '1 row',
+  'pagination.rowsMany': '{total} rows',
+  'pagination.page': 'Page {page}',
+  'pagination.rowsPerPage': 'Rows per page',
+  'pagination.previous': 'Previous',
+  'pagination.next': 'Next',
+
   // Language switcher.
   'language.label': 'Language',
   'language.change': 'Change language',
@@ -277,7 +287,6 @@ export const en = {
   'review.colAuthor': 'Author',
   'review.colSubmitted': 'Submitted',
   'review.open': 'Open',
-  'review.loadMore': 'Load more',
   'review.noAuthority':
     'You do not approve versions on this site. An admin can change that from Users → Site access.',
   'nav.review': 'Review',

@@ -9,6 +9,7 @@ import {
   entryMetadataSchema,
   type ListEntryVersionsQuery,
   liveApprovals,
+  type Paginated,
   type ReviewQueueItem,
   type ReviewQueueQuery,
   type UpdateEntryVersionInput,
@@ -511,7 +512,11 @@ export async function listReviewQueue(
   site: SiteRow,
   query: ReviewQueueQuery,
   reviewer: { id: string; level: number },
-): Promise<{ data: ReviewQueueItem[]; nextCursor: string | null }> {
+  // No `total`, and that is the answer rather than a gap: "waiting on *you*" is decided by
+  // `canDecide` in JS, from the decisions recorded against a version and who wrote it, so no
+  // `COUNT(*)` can express it. `countReviewQueue` is capped at 100 for the badge for the same
+  // reason, and a number that stops at 100 must not be rendered as a total (#123).
+): Promise<Paginated<ReviewQueueItem>> {
   const filters = [eq(entryVersions.siteId, site.id), eq(entryVersions.status, 'in_review')]
   if (query.cursor) filters.push(lt(entryVersions.id, query.cursor))
 

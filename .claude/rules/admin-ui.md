@@ -46,6 +46,31 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
   the other degrades silently to English and can sit unnoticed for a release, which is why it is a
   test rather than a habit.
 
+## Paging a table
+
+One control for every table — `components/table-pagination.tsx`, rendered *inside* the table's
+bordered container so it reads as the last row rather than a detached bar. It degrades: a table that
+fits on one page shows its count and no controls. Two hooks feed it and it cannot tell them apart:
+
+- `useKeysetPage` — server-paged lists. A **cursor stack**, not numbered pages: pagination is keyset
+  (`api-routes.md`), so only the pages already walked have a cursor and "jump to page 7" is not
+  expressible. Changing the page size drops the trail, because a cursor names a row under the size
+  it was issued for.
+- `useClientPage` — the lists the server returns whole (users, sites, roles, API keys). A slice.
+
+The arithmetic lives in `lib/pagination.ts` and is unit-tested there; the hooks are the React
+binding. There is no DOM test setup in this workspace, so anything worth pinning goes in that file
+rather than in a hook.
+
+**Use `isEmpty`, never `rows.length === 0`, to decide the empty state.** An empty *page* is not an
+empty *list*: the review queue filters a page in JS and can return none of it while later pages hold
+rows, and any table can empty its last page when those rows are deleted. Showing the empty state in
+either case hides the pager and strands the reader with no way back.
+
+Media is the deliberate exception — it keeps "Load more" and gained only the count. It is a grid
+someone scans, and the media picker runs the same query inside a dialog, where paging is worse than
+scrolling.
+
 ## Uploading media
 
 Several files at once, from two places — the media library and the picker — and both drive the

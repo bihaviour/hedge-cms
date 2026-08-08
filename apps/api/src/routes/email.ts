@@ -9,7 +9,7 @@ import {
   updateEmailConfigSchema,
   updateEmailTemplateSchema,
 } from '@hedge/core'
-import { desc, eq, lt } from 'drizzle-orm'
+import { count, desc, eq, lt } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { getDb } from '../db/client'
@@ -155,17 +155,28 @@ function toLog(row: EmailLogRow): EmailLog {
 
 app.get('/log', async (c) => {
   const { cursor, limit } = validateQuery(c, listLogSchema)
-  const rows = await getDb(c.env)
-    .select()
-    .from(emailLog)
-    // Ids are timestamp-prefixed, so id order is send order — keyset paginate on it, newest first.
-    .where(cursor ? lt(emailLog.id, cursor) : undefined)
-    .orderBy(desc(emailLog.id))
-    .limit(limit + 1)
+  const db = getDb(c.env)
+  // The log is instance-wide rather than per-site, so the count has nothing to filter on — it is
+  // every row. The cursor stays off it: `total` is the size of the log, not what is left below
+  // this page (#123).
+  const [rows, [counted]] = await Promise.all([
+    db
+      .select()
+      .from(emailLog)
+      // Ids are timestamp-prefixed, so id order is send order — keyset paginate on it, newest first.
+      .where(cursor ? lt(emailLog.id, cursor) : undefined)
+      .orderBy(desc(emailLog.id))
+      .limit(limit + 1),
+    db.select({ value: count() }).from(emailLog),
+  ])
 
   const hasMore = rows.length > limit
   const page = hasMore ? rows.slice(0, limit) : rows
-  return c.json({ data: page.map(toLog), nextCursor: hasMore ? page.at(-1)!.id : null })
+  return c.json({
+    data: page.map(toLog),
+    nextCursor: hasMore ? page.at(-1)!.id : null,
+    total: counted?.value ?? 0,
+  })
 })
 
 /* ------------------------------------------------------------------ *

@@ -5,13 +5,14 @@ import type {
   Newsletter,
   NewsletterAudience,
   NewsletterTemplate,
+  Paginated,
   SendResult,
   Subscriber,
   UpdateNewsletterInput,
   UpdateNewsletterTemplateInput,
   UpdateSubscriberInput,
 } from '@hedge/core'
-import { and, desc, eq, like, lt, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, like, lt, type SQL } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   memberSites,
@@ -156,22 +157,37 @@ export async function listSubscribers(
   env: Bindings,
   siteId: string,
   options: { q?: string; limit: number; cursor?: string },
-): Promise<{ data: Subscriber[]; nextCursor: string | null }> {
+): Promise<Paginated<Subscriber>> {
   const filters: SQL[] = [eq(newsletterSubscribers.siteId, siteId)]
   if (options.q) filters.push(like(newsletterSubscribers.email, `%${options.q.toLowerCase()}%`))
-  if (options.cursor) filters.push(lt(newsletterSubscribers.id, options.cursor))
 
-  const rows = await getDb(env)
-    .select()
-    .from(newsletterSubscribers)
-    .where(and(...filters))
-    .orderBy(desc(newsletterSubscribers.id))
-    .limit(options.limit + 1)
+  // The cursor narrows the page, not the count — see `listEntries` for why they are kept apart.
+  const pageFilters = options.cursor
+    ? [...filters, lt(newsletterSubscribers.id, options.cursor)]
+    : filters
+
+  const db = getDb(env)
+  const [rows, [counted]] = await Promise.all([
+    db
+      .select()
+      .from(newsletterSubscribers)
+      .where(and(...pageFilters))
+      .orderBy(desc(newsletterSubscribers.id))
+      .limit(options.limit + 1),
+    db
+      .select({ value: count() })
+      .from(newsletterSubscribers)
+      .where(and(...filters)),
+  ])
 
   const hasMore = rows.length > options.limit
   const page = hasMore ? rows.slice(0, options.limit) : rows
 
-  return { data: page.map(toSubscriber), nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null }
+  return {
+    data: page.map(toSubscriber),
+    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+    total: counted?.value ?? 0,
+  }
 }
 
 export async function createSubscriber(
@@ -384,21 +400,34 @@ export async function listNewsletters(
   env: Bindings,
   siteId: string,
   options: { limit: number; cursor?: string },
-): Promise<{ data: Newsletter[]; nextCursor: string | null }> {
+): Promise<Paginated<Newsletter>> {
   const filters: SQL[] = [eq(newsletters.siteId, siteId)]
-  if (options.cursor) filters.push(lt(newsletters.id, options.cursor))
 
-  const rows = await getDb(env)
-    .select()
-    .from(newsletters)
-    .where(and(...filters))
-    .orderBy(desc(newsletters.id))
-    .limit(options.limit + 1)
+  // The cursor narrows the page, not the count — see `listEntries` for why they are kept apart.
+  const pageFilters = options.cursor ? [...filters, lt(newsletters.id, options.cursor)] : filters
+
+  const db = getDb(env)
+  const [rows, [counted]] = await Promise.all([
+    db
+      .select()
+      .from(newsletters)
+      .where(and(...pageFilters))
+      .orderBy(desc(newsletters.id))
+      .limit(options.limit + 1),
+    db
+      .select({ value: count() })
+      .from(newsletters)
+      .where(and(...filters)),
+  ])
 
   const hasMore = rows.length > options.limit
   const page = hasMore ? rows.slice(0, options.limit) : rows
 
-  return { data: page.map(toNewsletter), nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null }
+  return {
+    data: page.map(toNewsletter),
+    nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+    total: counted?.value ?? 0,
+  }
 }
 
 export async function getNewsletter(

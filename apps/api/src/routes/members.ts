@@ -6,7 +6,7 @@ import {
   passwordSchema,
   updateMemberSchema,
 } from '@hedge/core'
-import { and, desc, eq, like, lt, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, like, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { getMemberAuth, hasCredential } from '../auth/member'
@@ -282,19 +282,31 @@ app.get('/', requireSiteRole('editor'), async (c) => {
 
   const filters: SQL[] = [eq(memberSites.siteId, site.id)]
   if (query.q) filters.push(like(members.email, `%${query.q.toLowerCase()}%`))
-  if (query.cursor) filters.push(lt(members.id, query.cursor))
 
-  const rows = await getDb(c.env)
-    .select({ member: members, grant: memberSites, credential: memberAccounts.id })
-    .from(memberSites)
-    .innerJoin(members, eq(members.id, memberSites.memberId))
-    .leftJoin(
-      memberAccounts,
-      and(eq(memberAccounts.userId, members.id), eq(memberAccounts.providerId, 'credential')),
-    )
-    .where(and(...filters))
-    .orderBy(desc(members.id))
-    .limit(query.limit + 1)
+  // The cursor narrows the page, not the count — see `listEntries` for why they are kept apart.
+  const pageFilters = query.cursor ? [...filters, lt(members.id, query.cursor)] : filters
+
+  const db = getDb(c.env)
+  const [rows, [counted]] = await Promise.all([
+    db
+      .select({ member: members, grant: memberSites, credential: memberAccounts.id })
+      .from(memberSites)
+      .innerJoin(members, eq(members.id, memberSites.memberId))
+      .leftJoin(
+        memberAccounts,
+        and(eq(memberAccounts.userId, members.id), eq(memberAccounts.providerId, 'credential')),
+      )
+      .where(and(...pageFilters))
+      .orderBy(desc(members.id))
+      .limit(query.limit + 1),
+    // The credential join is deliberately left out of the count: it decides `pending`, not whether
+    // a member is on this site, and a left join is the wrong thing to be counting rows through.
+    db
+      .select({ value: count() })
+      .from(memberSites)
+      .innerJoin(members, eq(members.id, memberSites.memberId))
+      .where(and(...filters)),
+  ])
 
   const hasMore = rows.length > query.limit
   const page = hasMore ? rows.slice(0, query.limit) : rows
@@ -302,6 +314,7 @@ app.get('/', requireSiteRole('editor'), async (c) => {
   return c.json({
     data: page.map((row) => toAdminMember(row.member, row.grant, row.credential === null)),
     nextCursor: hasMore ? (page.at(-1)?.member.id ?? null) : null,
+    total: counted?.value ?? 0,
   })
 })
 

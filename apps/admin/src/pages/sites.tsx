@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { DeliveryKeyReveal } from '@/components/delivery-key-reveal'
 import { LocalizationFields, type LocalizationValue } from '@/components/localization-fields'
 import { PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useClientPage } from '@/hooks/use-paged-query'
 import { useActiveSite, useSwitchSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
@@ -50,6 +52,8 @@ export function SitesPage() {
   const queryClient = useQueryClient()
   const { site: active, sites, isLoading } = useActiveSite()
   const switchSite = useSwitchSite()
+  // Returned whole by the API, so a page here is a local slice — same bar, no request (#124).
+  const paged = useClientPage(sites)
 
   const remove = useMutation({
     mutationFn: api.sites.remove,
@@ -97,7 +101,7 @@ export function SitesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sites.map((site) => (
+                {paged.rows.map((site) => (
                   <SiteRow
                     key={site.id}
                     site={site}
@@ -113,6 +117,7 @@ export function SitesPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={paged.pagination} />
           </div>
         )}
       </div>

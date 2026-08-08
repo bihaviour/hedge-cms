@@ -4,6 +4,7 @@ import { Copy, KeyRound, Pencil, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useClientPage } from '@/hooks/use-paged-query'
 import { useActiveSiteSlug } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -45,6 +47,8 @@ export function ApiKeysPage() {
     queryFn: api.apiKeys.list,
     enabled: Boolean(siteSlug),
   })
+  // Returned whole by the API, so a page here is a local slice — same bar, no request (#124).
+  const paged = useClientPage(keys.data ?? [])
 
   const remove = useMutation({
     mutationFn: api.apiKeys.remove,
@@ -117,7 +121,7 @@ export function ApiKeysPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {keys.data.map((key) => (
+                {paged.rows.map((key) => (
                   <TableRow key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell className="font-mono text-muted-foreground text-xs">
@@ -170,6 +174,7 @@ export function ApiKeysPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={paged.pagination} />
           </div>
         )}
       </div>

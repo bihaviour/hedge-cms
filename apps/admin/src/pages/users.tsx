@@ -4,6 +4,7 @@ import { KeySquare, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useClientPage } from '@/hooks/use-paged-query'
 import { useActiveSite } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
@@ -43,6 +45,8 @@ export function UsersPage() {
   const [accessFor, setAccessFor] = useState<User | null>(null)
   const queryClient = useQueryClient()
   const users = useQuery({ queryKey: ['users'], queryFn: api.users.list })
+  // Returned whole by the API, so a page here is a local slice — same bar, no request (#124).
+  const paged = useClientPage(users.data ?? [])
   // The assignable roles — built-ins plus any the deployment has defined under Settings → Roles.
   const roles = useQuery({ queryKey: ['roles'], queryFn: api.roles.list })
 
@@ -100,7 +104,7 @@ export function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.data?.map((user) => (
+                {paged.rows.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell className="font-medium">
                       {user.name}
@@ -172,6 +176,7 @@ export function UsersPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={paged.pagination} />
           </div>
         )}
       </div>

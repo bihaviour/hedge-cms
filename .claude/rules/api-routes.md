@@ -123,6 +123,29 @@ code to forget a deleted site.
 Keyset, not offset: the cursor is the last row's sort value, and ids are timestamp-prefixed
 (`lib/id.ts`) so id order is creation order. Select `limit + 1`, slice, and return `nextCursor`.
 
+**The page envelope is `Paginated<T>` in `@hedge/core`** — return that, don't re-declare
+`{ data, nextCursor }` inline. Every list helper used to, which is exactly the duplication the
+"a shape crossing the wire is defined once" rule exists to stop. It is a *type alias and not an
+interface* on purpose: an interface has no index signature, so it fails `ToolResult.structured`'s
+`Record<string, unknown>` and every MCP list tool answering with a page stops compiling.
+
+**`total` is a `COUNT(*)` over the filters *without* the cursor** (#123). The cursor narrows the
+page; the count is how many rows the filters match, so a management list builds `filters` once, adds
+the cursor into a separate `pageFilters`, and runs both queries in one `Promise.all`. A count that
+inherits the cursor reads "of 5" on the last page of a hundred rows — plausible enough that nobody
+reports it.
+
+Two lists deliberately send **no** `total`, and both absences are load-bearing rather than pending
+work:
+
+- **The review queue.** "Waiting on you" is decided by `canDecide` in JS from the recorded decisions
+  and the version's author — not a predicate a `WHERE` can hold. `countReviewQueue` is capped at 100
+  for the sidebar badge for that reason, and a number that stops at 100 must never be rendered as a
+  denominator. `total` is optional so the admin can tell "137" from "no exact answer" and show a
+  page number instead.
+- **The delivery API.** `/api/v1/content/*` is the cached public path; a second query per request
+  spends the budget the `s-maxage` exists to protect, for something no reader renders.
+
 ## Rate limiting
 
 `lib/throttle.ts` is a fixed-window limiter over the same `rate_limits` table Better Auth uses. It

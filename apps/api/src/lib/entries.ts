@@ -12,11 +12,24 @@ import {
   fieldsSchema,
   formatEntryCode,
   type ListEntriesQuery,
+  type Paginated,
   parseEntryCode,
   slugify,
   type UpdateEntryInput,
 } from '@hedge/core'
-import { and, asc, desc, eq, getTableColumns, inArray, like, ne, type SQL, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  like,
+  ne,
+  type SQL,
+  sql,
+} from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   type CollectionRow,
@@ -355,7 +368,7 @@ export async function listEntries(
   collectionSlug: string,
   query: ListEntriesQuery,
   searchParams?: URLSearchParams,
-): Promise<{ data: Entry[]; nextCursor: string | null }> {
+): Promise<Paginated<Entry>> {
   const collection = await findCollection(env, site.id, collectionSlug)
   const fields = fieldsSchema.parse(collection.fields)
   const sort = resolveSort(query.sort, fields, MANAGEMENT_SORT_COLUMNS)
@@ -376,16 +389,29 @@ export async function listEntries(
   // `where[field][op]` filters live in the query string, not the parsed body, so they are read
   // straight off it here — only when the route passes it (the MCP list tool does not).
   if (searchParams) filters.push(...whereConditions(parseEntryFilters(searchParams, fields)))
-  if (query.cursor) filters.push(cursorCondition(sort, query.order, decodeCursor(query.cursor)))
 
+  // The cursor narrows the *page*, never the *count* — "of 137" is how many rows the filters match,
+  // not how many are left ahead of where this page starts (#123). So it is added here rather than
+  // to `filters`, which the count below reuses verbatim.
+  const pageFilters = query.cursor
+    ? [...filters, cursorCondition(sort, query.order, decodeCursor(query.cursor))]
+    : filters
+
+  const db = getDb(env)
   // Select the sort expression alongside the row so the next cursor is the value actually ordered
   // by, whether that was a column or a `json_extract` of a declared field.
-  const rows = await getDb(env)
-    .select({ ...getTableColumns(entries), _sort: sort.expr })
-    .from(entries)
-    .where(and(...filters))
-    .orderBy(...orderByClause(sort, query.order))
-    .limit(query.limit + 1)
+  const [rows, [counted]] = await Promise.all([
+    db
+      .select({ ...getTableColumns(entries), _sort: sort.expr })
+      .from(entries)
+      .where(and(...pageFilters))
+      .orderBy(...orderByClause(sort, query.order))
+      .limit(query.limit + 1),
+    db
+      .select({ value: count() })
+      .from(entries)
+      .where(and(...filters)),
+  ])
 
   const hasMore = rows.length > query.limit
   const page = hasMore ? rows.slice(0, query.limit) : rows
@@ -406,6 +432,7 @@ export async function listEntries(
       toEntry(row, collection, translations?.get(row.translationGroupId) ?? undefined),
     ),
     nextCursor: hasMore && last ? encodeCursor(last._sort, last.id) : null,
+    total: counted?.value ?? 0,
   }
 }
 

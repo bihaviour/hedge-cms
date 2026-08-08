@@ -12,6 +12,7 @@ import { Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
+import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +43,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { useClientPage } from '@/hooks/use-paged-query'
 import { useSession } from '@/hooks/use-session'
 import { api } from '@/lib/api'
 
@@ -69,6 +71,8 @@ export function RolesPage() {
   })
 
   const held = session.data?.permissions ?? []
+  // Returned whole by the API, so a page here is a local slice — same bar, no request (#124).
+  const paged = useClientPage(roles.data ?? [])
 
   return (
     <>
@@ -99,7 +103,7 @@ export function RolesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {roles.data?.map((role) => (
+                {paged.rows.map((role) => (
                   <TableRow key={role.slug}>
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-2">
@@ -165,6 +169,7 @@ export function RolesPage() {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination state={paged.pagination} />
           </div>
         )}
       </div>
