@@ -72,6 +72,7 @@
     "installer": "bun run --cwd apps/installer start",
     "build": "bun run --cwd packages/core build && bun run --cwd apps/admin build && bun run --cwd apps/api build",
     "build:artifact": "bun run scripts/build-artifact.ts",
+    "build:template": "bun run scripts/build-template.ts",
     "deploy": "bun run build && bun run db:migrate:remote && bun run --cwd apps/api deploy",
     "db:generate": "bun run --cwd apps/api db:generate",
     "db:migrate": "bun run --cwd apps/api db:migrate",
@@ -87,6 +88,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
     "@types/bun": "^1.3.14",
+    "prettier": "3.7.4",
     "typescript": "^5.9.3"
   }
 }

@@ -1,0 +1,6 @@
+# `templates/hedge-cms-template.spec.ts` is a Playwright test for `cloudflare/templates`, not a Bun
+# one. It imports `./fixtures`, which exists only in their repository, so `bun test` picks it up by
+# its `.spec.ts` name and fails on the import. Renaming it is not an option: their `fixtures.ts`
+# derives the template name from the filename.
+[test]
+pathIgnorePatterns = ["**/templates/*.spec.ts"]
