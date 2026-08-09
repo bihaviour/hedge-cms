@@ -1,8 +1,16 @@
-import { type Entry, type EntryStatus, localeLabel } from '@hedge/core'
+import {
+  ANALYTICS_ENTRY_COLUMN_DAYS,
+  type AnalyticsEntryTotals,
+  type Entry,
+  type EntryStatus,
+  localeLabel,
+} from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
 import { Lock, Plus, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { Trend } from '@/components/analytics-ui'
+import { EntryRowActions } from '@/components/entry-row-actions'
 import { EmptyState, PageHeader } from '@/components/page-header'
 import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
@@ -103,6 +111,36 @@ function LocaleChips({
   )
 }
 
+/**
+ * One post's traffic, summed across the languages it is written in.
+ *
+ * On a multilingual site this table lists *posts*, one line each, so the number beside a line has
+ * to be the piece's — a rollup is keyed by the entry row a path resolved to, which is one language.
+ * Reporting only the row's own id would say an article was read a third as often as it was on a
+ * site whose readers are split across three languages.
+ *
+ * Nothing recorded is `undefined` rather than `0`: the columns are hidden entirely on a collection
+ * with no traffic, so a zero inside them means "read by nobody", which is a different statement.
+ */
+function postTraffic(
+  entry: Entry,
+  totals: Map<string, AnalyticsEntryTotals>,
+): AnalyticsEntryTotals | undefined {
+  const ids = entry.translations?.length ? entry.translations.map((one) => one.id) : [entry.id]
+  const rows = ids.flatMap((id) => totals.get(id) ?? [])
+  if (rows.length === 0) return undefined
+
+  return rows.reduce(
+    (sum, row) => ({
+      entryId: entry.id,
+      views: sum.views + row.views,
+      previousViews: sum.previousViews + row.previousViews,
+      shareIntents: sum.shareIntents + row.shareIntents,
+    }),
+    { entryId: entry.id, views: 0, previousViews: 0, shareIntents: 0 },
+  )
+}
+
 export function EntriesPage() {
   const { collection: slug = '' } = useParams()
   const t = useT()
@@ -142,6 +180,28 @@ export function EntriesPage() {
         ...(multilingual ? { groupBy: 'post' as const } : {}),
       }),
   })
+
+  // Traffic for the whole collection in one request, joined to the rows on screen by id, rather
+  // than a lookup per row: the page turns and the filters change often, and a query per visible
+  // entry would issue twenty-five of them each time. The window is fixed — see the constant.
+  const traffic = useQuery({
+    queryKey: ['analytics', 'entry-totals', siteSlug, slug],
+    queryFn: () => api.analytics.entryTotals(slug, { days: ANALYTICS_ENTRY_COLUMN_DAYS }),
+    enabled: Boolean(siteSlug && slug),
+    // Analytics is not why somebody opened this page. A stale-but-instant number beside a row is a
+    // better trade than the table waiting on a second request before it can be read.
+    staleTime: 5 * 60 * 1000,
+    // A site with no collector embedded answers 200-with-nothing, and a viewer without access to
+    // analytics is not a reason to fail the entries table.
+    retry: false,
+  })
+
+  const totals = new Map((traffic.data ?? []).map((row) => [row.entryId, row]))
+
+  // Shown only where there is something to show. Three columns of zeroes on every deployment that
+  // has never embedded the collector would be accurate and useless — `/analytics` is where a site
+  // is told it is not collecting, and it says so properly.
+  const showTraffic = totals.size > 0
 
   return (
     <>
@@ -217,6 +277,17 @@ export function EntriesPage() {
           />
         )}
 
+        {/* The window has to be stated: unlabelled, "Views" reads as all-time, and an article
+            published two years ago would look like it was never read. */}
+        {showTraffic && !entries.isLoading && !entries.isEmpty && (
+          <p className="text-muted-foreground text-xs">
+            {t('entries.trafficWindow', { days: String(ANALYTICS_ENTRY_COLUMN_DAYS) })}{' '}
+            <Link className="underline" to="/analytics">
+              {t('entries.trafficLink')}
+            </Link>
+          </p>
+        )}
+
         {!entries.isLoading && !entries.isEmpty && (
           <div className="rounded-lg border">
             <Table>
@@ -228,55 +299,96 @@ export function EntriesPage() {
                   <TableHead className={multilingual ? 'w-56' : 'w-20'}>
                     {multilingual ? t('entries.colLanguages') : t('entries.colLocale')}
                   </TableHead>
+                  {showTraffic && (
+                    <>
+                      <TableHead className="w-24 text-right">{t('entries.colViews')}</TableHead>
+                      <TableHead className="w-24 text-right">{t('entries.colTrend')}</TableHead>
+                      <TableHead className="w-24 text-right">{t('entries.colShares')}</TableHead>
+                    </>
+                  )}
                   <TableHead className="w-36">{t('entries.colUpdated')}</TableHead>
+                  {/* The header of the actions column is empty on purpose — the control below it
+                      says what it is, and a word here would be the widest thing in the column. */}
+                  <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.rows.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      <Link
-                        to={`/collections/${slug}/entries/${entry.slug}?locale=${entry.locale}`}
-                        className="font-medium hover:underline"
-                      >
-                        {String(entry.data.title ?? entry.slug)}
-                      </Link>
-                      <p className="text-muted-foreground text-xs">/{entry.slug}</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_VARIANT[entry.status]}>
-                        {t(STATUS_LABEL[entry.status])}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {entry.visibility === 'members' ? (
-                        <Badge variant="outline">
-                          <Lock className="size-3" />
-                          {t('entries.visMembers')}
+                {entries.rows.map((entry) => {
+                  const stats = postTraffic(entry, totals)
+
+                  return (
+                    <TableRow key={entry.id}>
+                      <TableCell>
+                        <Link
+                          to={`/collections/${slug}/entries/${entry.slug}?locale=${entry.locale}`}
+                          className="font-medium hover:underline"
+                        >
+                          {String(entry.data.title ?? entry.slug)}
+                        </Link>
+                        <p className="text-muted-foreground text-xs">/{entry.slug}</p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={STATUS_VARIANT[entry.status]}>
+                          {t(STATUS_LABEL[entry.status])}
                         </Badge>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">
-                          {t('entries.visPublic')}
-                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {entry.visibility === 'members' ? (
+                          <Badge variant="outline">
+                            <Lock className="size-3" />
+                            {t('entries.visMembers')}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">
+                            {t('entries.visPublic')}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {multilingual ? (
+                          <LocaleChips
+                            collection={slug}
+                            locales={locales}
+                            entry={entry}
+                            missingLabel={t('entries.addTranslation')}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground text-sm">{entry.locale}</span>
+                        )}
+                      </TableCell>
+                      {showTraffic && (
+                        <>
+                          <TableCell className="text-right text-sm tabular-nums">
+                            {/* An em dash, not a zero: this collection has traffic, but nothing was
+                              recorded against this piece — which is not the same as nobody
+                              reading it, because a draft has no page to be read. */}
+                            {stats ? stats.views.toLocaleString() : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {stats ? (
+                              <Trend current={stats.views} previous={stats.previousViews} />
+                            ) : (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums">
+                            {stats ? stats.shareIntents.toLocaleString() : '—'}
+                          </TableCell>
+                        </>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      {multilingual ? (
-                        <LocaleChips
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatDate(entry.updatedAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <EntryRowActions
                           collection={slug}
-                          locales={locales}
+                          previewPath={collection.data?.previewPath ?? null}
                           entry={entry}
-                          missingLabel={t('entries.addTranslation')}
                         />
-                      ) : (
-                        <span className="text-muted-foreground text-sm">{entry.locale}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {formatDate(entry.updatedAt)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
             <TablePagination state={entries.pagination} />

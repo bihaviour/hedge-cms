@@ -179,6 +179,16 @@ export const en = {
   'entries.colLanguages': 'Languages',
   'entries.addTranslation': 'Not translated yet',
   'entries.colUpdated': 'Updated',
+  'entries.colViews': 'Views',
+  'entries.colTrend': 'Trend',
+  'entries.colShares': 'Share clicks',
+  'entries.trafficWindow': 'Views, trend and share clicks cover the last {days} days.',
+  'entries.trafficLink': 'See all analytics',
+  'entries.rowActions': 'Actions',
+  'entries.actionAnalytics': 'View analytics',
+  'entries.actionEdit': 'Edit entry',
+  'entries.actionPreview': 'Preview',
+  'entries.actionOpenSite': 'Open on the website',
   'entries.visMembers': 'Members',
   'entries.visPublic': 'Public',
   'entries.emptyTitle': 'No entries',
@@ -557,7 +567,7 @@ export const en = {
   'analytics.previousPeriod': 'Previous period',
   'analytics.trafficTitle': 'Traffic',
 
-  'analytics.entriesTitle': 'Every article',
+  'analytics.entriesTitle': 'Top 10 articles',
   'analytics.colArticle': 'Article',
   'analytics.colViews': 'Views',
   'analytics.colTrend': 'Trend',
@@ -603,6 +613,7 @@ export const en = {
   'analytics.entryShares': 'Share clicks',
   'analytics.viewAnalytics': 'Analytics',
   'analytics.backToAll': 'All articles',
+  'analytics.backToEdit': 'Edit article',
 
   // Login page.
   'login.title': 'Sign in',

@@ -3,6 +3,7 @@ import {
   ANALYTICS_DIRECT,
   ANALYTICS_MAX_RANGE_DAYS,
   type AnalyticsEntryStat,
+  type AnalyticsEntryTotals,
   type AnalyticsMetric,
   type AnalyticsOverview,
   type AnalyticsPoint,
@@ -13,7 +14,20 @@ import {
   type AnalyticsTimeseries,
   type ReferrerGroup,
 } from '@hedge/core'
-import { and, asc, countDistinct, desc, eq, gte, inArray, lte, min, ne, sum } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  countDistinct,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+  min,
+  ne,
+  sum,
+} from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { analyticsDaily, collections, entries, type SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
@@ -280,6 +294,71 @@ export async function entryStats(
       shareIntents: shareByPath.get(row.path) ?? 0,
     }
   })
+}
+
+/**
+ * Views, the previous window's views and share intents for every entry of one collection that has
+ * traffic in the window — the numbers the collection's entries table puts beside each row.
+ *
+ * Keyed by `entryId` rather than by path, and neither ranked nor truncated, because the caller is
+ * rendering a page of *content* and needs whichever entries happen to be on it. `entryStats` cannot
+ * answer that: it is a top-N by views, so an article on page four of a collection would come back
+ * empty and read as "no traffic" rather than "not in the top hundred".
+ *
+ * The collection is narrowed with a subquery over `entries.collectionId` rather than by passing a
+ * list of ids: D1 caps bound parameters per query, and a page of a multilingual collection is a
+ * page of posts times its languages, which is exactly the shape that quietly exceeds it.
+ */
+export async function collectionEntryTotals(
+  env: Bindings,
+  site: SiteRow,
+  range: AnalyticsRange,
+  collectionId: string,
+): Promise<AnalyticsEntryTotals[]> {
+  const db = getDb(env)
+
+  const ofCollection = db
+    .select({ id: entries.id })
+    .from(entries)
+    .where(eq(entries.collectionId, collectionId))
+
+  const totals = (from: string, to: string, metric: AnalyticsMetric) =>
+    db
+      .select({ entryId: analyticsDaily.entryId, total: sum(analyticsDaily.count) })
+      .from(analyticsDaily)
+      .where(
+        and(
+          inWindow(site.id, from, to),
+          eq(analyticsDaily.metric, metric),
+          isNotNull(analyticsDaily.entryId),
+          inArray(analyticsDaily.entryId, ofCollection),
+        ),
+      )
+      .groupBy(analyticsDaily.entryId)
+
+  const [views, before, shares] = await Promise.all([
+    totals(range.from, range.to, 'view'),
+    totals(range.previous.from, range.previous.to, 'view'),
+    totals(range.from, range.to, 'share_intent'),
+  ])
+
+  const byId = (rows: { entryId: string | null; total: string | number | null }[]) =>
+    new Map(rows.flatMap((row) => (row.entryId ? [[row.entryId, toNumber(row.total)]] : [])))
+
+  const viewsById = byId(views)
+  const beforeById = byId(before)
+  const sharesById = byId(shares)
+
+  // A row appears if *any* of the three metrics saw it. An article that was only shared in this
+  // window, or only read in the previous one, still has something to say about itself.
+  const ids = new Set([...viewsById.keys(), ...beforeById.keys(), ...sharesById.keys()])
+
+  return [...ids].map((entryId) => ({
+    entryId,
+    views: viewsById.get(entryId) ?? 0,
+    previousViews: beforeById.get(entryId) ?? 0,
+    shareIntents: sharesById.get(entryId) ?? 0,
+  }))
 }
 
 interface EntryLabel {
