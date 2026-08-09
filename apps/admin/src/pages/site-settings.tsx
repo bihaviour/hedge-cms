@@ -1,4 +1,4 @@
-import type { MetaEntry, SiteEmailSender, SiteMetadata } from '@hedge/core'
+import type { MetaEntry, SiteMetadata } from '@hedge/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -17,32 +17,11 @@ import { ApiClientError, api } from '@/lib/api'
 
 const EMPTY_META: SiteMetadata = { keywords: [], custom: [] }
 
-/** An input holds a string; an empty one is a cleared override, which the API takes as null. */
-type SenderForm = Record<keyof SiteEmailSender, string>
-
-const EMPTY_SENDER: SenderForm = { fromEmail: '', fromName: '', replyTo: '' }
-
-function toSenderForm(sender: SiteEmailSender): SenderForm {
-  return {
-    fromEmail: sender.fromEmail ?? '',
-    fromName: sender.fromName ?? '',
-    replyTo: sender.replyTo ?? '',
-  }
-}
-
-/** A blank field is an override the site is giving up, sent as null so the fallback applies again. */
-function toSenderInput(sender: SenderForm): SiteEmailSender {
-  return {
-    fromEmail: sender.fromEmail.trim() || null,
-    fromName: sender.fromName.trim() || null,
-    replyTo: sender.replyTo.trim() || null,
-  }
-}
-
 /**
- * Per-site metadata defaults, custom fields and email sender — everything here is unique to the
- * active site. The metadata block is the SEO/social defaults every entry inherits; the custom
- * fields are extra, site-wide fields that appear on every entry's metadata panel.
+ * Per-site metadata defaults, custom fields and preview — everything here is unique to the active
+ * site. The metadata block is the SEO/social defaults every entry inherits; the custom fields are
+ * extra, site-wide fields that appear on every entry's metadata panel. Email senders moved to the
+ * Email tab (#136).
  */
 export function SiteSettingsPage() {
   const queryClient = useQueryClient()
@@ -50,8 +29,6 @@ export function SiteSettingsPage() {
 
   const [meta, setMeta] = useState<SiteMetadata>(EMPTY_META)
   const [rows, setRows] = useState<FieldRow[]>([])
-  const [sender, setSender] = useState<SenderForm>(EMPTY_SENDER)
-  const [newsletterSender, setNewsletterSender] = useState<SenderForm>(EMPTY_SENDER)
   const [previewUrl, setPreviewUrl] = useState('')
   const [previewEmbed, setPreviewEmbed] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
@@ -61,8 +38,6 @@ export function SiteSettingsPage() {
     if (site) {
       setMeta({ ...EMPTY_META, ...site.metadata })
       setRows(toFieldRows(site.customFields))
-      setSender(toSenderForm(site.emailSender))
-      setNewsletterSender(toSenderForm(site.newsletterSender))
       setPreviewUrl(site.previewUrl ?? '')
       setPreviewEmbed(site.previewEmbed)
     }
@@ -73,10 +48,6 @@ export function SiteSettingsPage() {
       api.sites.updateConfig(site!.slug, {
         metadata: meta,
         customFields: rows.map((row) => row.field),
-        // A blank field is an override the site is giving up, sent as null so the deployment
-        // sender applies to it again.
-        emailSender: toSenderInput(sender),
-        newsletterSender: toSenderInput(newsletterSender),
         // Blank means "this site has no preview endpoint", which hides the action rather than
         // rendering a button that would send an editor to a URL nobody serves.
         previewUrl: previewUrl.trim() || null,
@@ -269,88 +240,6 @@ export function SiteSettingsPage() {
             short life is for — treat one like a password for that single article.
           </p>
         </section>
-
-        <section className="space-y-5">
-          <div>
-            <h2 className="font-medium text-lg">Member email sender</h2>
-            <p className="text-muted-foreground text-sm">
-              What the invite, reset, verification and sign-in emails this site's members receive
-              are sent as. Leave a field blank to inherit the deployment sender from Configuration →
-              Email. Operator invites and password resets always use the deployment sender.
-            </p>
-          </div>
-          <SenderFields idPrefix="member" values={sender} onChange={setSender} />
-        </section>
-
-        <section className="space-y-5">
-          <div>
-            <h2 className="font-medium text-lg">Newsletter sender</h2>
-            <p className="text-muted-foreground text-sm">
-              The default sender for this site's newsletters, separate from member email. A single
-              newsletter can override it on the compose screen — so an author can send as themselves
-              — and a blank field here inherits the deployment sender.
-            </p>
-          </div>
-          <SenderFields
-            idPrefix="newsletter"
-            values={newsletterSender}
-            onChange={setNewsletterSender}
-          />
-        </section>
-      </div>
-    </>
-  )
-}
-
-/**
- * One sender identity's three inputs. A site carries two — member and newsletter — so this is
- * shared rather than duplicated, and `idPrefix` keeps their label/input ids distinct on the page.
- */
-function SenderFields({
-  idPrefix,
-  values,
-  onChange,
-}: {
-  idPrefix: string
-  values: SenderForm
-  onChange: (update: (s: SenderForm) => SenderForm) => void
-}) {
-  return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-from-email`}>From address</Label>
-          <Input
-            id={`${idPrefix}-from-email`}
-            type="email"
-            placeholder="Deployment default"
-            value={values.fromEmail}
-            onChange={(event) => onChange((s) => ({ ...s, fromEmail: event.target.value }))}
-          />
-          <p className="text-muted-foreground text-xs">
-            Must be on a domain onboarded with Cloudflare Email Sending, or the send fails.
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-from-name`}>From name</Label>
-          <Input
-            id={`${idPrefix}-from-name`}
-            placeholder="Deployment default"
-            value={values.fromName}
-            onChange={(event) => onChange((s) => ({ ...s, fromName: event.target.value }))}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2 sm:max-w-[calc(50%-0.5rem)]">
-        <Label htmlFor={`${idPrefix}-reply-to`}>Reply-to address</Label>
-        <Input
-          id={`${idPrefix}-reply-to`}
-          type="email"
-          placeholder="Deployment default"
-          value={values.replyTo}
-          onChange={(event) => onChange((s) => ({ ...s, replyTo: event.target.value }))}
-        />
       </div>
     </>
   )

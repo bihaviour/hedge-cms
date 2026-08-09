@@ -104,40 +104,57 @@ export const siteMetadataSchema = z.object({
 export type SiteMetadata = z.infer<typeof siteMetadataSchema>
 
 /**
- * A sender identity a site owns: an address it sends from, a display name, and a reply-to. Every
- * field is nullable and null means inherit — the deployment's stored email config first, then
- * `EMAIL_FROM` / `EMAIL_FROM_NAME`.
+ * One address in a site's sender address book (#136): an address it may send from, a display name,
+ * and a reply-to. A site keeps a list of these and *assigns* them roles — which is its member
+ * sender, which its newsletter sender (`Site.memberSenderId` / `newsletterSenderId`) — and a
+ * newsletter may point at one to send as its author.
  *
- * A site carries **two** of these (#134): one for the transactional email its members receive, one
- * for its newsletters — so member invites and a newsletter can come from different addresses. They
- * share this shape, hence one schema.
+ * This replaced the free-text sender fields that used to sit on the site and on each newsletter: a
+ * send names a managed identity now, so one address is defined once and reused. The global CMS
+ * sender is separate — it is the deployment's `email_config`, not a row here.
  *
- * Operator email (a CMS user's invite or password reset) reads neither. That belongs to the
- * deployment, not to a site, and a site admin must not be able to change what it says it is from.
- *
- * A `fromEmail` here is not a spoofing vector: Cloudflare Email Sending only accepts a domain
- * onboarded on the account, so an address on a domain the deployment does not own fails at the
- * provider rather than leaving it — which is why these fields can be self-served.
+ * An `email` here is not a spoofing vector: Cloudflare Email Sending only accepts a domain onboarded
+ * on the account, so an address on a domain the deployment does not own fails at the provider rather
+ * than leaving it — which is why the list can be self-served.
  */
-export const siteEmailSenderSchema = z.object({
-  fromEmail: z.email().max(320).nullable(),
-  fromName: z.string().max(120).nullable(),
-  replyTo: z.email().max(320).nullable(),
+export const emailSenderSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string().nullable(),
+  replyTo: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 })
 
-export type SiteEmailSender = z.infer<typeof siteEmailSenderSchema>
+export type EmailSender = z.infer<typeof emailSenderSchema>
 
-/** The member-transactional sender, named for clarity where both appear. */
-export type MemberEmailSender = SiteEmailSender
-/** The newsletter sender — same shape, distinct slot on the site. */
-export type NewsletterEmailSender = SiteEmailSender
+export const createEmailSenderSchema = z.object({
+  email: z.email().max(320),
+  name: z.string().max(120).nullable().optional(),
+  replyTo: z.email().max(320).nullable().optional(),
+})
 
-/** Inherit everything — what a sender a site has never set reads as. Both senders start here. */
-export const INHERITED_EMAIL_SENDER: SiteEmailSender = {
-  fromEmail: null,
-  fromName: null,
-  replyTo: null,
-}
+export type CreateEmailSenderInput = z.infer<typeof createEmailSenderSchema>
+
+export const updateEmailSenderSchema = z.object({
+  email: z.email().max(320).optional(),
+  name: z.string().max(120).nullable().optional(),
+  replyTo: z.email().max(320).nullable().optional(),
+})
+
+export type UpdateEmailSenderInput = z.infer<typeof updateEmailSenderSchema>
+
+/**
+ * Which listed address is a site's member sender, and which its newsletter sender. Null clears the
+ * assignment, so the send falls back to the global CMS sender. Assigned from the Email tab, so it is
+ * an `email:manage` power (see `routes/email.ts`), not part of the site-admin `updateSiteConfig`.
+ */
+export const updateSenderAssignmentSchema = z.object({
+  memberSenderId: z.string().nullable(),
+  newsletterSenderId: z.string().nullable(),
+})
+
+export type UpdateSenderAssignmentInput = z.infer<typeof updateSenderAssignmentSchema>
 
 export const siteSchema = z.object({
   id: z.string(),
@@ -161,10 +178,10 @@ export const siteSchema = z.object({
    * for these under its `metadata.custom`, on top of whatever fields its own collection defines.
    */
   customFields: fieldsSchema,
-  /** This site's sender for the transactional email its members receive — see `siteEmailSenderSchema`. */
-  emailSender: siteEmailSenderSchema,
-  /** This site's default sender for its newsletters, overridable per campaign (#134). */
-  newsletterSender: siteEmailSenderSchema,
+  /** The listed address this site's member email is sent as, or null to inherit the CMS sender (#136). */
+  memberSenderId: z.string().nullable(),
+  /** The listed address this site's newsletters default to, or null to inherit the CMS sender (#136). */
+  newsletterSenderId: z.string().nullable(),
   /**
    * Base URL of the website's own preview endpoint — see `preview.ts`. Null means this site has no
    * preview configured, and the admin hides the Preview action rather than rendering one that 404s.
@@ -252,19 +269,16 @@ export const updateSiteSchema = z.object({
 export type UpdateSiteInput = z.infer<typeof updateSiteSchema>
 
 /**
- * A site's metadata defaults, custom fields and sender, edited from Site Settings. Kept apart from
+ * A site's metadata defaults, custom fields and preview, edited from Site Settings. Kept apart from
  * `updateSiteSchema` because it is authorised at the *site* level — a per-site admin owns their
  * site's content configuration — where name, domain and member signup are instance-admin concerns.
  *
- * Each sender is all-or-nothing: sending one replaces all three of its fields, so clearing one
- * override is a matter of sending it as null rather than omitting it. Omitting a sender entirely
- * leaves it untouched, which is what lets the two sender forms in Site settings save independently.
+ * Sender assignment is deliberately *not* here: which listed address is the member or newsletter
+ * sender is set from the Email tab, an `email:manage` power (`updateSenderAssignmentSchema`).
  */
 export const updateSiteConfigSchema = z.object({
   metadata: siteMetadataSchema.optional(),
   customFields: fieldsSchema.optional(),
-  emailSender: siteEmailSenderSchema.optional(),
-  newsletterSender: siteEmailSenderSchema.optional(),
   /**
    * Where preview points, and whether it may be framed. Site-level rather than instance-level for
    * the same reason the rest of this schema is: which URL renders this site's drafts is the site

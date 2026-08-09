@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { emailTemplates, type SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
-import { resolveBrand } from './config'
+import { resolveBrand, type SenderIdentity } from './config'
 import type { EmailMessage } from './send'
 
 /** The variables every template renders from. `appName` comes from the deployment, the rest per send. */
@@ -219,17 +219,18 @@ export async function loadTemplateOverride(
  * default. This is what every send site calls, so a customised template reaches every path an email
  * of that kind is sent from.
  *
- * `site` is the site the message belongs to — a member's invite, reset, verification or magic link
- * — and it is what `{{appName}}` renders as (`resolveBrand`). Pass the same site here as to
- * `sendEmail`: they are the two halves of one message and a template that says one thing while the
- * `From:` header says another is worse than either alone. Operator email passes none, on both.
+ * `site` and `sender` are what `{{appName}}` renders as (`resolveBrand`): the chosen sender's name,
+ * then the site's own. Pass the same pair here as to `sendEmail` — they are the two halves of one
+ * message and a template that says one thing while the `From:` header says another is worse than
+ * either alone. Operator email passes neither, on both.
  */
 export async function renderEmail(
   env: Bindings,
   key: EmailTemplateKey,
   variables: TemplateVariables,
   site: SiteRow | null = null,
+  sender: SenderIdentity | null = null,
 ): Promise<EmailMessage> {
   const source = (await loadTemplateOverride(env, key)) ?? DEFAULT_EMAIL_TEMPLATES[key]
-  return renderMessage(resolveBrand(env, site), source, variables)
+  return renderMessage(resolveBrand(env, site, sender), source, variables)
 }

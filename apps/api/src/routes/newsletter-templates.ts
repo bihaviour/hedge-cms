@@ -4,7 +4,7 @@ import {
   updateNewsletterTemplateSchema,
 } from '@hedge/core'
 import { Hono } from 'hono'
-import { resolveBrand } from '../email/config'
+import { loadSenderIdentity, resolveBrand } from '../email/config'
 import { renderNewsletter } from '../email/render'
 import type { AppEnv } from '../env'
 import { requireActor, requireSiteRole } from '../lib/auth'
@@ -31,9 +31,12 @@ app.get('/', async (c) => {
 /** Renders a subject and body with the newsletter shell, for the editor's live preview. */
 app.post('/preview', async (c) => {
   const input = await validate(c, newsletterPreviewInputSchema)
-  // The newsletter brand, not the deployment's, and honouring the draft's own sender override — a
-  // preview that renders a different name from the send is a preview of something else (#134).
-  const brand = resolveBrand(c.env, requireSite(c), 'newsletter', input.sender)
+  const site = requireSite(c)
+  // The newsletter brand, not the deployment's, honouring the draft's chosen sender (else the site's
+  // newsletter sender) — a preview that renders a different name from the send is a preview of
+  // something else (#136).
+  const sender = await loadSenderIdentity(c.env, input.senderId ?? site.newsletterSenderId)
+  const brand = resolveBrand(c.env, site, sender)
   const message = renderNewsletter(brand, {
     subject: input.subject,
     body: input.body,

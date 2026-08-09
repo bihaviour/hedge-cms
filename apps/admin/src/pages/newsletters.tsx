@@ -3,7 +3,6 @@ import {
   type Newsletter,
   type NewsletterAudience,
   type NewsletterTemplate,
-  type SiteEmailSender,
 } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, Plus, Send } from 'lucide-react'
@@ -159,36 +158,18 @@ export function NewslettersPage() {
   )
 }
 
-/** An input holds a string; an empty one is a cleared override, taken as null by the API. */
-type SenderForm = Record<keyof SiteEmailSender, string>
-
-const EMPTY_SENDER: SenderForm = { fromEmail: '', fromName: '', replyTo: '' }
+/** The sentinel a Select uses for "no pick" — react's Select cannot hold a null value. */
+const SITE_DEFAULT_SENDER = '__site__'
 
 interface Draft {
   subject: string
   body: string
   audience: NewsletterAudience
-  sender: SenderForm
+  /** The chosen sender's id, or null to use the site's newsletter sender (#136). */
+  senderId: string | null
 }
 
-const EMPTY: Draft = { subject: '', body: '', audience: 'both', sender: EMPTY_SENDER }
-
-function toSenderForm(sender: SiteEmailSender): SenderForm {
-  return {
-    fromEmail: sender.fromEmail ?? '',
-    fromName: sender.fromName ?? '',
-    replyTo: sender.replyTo ?? '',
-  }
-}
-
-/** A blank field is an override given up, sent as null so the site's newsletter sender applies. */
-function toSenderInput(sender: SenderForm): SiteEmailSender {
-  return {
-    fromEmail: sender.fromEmail.trim() || null,
-    fromName: sender.fromName.trim() || null,
-    replyTo: sender.replyTo.trim() || null,
-  }
-}
+const EMPTY: Draft = { subject: '', body: '', audience: 'both', senderId: null }
 
 function NewsletterEditor({
   newsletter,
@@ -199,6 +180,8 @@ function NewsletterEditor({
 }) {
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<Draft>(EMPTY)
+  // The site's address book, to pick a From from. Loaded once; empty when none are configured.
+  const senders = useQuery({ queryKey: ['email-senders'], queryFn: api.email.senders })
 
   const isNew = newsletter === 'new'
   const existing = newsletter && newsletter !== 'new' ? newsletter : null
@@ -211,7 +194,7 @@ function NewsletterEditor({
         subject: existing.subject,
         body: existing.body,
         audience: existing.audience,
-        sender: toSenderForm(existing.sender),
+        senderId: existing.senderId,
       })
     }
   }, [isNew, existing])
@@ -224,7 +207,7 @@ function NewsletterEditor({
         subject: draft.subject,
         body: draft.body,
         audience: draft.audience,
-        sender: toSenderInput(draft.sender),
+        senderId: draft.senderId,
       }
       return isNew
         ? api.newsletters.create(input)
@@ -312,60 +295,41 @@ function NewsletterEditor({
             />
           </div>
 
-          <fieldset className="space-y-4 rounded-lg border p-4" disabled={readOnly}>
-            <legend className="px-1 text-muted-foreground text-sm">
-              Sender — optional; blank uses this site's newsletter sender
-            </legend>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="nl-from-email">From address</Label>
-                <Input
-                  id="nl-from-email"
-                  type="email"
-                  placeholder="Site newsletter sender"
-                  value={draft.sender.fromEmail}
-                  onChange={(event) =>
-                    setDraft((d) => ({
-                      ...d,
-                      sender: { ...d.sender, fromEmail: event.target.value },
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="nl-from-name">From name</Label>
-                <Input
-                  id="nl-from-name"
-                  placeholder="Site newsletter sender"
-                  value={draft.sender.fromName}
-                  onChange={(event) =>
-                    setDraft((d) => ({
-                      ...d,
-                      sender: { ...d.sender, fromName: event.target.value },
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="space-y-2 sm:max-w-[calc(50%-0.5rem)]">
-              <Label htmlFor="nl-reply-to">Reply-to address</Label>
-              <Input
-                id="nl-reply-to"
-                type="email"
-                placeholder="Site newsletter sender"
-                value={draft.sender.replyTo}
-                onChange={(event) =>
-                  setDraft((d) => ({ ...d, sender: { ...d.sender, replyTo: event.target.value } }))
-                }
-              />
-            </div>
-          </fieldset>
+          <div className="space-y-2">
+            <Label htmlFor="nl-sender">From</Label>
+            <Select
+              value={draft.senderId ?? SITE_DEFAULT_SENDER}
+              onValueChange={(value) =>
+                setDraft((d) => ({
+                  ...d,
+                  senderId: value === SITE_DEFAULT_SENDER ? null : value,
+                }))
+              }
+              disabled={readOnly}
+            >
+              <SelectTrigger id="nl-sender">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SITE_DEFAULT_SENDER}>This site's newsletter sender</SelectItem>
+                {senders.data?.map((sender) => (
+                  <SelectItem key={sender.id} value={sender.id}>
+                    {sender.name ? `${sender.name} <${sender.email}>` : sender.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Addresses come from the site's list under Configuration → Email. Pick one to send this
+              issue as yourself; leave it on the default otherwise.
+            </p>
+          </div>
 
           {draft.subject && draft.body && (
             <NewsletterPreview
               subject={draft.subject}
               body={draft.body}
-              sender={toSenderInput(draft.sender)}
+              senderId={draft.senderId}
             />
           )}
 

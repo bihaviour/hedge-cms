@@ -1,4 +1,4 @@
-import type { NewsletterPreviewInput, NewsletterTemplate, SiteEmailSender } from '@hedge/core'
+import type { NewsletterPreviewInput, NewsletterTemplate } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -206,19 +206,19 @@ function TemplateEditor({
 export function NewsletterPreview({
   subject,
   body,
-  sender,
+  senderId,
 }: {
   subject: string
   body: string
-  /** The draft's sender override, so the preview's brand matches what will send (#134). */
-  sender?: SiteEmailSender
+  /** The draft's chosen sender, so the preview's brand matches what will send (#136). */
+  senderId?: string | null
 }) {
-  const [debounced, setDebounced] = useState<NewsletterPreviewInput>({ subject, body, sender })
+  const [debounced, setDebounced] = useState<NewsletterPreviewInput>({ subject, body, senderId })
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebounced({ subject, body, sender }), 400)
+    const timer = setTimeout(() => setDebounced({ subject, body, senderId }), 400)
     return () => clearTimeout(timer)
-  }, [subject, body, sender])
+  }, [subject, body, senderId])
 
   const preview = useQuery({
     queryKey: ['newsletter-preview', debounced],

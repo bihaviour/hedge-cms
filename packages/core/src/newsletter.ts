@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { siteEmailSenderSchema } from './site'
 
 /* ------------------------------------------------------------------ *
  * Subscribers — a per-site list of email addresses, lighter than a Member (no account, no
@@ -67,11 +66,11 @@ export const newsletterSchema = z.object({
   status: z.enum(NEWSLETTER_STATUSES),
   audience: z.enum(NEWSLETTER_AUDIENCES),
   /**
-   * This campaign's own sender override (#134). Null fields inherit the site's newsletter sender —
-   * so an author can send one newsletter as themselves without disturbing the site default. This is
-   * the *stored* override, not the resolved sender, so the compose form shows exactly what was set.
+   * The listed address (`EmailSender.id`) this campaign sends as (#136), or null to use the site's
+   * newsletter sender. This lets an author send one newsletter as themselves — by picking their own
+   * address from the site's list — without disturbing the default every other campaign uses.
    */
-  sender: siteEmailSenderSchema,
+  senderId: z.string().nullable(),
   sentAt: z.string().nullable(),
   /** How many recipients it went to, set once sent. */
   recipientCount: z.number().int().nullable(),
@@ -85,8 +84,8 @@ export const createNewsletterSchema = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(50_000),
   audience: z.enum(NEWSLETTER_AUDIENCES).default('both'),
-  /** Optional per-campaign sender override; omit to send from the site's newsletter sender (#134). */
-  sender: siteEmailSenderSchema.optional(),
+  /** The address (`EmailSender.id`) to send as; omit or null for the site's newsletter sender (#136). */
+  senderId: z.string().nullable().optional(),
 })
 
 export type CreateNewsletterInput = z.infer<typeof createNewsletterSchema>
@@ -95,7 +94,7 @@ export const updateNewsletterSchema = z.object({
   subject: z.string().min(1).max(200).optional(),
   body: z.string().min(1).max(50_000).optional(),
   audience: z.enum(NEWSLETTER_AUDIENCES).optional(),
-  sender: siteEmailSenderSchema.optional(),
+  senderId: z.string().nullable().optional(),
 })
 
 export type UpdateNewsletterInput = z.infer<typeof updateNewsletterSchema>
@@ -142,8 +141,8 @@ export type UpdateNewsletterTemplateInput = z.infer<typeof updateNewsletterTempl
 export const newsletterPreviewInputSchema = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(50_000),
-  /** The draft's sender override, so the preview's brand matches what will actually send (#134). */
-  sender: siteEmailSenderSchema.optional(),
+  /** The draft's chosen sender, so the preview's brand matches what will actually send (#136). */
+  senderId: z.string().nullable().optional(),
 })
 
 export type NewsletterPreviewInput = z.infer<typeof newsletterPreviewInputSchema>

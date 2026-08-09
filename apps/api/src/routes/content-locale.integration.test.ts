@@ -45,6 +45,8 @@ const site: SiteRow = {
   newsletterFrom: null,
   newsletterFromName: null,
   newsletterReplyTo: null,
+  memberSenderId: null,
+  newsletterSenderId: null,
   previewUrl: null,
   previewEmbed: false,
   createdAt: '2026-01-01T00:00:00.000Z',
