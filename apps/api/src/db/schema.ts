@@ -52,15 +52,37 @@ export const sites = sqliteTable(
     metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
     customFields: text('custom_fields', { mode: 'json' }).$type<unknown[]>(),
     /**
-     * This site's sender for its newsletters and its members' invite, reset and verification email.
-     * Null on each column means inherit — the deployment's `email_config` row, then `EMAIL_FROM` /
-     * `EMAIL_FROM_NAME`. They live on `sites` rather than in a table of their own because every
-     * request already resolves this row, so a send costs no extra query. Operator email never reads
-     * them; see `siteEmailSenderSchema` in `@hedge/core`.
+     * This site's sender for the transactional email its **members** receive — invite, password
+     * reset, verification, sign-in link. Null on each column means inherit: the deployment's
+     * `email_config` row, then `EMAIL_FROM` / `EMAIL_FROM_NAME`. They live on `sites` rather than in
+     * a table of their own because every request already resolves this row, so a send costs no
+     * extra query. Operator email never reads them; see `siteEmailSenderSchema` in `@hedge/core`.
+     *
+     * **Superseded by `memberSenderId` (#136)** and no longer read — the member sender is a managed
+     * `email_senders` row now, not free text. Kept so the migration stays additive; unused.
      */
     emailFrom: text('email_from'),
     emailFromName: text('email_from_name'),
     emailReplyTo: text('email_reply_to'),
+    /**
+     * This site's default sender for its **newsletters**, separate from the member sender above. A
+     * single newsletter can override it per campaign (`newsletters.from_email` …), so this is the
+     * fallback when a campaign names none. Same inherit-on-null rule and same reasoning as above.
+     *
+     * **Superseded by `newsletterSenderId` (#136)** and no longer read — the sender is a managed
+     * `email_senders` row now, not free text. Kept so the migration stays additive; unused.
+     */
+    newsletterFrom: text('newsletter_from'),
+    newsletterFromName: text('newsletter_from_name'),
+    newsletterReplyTo: text('newsletter_reply_to'),
+    /**
+     * Which `email_senders` row is this site's member sender, and which its newsletter sender (#136).
+     * Null means inherit the global CMS sender (`email_config`). Plain id columns rather than DB
+     * foreign keys because they are added by `ALTER TABLE`, which SQLite will not do with a FK; the
+     * dangling-reference case is handled where they are read (a deleted sender resolves to null).
+     */
+    memberSenderId: text('member_sender_id'),
+    newsletterSenderId: text('newsletter_sender_id'),
     /**
      * Base URL of this website's own preview endpoint, and whether the admin may frame it. Null and
      * false mean "no preview configured" — see `previewUrlSchema` in `@hedge/core`. Explicit rather
@@ -815,6 +837,37 @@ export const emailConfig = sqliteTable('email_config', {
   ...timestamps,
 })
 
+/**
+ * A site's address book of sender identities (#136). Each row is one address a site may send from,
+ * with an optional display name and reply-to. Which of them is the site's member sender and which
+ * is its newsletter sender is recorded on `sites` (`member_sender_id` / `newsletter_sender_id`), and
+ * a newsletter may point at one directly (`newsletters.sender_id`) to send as its author.
+ *
+ * This replaces the free-text sender fields that used to live on `sites` and `newsletters`: a send
+ * now names a *managed* identity rather than an address typed inline, so the same address is defined
+ * once and reused. The global CMS sender stays separate — it is `email_config`, deployment-wide.
+ *
+ * `email` is unique per site so a picker never shows the same address twice; two sites may each hold
+ * their own row for the same address, since sending is scoped by tenant.
+ */
+export const emailSenders = sqliteTable(
+  'email_senders',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    name: text('name'),
+    replyTo: text('reply_to'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('email_senders_site_email_idx').on(t.siteId, t.email),
+    index('email_senders_site_idx').on(t.siteId, t.createdAt),
+  ],
+)
+
 /* ------------------------------------------------------------------ *
  * Newsletters. Per-site — a newsletter is audience content, so it hangs off `siteId` like
  * collections and members, unlike the deployment-level email management above.
@@ -865,6 +918,19 @@ export const newsletters = sqliteTable(
     audience: text('audience', { enum: ['subscribers', 'members', 'both'] })
       .notNull()
       .default('both'),
+    /**
+     * This campaign's own sender override (#134). **Superseded by `senderId` (#136)** and no longer
+     * read — kept so the migration stays additive; unused.
+     */
+    fromEmail: text('from_email'),
+    fromName: text('from_name'),
+    replyTo: text('reply_to'),
+    /**
+     * The `email_senders` row this campaign sends as (#136), letting an author send one newsletter
+     * as themselves. Null means the site's newsletter sender. A plain id column, for the reason on
+     * `sites.memberSenderId`; a deleted sender resolves to the site default.
+     */
+    senderId: text('sender_id'),
     sentAt: text('sent_at'),
     recipientCount: integer('recipient_count'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -977,6 +1043,7 @@ export type OAuthApplicationRow = typeof oauthApplications.$inferSelect
 export type EmailTemplateRow = typeof emailTemplates.$inferSelect
 export type EmailLogRow = typeof emailLog.$inferSelect
 export type EmailConfigRow = typeof emailConfig.$inferSelect
+export type EmailSenderRow = typeof emailSenders.$inferSelect
 export type NewsletterSubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type NewsletterRow = typeof newsletters.$inferSelect
 export type NewsletterTemplateRow = typeof newsletterTemplates.$inferSelect

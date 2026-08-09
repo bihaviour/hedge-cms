@@ -139,11 +139,27 @@ Details are in the rule files; these are the ones worth knowing before you read 
   wrangler provisions them on first deploy — which is what lets the README's Deploy to Cloudflare
   button work on somebody else's account. Same reason `PUBLIC_URL` is empty and filled from the
   request origin.
-- **An email's sender resolves site → deployment → environment**, field by field
-  (`email/config.ts`). `sendEmail` takes the site an email belongs to — a newsletter, or anything
-  sent to one site's member — and operator email passes none, so no site can relabel an invite or a
-  password reset. The member auth callbacks get their site from the request-scoped store in
-  `lib/site.ts`, because Better Auth hands them nothing else.
+- **A send names a *managed* sender, not free-text — an address book, not columns** (#136). Each
+  site keeps a list of sender identities (`email_senders`) and *assigns* them: which is its member
+  sender, which its newsletter sender (`sites.member_sender_id` / `newsletter_sender_id`), and a
+  newsletter may point at one itself (`newsletters.sender_id`) to send as its author. The caller
+  loads the chosen row into a `SenderIdentity` and hands it to `sendEmail`; `resolveSender` layers
+  it over the global CMS sender (`email_config`), then `EMAIL_FROM`. Managing and assigning senders
+  is an `email:manage` power on the **Email tab**, not the site-admin `updateSiteConfig`; the global
+  CMS sender is the one deployment-wide identity and every operator email uses it. Assignment
+  pointers are plain ids, not foreign keys (they are added by `ALTER TABLE`), so a deleted sender
+  resolves to null and falls back to the CMS sender — and `deleteSender` un-points the site and any
+  draft so the Email tab never claims a dead assignment. The member auth callbacks get their site
+  from the request-scoped store in `lib/site.ts`, because Better Auth hands them nothing else.
+- **What a message calls itself follows its sender, and a site email never falls back to the CMS.**
+  `resolveBrand` is what `{{appName}}` renders as: the chosen sender's display name, else the site's
+  own name, never `APP_NAME` for a site email. A member is the audience of one website and has never
+  heard of the CMS behind it, so "Set up your Hedge account" names the wrong product to the wrong
+  person (#129). It takes the same `(site, sender)` `resolveSender` does, so the body and the `From:`
+  header agree by construction — a newsletter sent from a listed address named "Mark Cuban" reads as
+  "Mark Cuban" in both. `renderEmail`/`renderNewsletter` take the resolved brand; pass it and the
+  sender together, because a body branded differently from the header is worse than either alone.
+  `SITE_EMAIL_TEMPLATE_KEYS` in `@hedge/core` is the one list of which templates are a site's.
 - **Generated files are committed, never hand-edited**: `migrations/` + `migrations/meta/` from
   `db:generate`, `worker-configuration.d.ts` from `cf-typegen`, `apps/admin/src/components/ui/` from
   the shadcn CLI (also excluded from linting).

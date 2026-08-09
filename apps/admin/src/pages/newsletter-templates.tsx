@@ -1,4 +1,4 @@
-import type { NewsletterTemplate } from '@hedge/core'
+import type { NewsletterPreviewInput, NewsletterTemplate } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -203,13 +203,22 @@ function TemplateEditor({
 }
 
 /** Live preview of a subject and body, refreshed shortly after the operator stops typing. */
-export function NewsletterPreview({ subject, body }: { subject: string; body: string }) {
-  const [debounced, setDebounced] = useState({ subject, body })
+export function NewsletterPreview({
+  subject,
+  body,
+  senderId,
+}: {
+  subject: string
+  body: string
+  /** The draft's chosen sender, so the preview's brand matches what will send (#136). */
+  senderId?: string | null
+}) {
+  const [debounced, setDebounced] = useState<NewsletterPreviewInput>({ subject, body, senderId })
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebounced({ subject, body }), 400)
+    const timer = setTimeout(() => setDebounced({ subject, body, senderId }), 400)
     return () => clearTimeout(timer)
-  }, [subject, body])
+  }, [subject, body, senderId])
 
   const preview = useQuery({
     queryKey: ['newsletter-preview', debounced],

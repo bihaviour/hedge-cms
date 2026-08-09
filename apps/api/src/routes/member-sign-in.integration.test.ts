@@ -29,17 +29,29 @@ let db: ReturnType<typeof drizzle>
 const realClient = await import('../db/client')
 mock.module('../db/client', () => ({ ...realClient, getDb: () => db }))
 
-/** Every email that would have gone out, so a test can pull the sign-in link out of one. */
-let sent: { to: string; templateKey: string | undefined; url: string }[] = []
+/**
+ * Every email that would have gone out, so a test can pull the sign-in link out of one. Only the
+ * *send* is stubbed — the render above it is real, which is what lets a test read the brand the
+ * message was composed under.
+ */
+let sent: {
+  to: string
+  templateKey: string | undefined
+  text: string
+  siteName: string | undefined
+  url: string
+}[] = []
 mock.module('../email/send', () => ({
   sendEmail: async (
     _env: unknown,
-    message: { to: string; text: string },
-    options?: { templateKey?: string },
+    message: { to: string; subject: string; text: string },
+    options?: { templateKey?: string; site?: { name: string } | null },
   ) => {
     sent.push({
       to: message.to,
       templateKey: options?.templateKey,
+      text: message.text,
+      siteName: options?.site?.name,
       url: /https?:\/\/\S+/.exec(message.text)?.[0] ?? '',
     })
   },
@@ -263,6 +275,16 @@ describe('signing in with a magic link', () => {
     expect(response.status).toBe(200)
     return sent.at(-1)
   }
+
+  test('is branded as the site the reader is signing in to, not as the CMS (#129)', async () => {
+    const mail = await requestLink({ email: 'reader@example.com' })
+
+    // `APP_NAME` here is 'Hedge'. A reader of blog.example.com has never heard of it, so the one
+    // name that may appear is the site's — and the send is scoped to that site for the same reason.
+    expect(mail?.text).toStartWith('Sign in to Blog')
+    expect(mail?.text).not.toContain('Hedge')
+    expect(mail?.siteName).toBe('Blog')
+  })
 
   test('mails a link that signs the reader in and lands them on the site', async () => {
     const mail = await requestLink({ email: 'reader@example.com' })

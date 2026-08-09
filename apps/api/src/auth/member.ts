@@ -12,6 +12,7 @@ import {
   memberVerifications,
   rateLimits,
 } from '../db/schema'
+import { loadSenderIdentity } from '../email/config'
 import { renderEmail } from '../email/render'
 import { sendEmail } from '../email/send'
 import type { Bindings } from '../env'
@@ -97,12 +98,21 @@ function createMemberAuth(env: Bindings) {
         const invited = !(await hasCredential(env, user.id))
         const key = invited ? 'member_invite' : 'member_reset'
 
-        // A member belongs to a site, so the email goes out as that site if it has a sender of its
-        // own. Nothing here can be handed the site, so it comes from the request in flight.
+        // A member belongs to a site, so the email goes out as that site's member sender — a listed
+        // address if one is assigned, else the CMS sender — and carries the site's name in the body
+        // either way. Nothing here can be handed the site, so it comes from the request in flight.
+        const site = currentRequestSite()
+        const sender = await loadSenderIdentity(env, site?.memberSenderId)
         await sendEmail(
           env,
-          await renderEmail(env, key, { to: user.email, name: user.name, url: setUrl }),
-          { templateKey: key, site: currentRequestSite() },
+          await renderEmail(
+            env,
+            key,
+            { to: user.email, name: user.name, url: setUrl },
+            site,
+            sender,
+          ),
+          { templateKey: key, site, sender },
         )
       },
       password: {
@@ -122,10 +132,18 @@ function createMemberAuth(env: Bindings) {
       expiresIn: 60 * 60 * 24,
       sendVerificationEmail: async ({ user, token }) => {
         const url = `${env.PUBLIC_URL}/api/v1/member/verify-email?token=${encodeURIComponent(token)}`
+        const site = currentRequestSite()
+        const sender = await loadSenderIdentity(env, site?.memberSenderId)
         await sendEmail(
           env,
-          await renderEmail(env, 'member_verify', { to: user.email, name: user.name, url }),
-          { templateKey: 'member_verify', site: currentRequestSite() },
+          await renderEmail(
+            env,
+            'member_verify',
+            { to: user.email, name: user.name, url },
+            site,
+            sender,
+          ),
+          { templateKey: 'member_verify', site, sender },
         )
       },
     },
@@ -194,15 +212,18 @@ function createMemberAuth(env: Bindings) {
             verify.searchParams.set('redirect', redirect)
 
           const name = typeof metadata?.name === 'string' ? metadata.name : email
+          const sender = await loadSenderIdentity(env, site?.memberSenderId)
 
           await sendEmail(
             env,
-            await renderEmail(env, 'member_magic_link', {
-              to: email,
-              name,
-              url: verify.toString(),
-            }),
-            { templateKey: 'member_magic_link', site },
+            await renderEmail(
+              env,
+              'member_magic_link',
+              { to: email, name, url: verify.toString() },
+              site,
+              sender,
+            ),
+            { templateKey: 'member_magic_link', site, sender },
           )
         },
       }),
