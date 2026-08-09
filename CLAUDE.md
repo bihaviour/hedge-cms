@@ -52,6 +52,11 @@ bun run db:seed          # apps/api/seeds/dev.sql
 bun run cf-typegen       # regenerate worker-configuration.d.ts after wrangler.jsonc edits
 ```
 
+```bash
+bun run build:template              # hedge-cms-template/ — the flattened copy for cloudflare/templates
+bun run build:template -- --install # …plus npm install, wrangler types and the template's own check
+```
+
 First-time setup also needs `echo 'AUTH_SECRET="'$(openssl rand -base64 32)'"' > .dev.vars` at the
 repository root. Nothing else: the local D1 and R2 are created on the first `dev:api`.
 
@@ -67,6 +72,7 @@ typechecks the owning workspace, blocking on failures. Don't reformat by hand.
 | `apps/installer/` | Wizard that provisions and deploys Hedge onto a Cloudflare account with no Git repository |
 | `packages/core/` | Zod schemas, wire types, roles, field kinds — imported by both sides |
 | `packages/deploy/` | The Cloudflare deploy client: API client, release artifact reader, migration runner |
+| `templates/` | Sources for the generated `cloudflare/templates` submission — its README and Playwright spec. `bun run build:template` writes `hedge-cms-template/`; the runbook is `docs/cloudflare-template.md` |
 | `wrangler.jsonc` | The Worker's only config, at the root so the deploy button and Workers Builds find it |
 
 `@hedge/core` and `@hedge/deploy` are consumed as source (no build step; their `build` is just a
