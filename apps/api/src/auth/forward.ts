@@ -1,7 +1,6 @@
-import type { ApiErrorCode } from '@hedge/core'
 import type { Context } from 'hono'
 import type { AppEnv } from '../env'
-import { ApiError } from '../lib/errors'
+import { authError } from './errors'
 
 /** Headers Better Auth reads: the session cookie, the origin it checks, and the client's identity. */
 const FORWARDED_HEADERS = [
@@ -28,16 +27,6 @@ const FORWARDED_HEADERS = [
  * request — and the next `/authorize` sees the session it now has.
  */
 const OIDC_LOGIN_PROMPT_COOKIE = 'oidc_login_prompt'
-
-const CODE_BY_STATUS: Record<number, ApiErrorCode> = {
-  400: 'bad_request',
-  401: 'unauthorized',
-  403: 'forbidden',
-  404: 'not_found',
-  409: 'conflict',
-  422: 'bad_request',
-  429: 'rate_limited',
-}
 
 /** Rebuilds a `Cookie` header without the pending-authorization cookie. */
 function withoutLoginPrompt(cookie: string | undefined): string | undefined {
@@ -89,18 +78,7 @@ export async function forwardToAuth<T>(
     | null
 
   if (!response.ok) {
-    const code = CODE_BY_STATUS[response.status] ?? 'internal_error'
-    const message = payload?.message ?? 'Authentication failed'
-    if (code === 'internal_error') {
-      // Better Auth logs the cause itself, but not what was being attempted — without the path
-      // here, a 500 on sign-in and a 500 on a password change are the same line in `wrangler tail`.
-      console.error('better-auth error', path, response.status, payload)
-      throw new ApiError(
-        'internal_error',
-        'The authentication service failed. The cause is in this deployment’s Worker logs.',
-      )
-    }
-    throw new ApiError(code, message)
+    throw authError(response.status, payload?.message ?? 'Authentication failed', path, payload)
   }
 
   return { payload: payload as T, cookies: response.headers.getSetCookie() }

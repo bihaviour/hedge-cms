@@ -13,6 +13,7 @@ import {
 import { and, count, desc, eq, like, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { authApiError } from '../auth/errors'
 import {
   getMemberAuth,
   hasCredential,
@@ -237,12 +238,23 @@ memberAuth.post('/forgot-password', async (c) => {
   return c.json({ data: { ok: true } })
 })
 
+/**
+ * Sets the password behind a reset link — which is also the invite link an admin-added member gets.
+ *
+ * The token is the only thing that can fail here: `passwordSchema` is the same 12–200 as the member
+ * instance's own `minPasswordLength`/`maxPasswordLength`, so `validate` has already refused every
+ * length Better Auth would, and a `400` reaching us is a token that expired, was already spent, or
+ * was never issued. Hence the one message for it — see `authApiError` for why a website needs that
+ * told apart from a 500.
+ */
 memberAuth.post('/reset-password', async (c) => {
   const input = await validate(c, z.object({ token: z.string().min(1), password: passwordSchema }))
 
-  await getMemberAuth(c.env).api.resetPassword({
-    body: { token: input.token, newPassword: input.password },
-  })
+  await getMemberAuth(c.env)
+    .api.resetPassword({ body: { token: input.token, newPassword: input.password } })
+    .catch((error) => {
+      throw authApiError(error, '/reset-password', 'That reset link is invalid or has expired')
+    })
 
   return c.json({ data: { ok: true } })
 })
@@ -250,12 +262,21 @@ memberAuth.post('/reset-password', async (c) => {
 /**
  * The link in a verification email. It marks the address confirmed and then hands the reader back
  * to the website they came from, so the last thing they see is the site, not the CMS.
+ *
+ * A dead link answers `401 unauthorized`, which is the status Better Auth picked for it, rather than
+ * the `500` it used to (#131). This one is a page a reader lands on rather than a `fetch` a website
+ * makes, so getting it wrong is a browser showing "Something went wrong" over what is really an
+ * expired link.
  */
 memberAuth.get('/verify-email', async (c) => {
   const token = c.req.query('token')
   if (!token) throw ApiError.badRequest('token is required')
 
-  await getMemberAuth(c.env).api.verifyEmail({ query: { token } })
+  await getMemberAuth(c.env)
+    .api.verifyEmail({ query: { token } })
+    .catch((error) => {
+      throw authApiError(error, '/verify-email', 'That verification link is invalid or has expired')
+    })
 
   const site = c.get('site')
   return site?.domain ? c.redirect(`https://${site.domain}/`) : c.json({ data: { ok: true } })
