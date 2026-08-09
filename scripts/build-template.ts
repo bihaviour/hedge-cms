@@ -20,6 +20,7 @@ import {
   lintTemplateWrangler,
   rewriteHedgeImports,
   TEMPLATE_NAME,
+  TEMPLATE_PRETTIER_VERSION,
   templateDevVarsExample,
   templateGitignore,
   templatePackageJson,
@@ -276,12 +277,18 @@ function verify(pkg: Record<string, unknown>, wrangler: WranglerConfig, readme: 
  * both files are written by a tool (`wrangler types`, `npm install`) that undoes any reformatting on
  * the next run. It is a file rather than `--ignore-pattern` because that flag is not honoured for
  * paths given explicitly, and Prettier reads `.prettierignore` from the directory it runs in.
+ *
+ * **The version is pinned to theirs and must stay pinned.** A bare `bunx prettier` resolves the
+ * newest release, and Prettier's output moves between minors — so the directory was formatted by
+ * 3.9.6, reported clean here, and failed their `check:prettier` (running 3.7.4) on one union type.
+ * See `TEMPLATE_PRETTIER_VERSION`.
  */
 function format(): void {
-  const result = spawnSync('bunx', ['prettier', '--write', '--log-level', 'warn', '.'], {
-    cwd: OUT_DIR,
-    stdio: 'inherit',
-  })
+  const result = spawnSync(
+    'bunx',
+    [`prettier@${TEMPLATE_PRETTIER_VERSION}`, '--write', '--log-level', 'warn', '.'],
+    { cwd: OUT_DIR, stdio: 'inherit' },
+  )
   if (result.status !== 0) {
     console.warn('prettier did not run; `pnpm fix:prettier` in their checkout is the fallback')
   }

@@ -68,6 +68,63 @@ these files and `saas-admin-template` set the precedent.
 Record anything that has to change **outside** `hedge-cms-template/` — a shared dependency bump, a
 `.prettierrc.yaml` override, a `syncpack` alignment — because those belong in the PR description.
 
+## The gate, driven (#52)
+
+Run on 2026-08-09 against a fresh clone of `cloudflare/templates` (`3c583a2`) with the generated
+directory and the spec dropped in, following the sequence above.
+
+| Their command | Result |
+| --- | --- |
+| `pnpm install` (whole workspace, 41 templates) | passes, 3m54s. No peer warning names `hedge-cms-template` |
+| `pnpm check:templates` | passes |
+| `pnpm fix:lockfiles` → `pnpm check:lockfiles` | passes. Only *our* lockfile is rewritten |
+| `pnpm check:turbo` (`turbo run check cf-typegen --force`, 79 tasks) | passes. Ours takes 13.5s |
+| `pnpm check:prettier` | passes — **after the two fixes below** |
+| `git diff --exit-code` | clean |
+| **`pnpm -w check`** | **exits 0** |
+| `pnpm -w test` (`turbo run test`) | passes, 13 tasks |
+| `pnpm test:e2e --grep hedge` | **not completed on this machine** — see below |
+
+**Nothing outside `hedge-cms-template/` had to be hand-edited.** Two tracked files change and both are
+written by their own tooling: `pnpm-lock.yaml`, and `templates.json`, which gains a
+`package_json_hash` entry for us. Both belong in the PR. The `.prettierrc.yaml` override this issue
+anticipated needing in *their* repo is not needed — ours lives inside the template directory, which
+is the nearest config Prettier finds.
+
+`pnpm check:deps` (syncpack) is **not** part of `check` and does not gate a PR: `pull-request-deps.yaml`
+runs `fix:deps` and commits the result. It already fails on their `main` for three unrelated
+templates. Ours raises the highest pinned version of `@types/node` (24.13.3 vs 24.10.1),
+`@tailwindcss/vite` (4.3.3 vs 4.1.17), `wrangler` (4.114.0 vs 4.88.0) and three Radix packages, so
+expect their bot to align some of those — which is a dependency bump for us, not a template change.
+
+### Two things their CI found that nothing here could
+
+- **Prettier's version is part of the contract.** The generator formatted with a bare
+  `bunx prettier`, which resolves the newest release (3.9.6); their repo pins **3.7.4**, and the two
+  disagree about one union type in `src/auth/forward.ts`. The directory was clean here and failed
+  `check:prettier` there. `TEMPLATE_PRETTIER_VERSION` in `scripts/template-lib.ts` now pins it —
+  re-read it alongside the compatibility date at submission time.
+- **Their harness sets no `baseURL`.** `playwright.config.ts` has none, so `page.goto("/")` throws
+  "Cannot navigate to invalid URL"; every navigation goes through the `templateUrl` fixture, which is
+  *also* what starts the server — a test that doesn't request it only passes when an earlier test in
+  the file booted one. Both were written into the spec from reading `fixtures.ts`, and both were
+  wrong.
+
+### Why `test:e2e` did not finish, and what was proved instead
+
+Their harness picks port 5173 by framework heuristic and polls it. On this machine another project's
+Vite server already held it, so `wrangler dev` could not bind — and the poll happily returned `200`
+from **that** server, which the browser then drove. The health test passed against a stranger
+(`{"status":"ok","version":"0.68.1"}`) and the two navigations failed on its login page. A CI runner
+has the port free, so this is a local collision, not a template defect — but it is worth knowing that
+readiness polling cannot tell our server from somebody else's.
+
+Instead the template was served on a free port and the spec's three assertions driven against it with
+the same Chromium build: `/api/health` → `{"status":"ok","environment":"development","version":"0.0.16"}`,
+`/` → `/onboarding` showing "Set up Hedge", and the wizard completed through to "Create your first
+site". **Re-run `pnpm test:e2e --grep hedge` with 5173 free before opening the PR** — the fixture
+wiring is fixed but has not been exercised end to end by their runner.
+
 ## What has been verified here, and what has not
 
 Measured on this repository's own runner, against the generated directory:
@@ -82,10 +139,8 @@ Measured on this repository's own runner, against the generated directory:
 | First-run wizard through to the admin, in a real browser | passes |
 | `prettier --check` over the generated directory | clean |
 
-**Not yet run: `pnpm check` and `pnpm test:e2e` inside a checkout of `cloudflare/templates`.** That
-needs their repository and a pnpm install of thirty-odd templates. Everything above is preparation
-for it; the sequence in the previous section is the thing that produces the evidence, and `syncpack`
-in particular can only be answered there.
+`prettier --check` here is necessary and not sufficient: it is their pinned version that decides, and
+only a run in their checkout uses it. See the gate section above.
 
 ### The 30-second budget, and why `dev` looks the way it does
 
@@ -132,6 +187,10 @@ and the reason written down, because each entry is a divergence from what this r
 `templates/hedge-cms-template.spec.ts` is committed here and copied into their `playwright-tests/`.
 **The filename is load-bearing**: `fixtures.ts` derives the template name from it, so any other name
 fails with "template not found".
+
+**Every test takes the `templateUrl` fixture and navigates through it.** Their `playwright.config.ts`
+sets no `baseURL`, and `templateUrl` is also what starts the server — a test that omits it fails with
+"Cannot navigate to invalid URL", or passes only because a neighbour booted the server first.
 
 It covers three things and deliberately no more — `/api/health`, the first-run wizard rendering, and
 completing the wizard. Collections, media, entry workflow and MCP are covered by this repository's
