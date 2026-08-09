@@ -175,6 +175,34 @@ export interface AnalyticsEntryStat {
   shareIntents: number
 }
 
+/**
+ * One entry's totals over a window, addressed by the entry rather than by a path.
+ *
+ * Deliberately not `AnalyticsEntryStat`: that one is a *ranked path*, truncated to a top-N, and a
+ * table of content the reader is already looking at cannot be fed from a ranking — an article on
+ * page four of a collection is not in the top ten of anything and still has to show its own number.
+ * So this is asked for by collection and answered per entry, with no ordering and no truncation.
+ *
+ * Only entries with traffic in the window appear. An entry missing from the list has no rollup, not
+ * a zero somebody forgot to send, and the two are the same thing to read: nothing was recorded.
+ */
+export interface AnalyticsEntryTotals {
+  entryId: string
+  views: number
+  previousViews: number
+  shareIntents: number
+}
+
+/**
+ * The window the per-entry columns in a collection's entries table cover.
+ *
+ * Fixed rather than picked, because that table is a list of content with traffic beside it, not an
+ * analytics screen — the range picker lives on `/analytics`, and a second one here would be two
+ * controls disagreeing about what period the numbers describe. The column caption names the window
+ * so the figures are never read as all-time.
+ */
+export const ANALYTICS_ENTRY_COLUMN_DAYS = 30
+
 /** A referrer host, with the coarse group the UI presents it under. */
 export const REFERRER_GROUPS = ['search', 'social', 'direct', 'other'] as const
 export type ReferrerGroup = (typeof REFERRER_GROUPS)[number]

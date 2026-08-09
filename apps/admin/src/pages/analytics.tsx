@@ -1,6 +1,6 @@
 import type { AnalyticsEntryStat } from '@hedge/core'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import {
@@ -36,6 +36,14 @@ import { api } from '@/lib/api'
 import { useFormatters, useT } from '@/lib/i18n'
 
 /**
+ * How many ranked rows are fetched to cut the top ten from. The server ranks by views and the table
+ * can be re-sorted by share clicks or by change, so asking for exactly ten would mean "the ten most
+ * viewed, re-ordered" — which is not what either of the other two options claims to show. 100 is the
+ * endpoint's ceiling.
+ */
+const ENTRY_RANKING_POOL = 100
+
+/**
  * The questions the dashboard tiles only hint at.
  *
  * Two habits run through the whole page, and both are about not overstating what was measured:
@@ -64,7 +72,7 @@ export function AnalyticsPage() {
   })
   const entries = useQuery({
     queryKey: ['analytics', 'entries', ...key],
-    queryFn: () => api.analytics.entries({ days, limit: 100 }),
+    queryFn: () => api.analytics.entries({ days, limit: ENTRY_RANKING_POOL }),
     enabled: Boolean(siteSlug),
   })
   const referrers = useQuery({
@@ -250,16 +258,33 @@ export function AnalyticsPage() {
 
 type SortKey = 'views' | 'trend' | 'shares'
 
-/** Every article, ranked and sortable, so a climbing piece is distinguishable from an old spike. */
+/** How many articles the leaderboard shows. */
+const TOP_ARTICLES = 10
+
+/**
+ * The leaderboard: the ten articles the chosen measure puts first, so a climbing piece is
+ * distinguishable from an old spike.
+ *
+ * It is a *top ten* and not the whole catalogue on purpose. Every article now carries its own
+ * views, trend and share clicks in its collection's entries table, which is where somebody looking
+ * for one particular piece goes — a second, longer copy of that list here answered a question this
+ * page is not for, and buried the ten rows that are the point of it.
+ *
+ * The ranking is still cut from a wider set than it shows (`ENTRY_RANKING_POOL`), because sorting
+ * ten rows by share clicks would only re-order the ten most *viewed* and call the result "most
+ * shared".
+ */
 function EntryTable({ rows, loading }: { rows: AnalyticsEntryStat[]; loading: boolean }) {
   const t = useT()
   const [sort, setSort] = useState<SortKey>('views')
 
-  const sorted = [...rows].sort((a, b) => {
-    if (sort === 'shares') return b.shareIntents - a.shareIntents
-    if (sort === 'trend') return b.views - b.previousViews - (a.views - a.previousViews)
-    return b.views - a.views
-  })
+  const sorted = [...rows]
+    .sort((a, b) => {
+      if (sort === 'shares') return b.shareIntents - a.shareIntents
+      if (sort === 'trend') return b.views - b.previousViews - (a.views - a.previousViews)
+      return b.views - a.views
+    })
+    .slice(0, TOP_ARTICLES)
 
   return (
     <Card>
@@ -345,6 +370,15 @@ export function EntryAnalyticsPage() {
     enabled: Boolean(siteSlug && entryId),
   })
 
+  // Arriving here from the leaderboard, the article itself is one click away and the editor is
+  // nowhere — an entry id is not a route into it. The response carries the entry's address for
+  // exactly this, and it is absent only for traffic that outlived the entry that earned it.
+  const article = entry.data
+  const editHref =
+    article?.collectionSlug && article.slug
+      ? `/collections/${article.collectionSlug}/entries/${article.slug}?locale=${article.locale ?? ''}`
+      : null
+
   return (
     <>
       <PageHeader
@@ -357,6 +391,14 @@ export function EntryAnalyticsPage() {
                 {t('analytics.backToAll')}
               </Link>
             </Button>
+            {editHref && (
+              <Button asChild variant="outline">
+                <Link to={editHref}>
+                  <Pencil className="size-4" />
+                  {t('analytics.backToEdit')}
+                </Link>
+              </Button>
+            )}
             <RangePicker days={days} onChange={setDays} />
           </div>
         }

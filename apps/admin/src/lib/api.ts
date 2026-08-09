@@ -1,5 +1,6 @@
 import type {
   AnalyticsEntryStat,
+  AnalyticsEntryTotals,
   AnalyticsMetric,
   AnalyticsOverview,
   AnalyticsPoint,
@@ -647,11 +648,26 @@ export const api = {
     ) => request<AnalyticsTimeseries>(`/analytics/timeseries${params(query)}`),
     entries: (query: AnalyticsRangeQuery & { limit?: number } = {}) =>
       request<AnalyticsEntryStat[]>(`/analytics/entries${params(query)}`),
-    /** One article's traffic — reachable from the ranked table and from the entry editor. */
+    /**
+     * Totals per entry for one collection — the traffic columns on the entries table. Only entries
+     * with something recorded come back, so the caller reads a missing id as "nothing measured".
+     */
+    entryTotals: (collection: string, range: AnalyticsRangeQuery = {}) =>
+      request<AnalyticsEntryTotals[]>(
+        `/analytics/entries/totals${params({ collection, ...range })}`,
+      ),
+    /**
+     * One article's traffic — reachable from the ranked table and from the entry editor. The
+     * entry's address comes back with it so the page can offer a way into the editor; it is null
+     * for an entry that has since been deleted.
+     */
     entry: (entryId: string, range: AnalyticsRangeQuery = {}) =>
       request<{
         entryId: string
         title: string | null
+        collectionSlug: string | null
+        slug: string | null
+        locale: string | null
         range: AnalyticsRange
         views: number
         previousViews: number

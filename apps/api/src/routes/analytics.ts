@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../env'
 import {
+  collectionEntryTotals,
   entryStats,
   entryTitles,
   entryTotals,
@@ -14,6 +15,7 @@ import {
   timeseries,
 } from '../lib/analytics-report'
 import { requireSiteRole } from '../lib/auth'
+import { findCollection } from '../lib/collections'
 import { newsletterAnalytics, newsletterDelivery } from '../lib/newsletter-stats'
 import { requireSite } from '../lib/site'
 import { validateQuery } from '../lib/validate'
@@ -40,6 +42,11 @@ app.use('*', async (c, next) => {
 
 const rangeWithLimit = analyticsRangeSchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+/** Which collection's entries to report on. Required: there is no useful whole-site answer here. */
+const entryTotalsQuery = analyticsRangeSchema.extend({
+  collection: z.string().min(1).max(64),
 })
 
 /** Headline totals, each against the previous period, plus the sparkline. */
@@ -80,7 +87,29 @@ app.get('/entries', async (c) => {
   return c.json({ data: await entryStats(c.env, site, range, query.limit) })
 })
 
-/** One article's traffic — the view an author actually wants. */
+/**
+ * Per-entry totals for one collection — what the entries table puts beside each row.
+ *
+ * Registered before `/entries/:entryId` so the static segment wins, which it also would by id shape
+ * (`ent_…`); the ordering is for the reader rather than the router.
+ */
+app.get('/entries/totals', async (c) => {
+  const site = requireSite(c)
+  const query = validateQuery(c, entryTotalsQuery)
+  const collection = await findCollection(c.env, site.id, query.collection)
+  const range = await resolveRange(c.env, site, query)
+
+  return c.json({ data: await collectionEntryTotals(c.env, site, range, collection.id) })
+})
+
+/**
+ * One article's traffic — the view an author actually wants.
+ *
+ * The entry's address travels with it (`collectionSlug`, `slug`, `locale`) because this page is
+ * reached from the ranked table as often as from the editor, and somebody who arrives from the
+ * ranking has no way back to the article otherwise — an entry id is not a route into the editor.
+ * They are null for an entry that has since been deleted, whose traffic outlives it.
+ */
 app.get('/entries/:entryId', async (c) => {
   const site = requireSite(c)
   const entryId = c.req.param('entryId')
@@ -92,10 +121,15 @@ app.get('/entries/:entryId', async (c) => {
     entryTitles(c.env, site.id, [entryId]),
   ])
 
+  const label = labels.get(entryId)
+
   return c.json({
     data: {
       entryId,
-      title: labels.get(entryId)?.title ?? null,
+      title: label?.title ?? null,
+      collectionSlug: label?.collectionSlug ?? null,
+      slug: label?.slug ?? null,
+      locale: label?.locale ?? null,
       range,
       ...totals,
       series: series.series,
