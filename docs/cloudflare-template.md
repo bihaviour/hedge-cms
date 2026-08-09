@@ -83,7 +83,7 @@ directory and the spec dropped in, following the sequence above.
 | `git diff --exit-code` | clean |
 | **`pnpm -w check`** | **exits 0** |
 | `pnpm -w test` (`turbo run test`) | passes, 13 tasks |
-| `pnpm test:e2e --grep hedge` | **not completed on this machine** — see below |
+| `pnpm test:e2e --grep hedge` | **3 passed**, 8.1s — see the port note below |
 
 **Nothing outside `hedge-cms-template/` had to be hand-edited.** Two tracked files change and both are
 written by their own tooling: `pnpm-lock.yaml`, and `templates.json`, which gains a
@@ -110,20 +110,29 @@ expect their bot to align some of those — which is a dependency bump for us, n
   the file booted one. Both were written into the spec from reading `fixtures.ts`, and both were
   wrong.
 
-### Why `test:e2e` did not finish, and what was proved instead
+### The port, and how to run their harness when 5173 is taken
 
-Their harness picks port 5173 by framework heuristic and polls it. On this machine another project's
-Vite server already held it, so `wrangler dev` could not bind — and the poll happily returned `200`
-from **that** server, which the browser then drove. The health test passed against a stranger
-(`{"status":"ok","version":"0.68.1"}`) and the two navigations failed on its login page. A CI runner
-has the port free, so this is a local collision, not a template defect — but it is worth knowing that
-readiness polling cannot tell our server from somebody else's.
+`pnpm test:e2e --grep hedge` reports **3 passed** — their fixtures, their server manager, a cold
+`.wrangler`, `.dev.vars.example` copied in by the harness, well inside the 30-second budget.
 
-Instead the template was served on a free port and the spec's three assertions driven against it with
-the same Chromium build: `/api/health` → `{"status":"ok","environment":"development","version":"0.0.16"}`,
-`/` → `/onboarding` showing "Set up Hedge", and the wizard completed through to "Create your first
-site". **Re-run `pnpm test:e2e --grep hedge` with 5173 free before opening the PR** — the fixture
-wiring is fixed but has not been exercised end to end by their runner.
+The port is the one thing worth knowing. Their harness picks it by framework heuristic (`vite` in the
+dependency set → 5173) and polls it, and **the poll cannot tell our server from anybody else's**: with
+an unrelated Vite dev server already on 5173, `wrangler dev` fails to bind and the harness happily
+reports ready against the stranger — the health assertion passed against a different application
+(`{"status":"ok","version":"0.68.1"}`) and only the navigations gave it away. A CI runner has the port
+free, so this is a local collision rather than a template defect.
+
+To run it locally anyway, patch the scratch checkout — never the generated directory:
+
+```sh
+# playwright-tests/utils/template-server.ts, in the vite branch
+port = Number(process.env.E2E_VITE_PORT ?? 5173);
+# hedge-cms-template/package.json, in `dev`
+wrangler dev --port ${E2E_VITE_PORT:-5173} …
+E2E_VITE_PORT=5211 pnpm test:e2e --grep hedge
+```
+
+Revert both afterwards; the committed template must keep binding the port their heuristic picks.
 
 ## What has been verified here, and what has not
 
@@ -212,6 +221,22 @@ the reviewer swap it. Their `validate-live-demo-links` job checks it resolves.
 Decide up front what happens when a visitor edits the demo content: either accept it, or reset it on
 a schedule. The README's live-preview link is `templates/README.template.md`; change it there, not in
 the generated copy.
+
+**Step-up verification is what makes "credentials a reviewer can use" hard, and it has to be solved
+before the link is worth clicking.** A correct password from a browser the account has never been
+seen on does not produce a session — it produces a six-digit code mailed to the address on the
+account (`.claude/rules/auth.md`), and every reviewer is an unrecognised device. Two consequences,
+and the second is the one that bites:
+
+- With no sender configured the mail is composed and logged, never sent (`email/send.ts`), so the
+  code does not exist anywhere a reviewer can reach. They get as far as the login screen.
+- **Configuring Email Sending does not fix it by itself.** The code goes to the *demo owner's*
+  mailbox, which a reviewer has no access to either. A shared demo account needs a mailbox the
+  reviewer can read — seed the owner at an address on a public inbox and say so beside the
+  credentials — or the preview is look-but-don't-touch.
+
+Also seed the first owner immediately after deploying. Until somebody completes the wizard, the
+deployment has no owner and the first visitor to reach `/` can claim it.
 
 **2. Open the "template idea" issue on `cloudflare/templates` first.** CONTRIBUTING opens by inviting
 exactly that. A rejected issue costs a day; a rejected PR costs the effort. Say what Hedge is, that it
