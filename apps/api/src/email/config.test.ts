@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import type { EmailConfigRow, SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
-import { resolveSender } from './config'
+import { resolveBrand, resolveSender } from './config'
 
-const env = { EMAIL_FROM: 'hedge@example.com', EMAIL_FROM_NAME: 'Hedge' } as Bindings
+const env = {
+  APP_NAME: 'Hedge',
+  EMAIL_FROM: 'hedge@example.com',
+  EMAIL_FROM_NAME: 'Hedge',
+} as Bindings
 
 const deployment = {
   fromEmail: 'cms@example.com',
@@ -12,7 +16,13 @@ const deployment = {
 } as EmailConfigRow
 
 function site(sender: Partial<SiteRow>): SiteRow {
-  return { emailFrom: null, emailFromName: null, emailReplyTo: null, ...sender } as SiteRow
+  return {
+    name: 'The Blog',
+    emailFrom: null,
+    emailFromName: null,
+    emailReplyTo: null,
+    ...sender,
+  } as SiteRow
 }
 
 describe('resolveSender', () => {
@@ -52,5 +62,25 @@ describe('resolveSender', () => {
   test('deployment email ignores every site override — no site is passed for it', () => {
     // What an operator invite does: the site resolved on the request must not relabel it.
     expect(resolveSender(env, null, null).email).toBe('hedge@example.com')
+  })
+})
+
+describe('resolveBrand', () => {
+  test('deployment email is branded as the deployment', () => {
+    expect(resolveBrand(env, null)).toBe('Hedge')
+  })
+
+  test("a site's email is branded as the site, not as the CMS behind it", () => {
+    // The defect in #129: a member of The Blog was invited to "Hedge" because APP_NAME was the only
+    // name a template could render. A site always has a name, so this never reaches the deployment.
+    expect(resolveBrand(env, site({}))).toBe('The Blog')
+  })
+
+  test("a site's sender display name is the brand when it set one", () => {
+    expect(resolveBrand(env, site({ emailFromName: 'The Blog Weekly' }))).toBe('The Blog Weekly')
+  })
+
+  test('an empty sender name is not a brand — the site name still answers', () => {
+    expect(resolveBrand(env, site({ emailFromName: '' }))).toBe('The Blog')
   })
 })

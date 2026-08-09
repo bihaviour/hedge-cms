@@ -97,12 +97,14 @@ function createMemberAuth(env: Bindings) {
         const invited = !(await hasCredential(env, user.id))
         const key = invited ? 'member_invite' : 'member_reset'
 
-        // A member belongs to a site, so the email goes out as that site if it has a sender of its
-        // own. Nothing here can be handed the site, so it comes from the request in flight.
+        // A member belongs to a site, so the email goes out as that site — its sender if it has one
+        // of its own, and its name in the body either way. Nothing here can be handed the site, so
+        // it comes from the request in flight.
+        const site = currentRequestSite()
         await sendEmail(
           env,
-          await renderEmail(env, key, { to: user.email, name: user.name, url: setUrl }),
-          { templateKey: key, site: currentRequestSite() },
+          await renderEmail(env, key, { to: user.email, name: user.name, url: setUrl }, site),
+          { templateKey: key, site },
         )
       },
       password: {
@@ -122,10 +124,11 @@ function createMemberAuth(env: Bindings) {
       expiresIn: 60 * 60 * 24,
       sendVerificationEmail: async ({ user, token }) => {
         const url = `${env.PUBLIC_URL}/api/v1/member/verify-email?token=${encodeURIComponent(token)}`
+        const site = currentRequestSite()
         await sendEmail(
           env,
-          await renderEmail(env, 'member_verify', { to: user.email, name: user.name, url }),
-          { templateKey: 'member_verify', site: currentRequestSite() },
+          await renderEmail(env, 'member_verify', { to: user.email, name: user.name, url }, site),
+          { templateKey: 'member_verify', site },
         )
       },
     },
@@ -197,11 +200,12 @@ function createMemberAuth(env: Bindings) {
 
           await sendEmail(
             env,
-            await renderEmail(env, 'member_magic_link', {
-              to: email,
-              name,
-              url: verify.toString(),
-            }),
+            await renderEmail(
+              env,
+              'member_magic_link',
+              { to: email, name, url: verify.toString() },
+              site,
+            ),
             { templateKey: 'member_magic_link', site },
           )
         },

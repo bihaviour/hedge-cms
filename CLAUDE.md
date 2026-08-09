@@ -138,6 +138,13 @@ Details are in the rule files; these are the ones worth knowing before you read 
   sent to one site's member — and operator email passes none, so no site can relabel an invite or a
   password reset. The member auth callbacks get their site from the request-scoped store in
   `lib/site.ts`, because Better Auth hands them nothing else.
+- **What a message calls itself follows the same split, and never falls back to the deployment.**
+  `resolveBrand` is what `{{appName}}` renders as, and for a site's email it is that site's sender
+  name or its own name — never `APP_NAME`. A member is the audience of one website and has never
+  heard of the CMS behind it, so "Set up your Hedge account" names the wrong product to the wrong
+  person (#129). `renderEmail` therefore takes the same site `sendEmail` does; pass both or neither,
+  because a body branded differently from the `From:` header is worse than either alone.
+  `SITE_EMAIL_TEMPLATE_KEYS` in `@hedge/core` is the one list of which templates are a site's.
 - **Generated files are committed, never hand-edited**: `migrations/` + `migrations/meta/` from
   `db:generate`, `worker-configuration.d.ts` from `cf-typegen`, `apps/admin/src/components/ui/` from
   the shadcn CLI (also excluded from linting).

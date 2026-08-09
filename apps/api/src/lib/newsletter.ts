@@ -25,6 +25,7 @@ import {
   newsletterTemplates,
   type SiteRow,
 } from '../db/schema'
+import { resolveBrand } from '../email/config'
 import { renderNewsletter } from '../email/render'
 import { sendEmail } from '../email/send'
 import type { Bindings } from '../env'
@@ -504,7 +505,7 @@ export async function sendTestNewsletter(
 ): Promise<void> {
   const newsletter = await findNewsletter(env, site.id, id)
 
-  const message = renderNewsletter(env.APP_NAME, {
+  const message = renderNewsletter(resolveBrand(env, site), {
     subject: `[Test] ${newsletter.subject}`,
     body: newsletter.body,
     unsubscribeUrl: `${env.PUBLIC_URL}/api/v1/newsletter/unsubscribe?test=1`,
@@ -540,11 +541,15 @@ export async function sendNewsletter(
     .set({ status: 'sending', updatedAt: new Date().toISOString() })
     .where(eq(newsletters.id, newsletter.id))
 
+  // Resolved once, outside the loop: it is the same for every recipient and this is the one send
+  // path that runs per address.
+  const brand = resolveBrand(env, site)
+
   let failed = 0
   for (const recipient of recipients) {
     try {
       const url = await unsubscribeUrl(env, site, recipient)
-      const message = renderNewsletter(env.APP_NAME, {
+      const message = renderNewsletter(brand, {
         subject: newsletter.subject,
         body: newsletter.body,
         unsubscribeUrl: url,

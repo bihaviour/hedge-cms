@@ -54,3 +54,25 @@ export function resolveSender(
     ...(replyTo ? { replyTo } : {}),
   }
 }
+
+/**
+ * What a message calls *itself* — the `{{appName}}` a template renders, the eyebrow above every
+ * heading, and the "you subscribed to …" in a newsletter footer. The other half of `resolveSender`:
+ * that decides who the message says it is from, this decides what the body says it is, and the two
+ * disagreeing is the bug this exists to stop (#129).
+ *
+ * **A site's email is branded as that site, never as the deployment.** A member is the audience of
+ * one website; the CMS behind it is not something they have heard of, so an invite reading "Set up
+ * your Hedge account" names the wrong product to the wrong person. The site's sender display name
+ * wins when it has one — an operator who set it has already said what this site's mail calls itself
+ * — and its own name is the answer otherwise. There is deliberately **no fall through to
+ * `APP_NAME`**: a site always has a name, so reaching the deployment here would mean a site-facing
+ * email branded as the CMS, which is the whole defect.
+ *
+ * A `site` of null is deployment email — an operator invite, a password reset, a sign-in code, a
+ * review notification — and that is the deployment's to brand, for the same reason it is the
+ * deployment's to send as.
+ */
+export function resolveBrand(env: Bindings, site: SiteRow | null): string {
+  return site?.emailFromName || site?.name || env.APP_NAME
+}

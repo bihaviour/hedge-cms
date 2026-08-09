@@ -6,6 +6,7 @@ import {
   type EmailTemplate,
   type EmailTemplateKey,
   emailTemplateVariables,
+  isSiteEmailTemplate,
   updateEmailConfigSchema,
   updateEmailTemplateSchema,
 } from '@hedge/core'
@@ -20,7 +21,7 @@ import {
   emailLog,
   emailTemplates,
 } from '../db/schema'
-import { EMAIL_CONFIG_ID, loadEmailConfig } from '../email/config'
+import { EMAIL_CONFIG_ID, loadEmailConfig, resolveBrand } from '../email/config'
 import { renderMessage } from '../email/render'
 import type { AppEnv } from '../env'
 import { requireActor, requirePermission } from '../lib/auth'
@@ -117,10 +118,14 @@ app.delete('/templates/:key', async (c) => {
 /** Renders the passed draft with sample data, so the editor can preview unsaved edits. */
 app.post('/templates/:key/preview', async (c) => {
   // Validates the key in the path — a preview for an unknown template is a 404 like any other.
-  templateKeyParam(c)
+  const key = templateKeyParam(c)
   const input = await validate(c, updateEmailTemplateSchema)
+  // A member template renders as the site, so its preview has to as well, or it is a preview of an
+  // email nobody receives. Which site is the one the admin is looking at; the templates themselves
+  // are deployment-wide, so a member template genuinely reads differently per site.
+  const site = isSiteEmailTemplate(key) ? c.get('site') : null
   const message = renderMessage(
-    c.env.APP_NAME,
+    resolveBrand(c.env, site),
     {
       subject: input.subject,
       heading: input.heading,

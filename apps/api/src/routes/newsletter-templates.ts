@@ -4,6 +4,7 @@ import {
   updateNewsletterTemplateSchema,
 } from '@hedge/core'
 import { Hono } from 'hono'
+import { resolveBrand } from '../email/config'
 import { renderNewsletter } from '../email/render'
 import type { AppEnv } from '../env'
 import { requireActor, requireSiteRole } from '../lib/auth'
@@ -30,7 +31,9 @@ app.get('/', async (c) => {
 /** Renders a subject and body with the newsletter shell, for the editor's live preview. */
 app.post('/preview', async (c) => {
   const input = await validate(c, newsletterPreviewInputSchema)
-  const message = renderNewsletter(c.env.APP_NAME, {
+  // The site's brand, not the deployment's — a preview that renders a different name from the send
+  // is a preview of something else.
+  const message = renderNewsletter(resolveBrand(c.env, requireSite(c)), {
     subject: input.subject,
     body: input.body,
     unsubscribeUrl: `${c.env.PUBLIC_URL}/api/v1/newsletter/unsubscribe?preview=1`,
