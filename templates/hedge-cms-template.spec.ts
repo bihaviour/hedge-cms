@@ -19,6 +19,11 @@ import { expect, test } from "./fixtures";
  * admin app on a cold checkout. `/api/health` is the one route that answers without touching auth,
  * so readiness means the Worker is up rather than only the asset router.
  *
+ * **Every test takes `templateUrl` and navigates through it.** Their `playwright.config.ts` sets no
+ * `baseURL`, so `page.goto("/")` fails with "Cannot navigate to invalid URL" — and `templateUrl` is
+ * also the fixture that *starts the server*, so a test that omits it only passes when an earlier one
+ * in the file happened to boot it. Both were found by running their harness (#52), not by reading it.
+ *
  * Kept to critical paths, per CONTRIBUTING. Collections, media, entry workflow and MCP are covered
  * by the upstream repository's own suite, which is a poor use of somebody else's CI.
  *
@@ -37,23 +42,28 @@ test("health endpoint answers", async ({ page, templateUrl }) => {
 	expect(await response.json()).toMatchObject({ status: "ok" });
 });
 
-test("first run lands on the setup wizard", async ({ page }) => {
-	await page.goto("/");
+test("first run lands on the setup wizard", async ({ page, templateUrl }) => {
+	await page.goto(templateUrl);
 	// A fresh D1 has no owner, so every path routes to the wizard until one exists. Reaching it
 	// proves the Worker, the assets binding, D1 and the SPA router are all live at once.
 	await expect(page).toHaveURL(/\/onboarding$/);
 	await expect(page.getByText("Set up Hedge")).toBeVisible();
 });
 
-test("creating the first owner advances to the site step", async ({ page }) => {
-	await page.goto("/onboarding");
+test("creating the first owner advances to the site step", async ({
+	page,
+	templateUrl,
+}) => {
+	await page.goto(`${templateUrl}/onboarding`);
 
 	await page.getByLabel("Your name").fill("Template Owner");
 	await page.getByLabel("Email").fill("owner@example.com");
 	// `exact` matters: the show/hide control beside the field is labelled "Show password", so a
 	// loose match resolves to two elements and fails on strict mode rather than on the CMS.
 	// The form requires at least 12 characters.
-	await page.getByLabel("Password", { exact: true }).fill("hedge-template-owner");
+	await page
+		.getByLabel("Password", { exact: true })
+		.fill("hedge-template-owner");
 	await page.getByRole("button", { name: "Create account" }).click();
 
 	// Step one creates the account and signs the owner in; the wizard then asks for the first site,

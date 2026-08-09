@@ -11,6 +11,7 @@ import {
   rewriteHedgeImports,
   TARGET_COMPATIBILITY_DATE,
   TEMPLATE_NAME,
+  TEMPLATE_PRETTIER_VERSION,
   templateDevVarsExample,
   templateGitignore,
   templatePackageJson,
@@ -235,5 +236,29 @@ describe('the files their linter checks for existence', () => {
     // `fixtures.ts` derives the template name from the filename; any other name cannot find it.
     const spec = readFileSync(join(ROOT, 'templates', `${TEMPLATE_NAME}.spec.ts`), 'utf8')
     expect(spec).toContain('./fixtures')
+  })
+
+  test('every navigation in the spec goes through templateUrl', () => {
+    // Their `playwright.config.ts` sets no `baseURL`, so a bare path throws "Cannot navigate to
+    // invalid URL" — and `templateUrl` is also the fixture that starts the server. Found by
+    // running their harness (#52), which is the only thing that would have.
+    const spec = readFileSync(join(ROOT, 'templates', `${TEMPLATE_NAME}.spec.ts`), 'utf8')
+    // Comments stripped first: the file explains the rule by quoting the call that breaks it.
+    const code = spec.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const gotos = [...code.matchAll(/page\.goto\((.+?)\)/g)]
+    expect(gotos.length).toBeGreaterThan(0)
+    for (const [, target] of gotos) expect(target).toContain('templateUrl')
+  })
+})
+
+describe('the versions that belong to their repository, not ours', () => {
+  test('prettier is pinned to an exact version', () => {
+    // A range or a bare `bunx prettier` resolves the newest release, and Prettier's output moves
+    // between minors: 3.9.6 formatted the directory clean here while their pinned 3.7.4 failed it.
+    expect(TEMPLATE_PRETTIER_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  test('the compatibility date is an exact date, not a range', () => {
+    expect(TARGET_COMPATIBILITY_DATE).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })

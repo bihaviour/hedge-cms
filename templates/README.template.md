@@ -109,7 +109,11 @@ whatever request it is answering, which is correct for the generated `workers.de
 
 ## Live preview
 
-A running deployment of this template is at <https://hedge-cms-template.templates.workers.dev>.
+A running deployment of this template is at <https://hedge-cms-template.baita.workers.dev>.
+
+Cloudflare's convention for a published template is
+`https://hedge-cms-template.templates.workers.dev`, which only exists once the template is published
+— so this link points at our own deployment for now and is the reviewer's to swap.
 
 ## Screenshot
 

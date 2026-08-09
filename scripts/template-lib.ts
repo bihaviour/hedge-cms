@@ -34,6 +34,26 @@ export const TEMPLATE_NAME = 'hedge-cms-template'
  */
 export const TARGET_COMPATIBILITY_DATE = '2025-10-08'
 
+/**
+ * The Prettier version `cloudflare/templates` pins, read from their root `package.json`. **The
+ * generator has to format with exactly this one**, and the reason is a failure mode with no
+ * symptom locally: `prettier . --check` at their root is run by the version in *their* lockfile,
+ * and Prettier's output is not stable across minor versions. 3.9.6 leaves
+ *
+ *     const payload = (await response.json().catch(() => null)) as
+ *       (T & { message?: string; code?: string }) | null
+ *
+ * alone; 3.7.4 breaks that union onto leading-pipe lines. So an unpinned `bunx prettier` formatted
+ * the directory, reported it clean, and their `check:prettier` still failed on one file — which is
+ * how this was found (#52), in their checkout rather than here.
+ *
+ * Re-read it alongside the compatibility date at submission time:
+ *
+ *     curl -s https://raw.githubusercontent.com/cloudflare/templates/main/package.json \
+ *       | grep '"prettier"'
+ */
+export const TEMPLATE_PRETTIER_VERSION = '3.7.4'
+
 /** The two markers their README linter looks for, exactly once each and in this order. */
 export const DASH_CONTENT_START_MARKER = '<!-- dash-content-start -->'
 export const DASH_CONTENT_END_MARKER = '<!-- dash-content-end -->'
