@@ -44,6 +44,11 @@ export function toSite(row: SiteRow): Site {
       fromName: row.emailFromName,
       replyTo: row.emailReplyTo,
     },
+    newsletterSender: {
+      fromEmail: row.newsletterFrom,
+      fromName: row.newsletterFromName,
+      replyTo: row.newsletterReplyTo,
+    },
     previewUrl: row.previewUrl,
     previewEmbed: row.previewEmbed,
     createdAt: row.createdAt,
@@ -163,6 +168,14 @@ export async function updateSiteConfig(
             emailFrom: input.emailSender.fromEmail,
             emailFromName: input.emailSender.fromName,
             emailReplyTo: input.emailSender.replyTo,
+          }
+        : {}),
+      // The newsletter sender saves independently of the member one — omitting either leaves it be.
+      ...(input.newsletterSender !== undefined
+        ? {
+            newsletterFrom: input.newsletterSender.fromEmail,
+            newsletterFromName: input.newsletterSender.fromName,
+            newsletterReplyTo: input.newsletterSender.replyTo,
           }
         : {}),
       ...(input.previewUrl !== undefined ? { previewUrl: input.previewUrl } : {}),

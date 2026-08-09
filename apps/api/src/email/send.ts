@@ -3,7 +3,7 @@ import { getDb } from '../db/client'
 import { emailLog, type SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
 import { newId } from '../lib/id'
-import { loadEmailConfig, resolveSender } from './config'
+import { loadEmailConfig, resolveSender, type SenderOverride, type SenderPurpose } from './config'
 import { loggedSubject } from './redact'
 
 export interface EmailMessage {
@@ -18,10 +18,21 @@ export interface SendOptions {
   templateKey?: EmailTemplateKey
   /**
    * The site this message belongs to — a newsletter, or an email to one of that site's members.
-   * Its sender override wins over the deployment's. Leave it out for deployment email: an operator
-   * invite or password reset is not a site's to relabel.
+   * Its sender wins over the deployment's. Leave it out for deployment email: an operator invite or
+   * password reset is not a site's to relabel.
    */
   site?: SiteRow | null
+  /**
+   * Which of the site's two senders this message uses (#134): `member` for transactional member
+   * email, `newsletter` for a campaign. Defaults to `member` when a site is present, since that is
+   * every site email that is not a newsletter. Ignored when `site` is null.
+   */
+  purpose?: SenderPurpose
+  /**
+   * A newsletter's per-campaign sender override, above the site's newsletter sender. Only honoured
+   * with `purpose: 'newsletter'`; see `resolveSender`.
+   */
+  senderOverride?: SenderOverride
   /**
    * The campaign this send belongs to, recorded on the log row. Set by `sendNewsletter` and by
    * nothing else — it is what turns the log into per-campaign delivery numbers instead of a pile of
@@ -47,7 +58,13 @@ export async function sendEmail(
   options: SendOptions = {},
 ): Promise<void> {
   const config = await loadEmailConfig(env)
-  const { replyTo, ...from } = resolveSender(env, config, options.site ?? null)
+  const { replyTo, ...from } = resolveSender(
+    env,
+    config,
+    options.site ?? null,
+    options.purpose,
+    options.senderOverride,
+  )
 
   // Sending switched off in the config: compose and log, but never hand it to the provider. Unlike
   // the development branch below, this one runs in production, so the subject is redacted here too.

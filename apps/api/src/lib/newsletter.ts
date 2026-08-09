@@ -25,7 +25,7 @@ import {
   newsletterTemplates,
   type SiteRow,
 } from '../db/schema'
-import { resolveBrand } from '../email/config'
+import { resolveBrand, type SenderOverride } from '../email/config'
 import { renderNewsletter } from '../email/render'
 import { sendEmail } from '../email/send'
 import type { Bindings } from '../env'
@@ -374,6 +374,8 @@ export function toNewsletter(row: NewsletterRow): Newsletter {
     body: row.body,
     status: row.status,
     audience: row.audience,
+    // The stored override, nulls and all — the compose form shows exactly what was set (#134).
+    sender: { fromEmail: row.fromEmail, fromName: row.fromName, replyTo: row.replyTo },
     sentAt: row.sentAt,
     recipientCount: row.recipientCount,
     createdAt: row.createdAt,
@@ -453,6 +455,11 @@ export async function createNewsletter(
       subject: input.subject,
       body: input.body,
       audience: input.audience,
+      // Null on each field when no override was sent — the campaign inherits the site's newsletter
+      // sender (#134).
+      fromEmail: input.sender?.fromEmail ?? null,
+      fromName: input.sender?.fromName ?? null,
+      replyTo: input.sender?.replyTo ?? null,
       createdBy: actorId,
     })
     .returning()
@@ -479,6 +486,15 @@ export async function updateNewsletter(
       subject: input.subject ?? existing.subject,
       body: input.body ?? existing.body,
       audience: input.audience ?? existing.audience,
+      // All three move together, so a cleared override is a null the caller sent; omitting `sender`
+      // leaves the stored one untouched (#134).
+      ...(input.sender !== undefined
+        ? {
+            fromEmail: input.sender.fromEmail,
+            fromName: input.sender.fromName,
+            replyTo: input.sender.replyTo,
+          }
+        : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(and(eq(newsletters.id, existing.id), eq(newsletters.siteId, siteId)))
@@ -504,14 +520,20 @@ export async function sendTestNewsletter(
   email: string,
 ): Promise<void> {
   const newsletter = await findNewsletter(env, site.id, id)
+  const senderOverride = campaignSender(newsletter)
 
-  const message = renderNewsletter(resolveBrand(env, site), {
+  const message = renderNewsletter(resolveBrand(env, site, 'newsletter', senderOverride), {
     subject: `[Test] ${newsletter.subject}`,
     body: newsletter.body,
     unsubscribeUrl: `${env.PUBLIC_URL}/api/v1/newsletter/unsubscribe?test=1`,
   })
-  // Sent as the site, so the test shows the sender the audience will actually see.
-  await sendEmail(env, { ...message, to: email }, { site })
+  // Sent as the newsletter's own sender, so the test shows exactly what the audience will see.
+  await sendEmail(env, { ...message, to: email }, { site, purpose: 'newsletter', senderOverride })
+}
+
+/** A newsletter row's stored sender override, in the shape `resolveSender` takes (#134). */
+function campaignSender(row: NewsletterRow): SenderOverride {
+  return { fromEmail: row.fromEmail, fromName: row.fromName, replyTo: row.replyTo }
 }
 
 /**
@@ -541,9 +563,10 @@ export async function sendNewsletter(
     .set({ status: 'sending', updatedAt: new Date().toISOString() })
     .where(eq(newsletters.id, newsletter.id))
 
-  // Resolved once, outside the loop: it is the same for every recipient and this is the one send
-  // path that runs per address.
-  const brand = resolveBrand(env, site)
+  // Resolved once, outside the loop: both are the same for every recipient and this is the one send
+  // path that runs per address. The override is the campaign's own sender (#134).
+  const senderOverride = campaignSender(newsletter)
+  const brand = resolveBrand(env, site, 'newsletter', senderOverride)
 
   let failed = 0
   for (const recipient of recipients) {
@@ -559,7 +582,7 @@ export async function sendNewsletter(
       await sendEmail(
         env,
         { ...message, to: recipient.email },
-        { site, newsletterId: newsletter.id },
+        { site, purpose: 'newsletter', senderOverride, newsletterId: newsletter.id },
       )
     } catch {
       failed++

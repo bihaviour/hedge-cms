@@ -3,6 +3,7 @@ import {
   type Newsletter,
   type NewsletterAudience,
   type NewsletterTemplate,
+  type SiteEmailSender,
 } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, Plus, Send } from 'lucide-react'
@@ -158,13 +159,36 @@ export function NewslettersPage() {
   )
 }
 
+/** An input holds a string; an empty one is a cleared override, taken as null by the API. */
+type SenderForm = Record<keyof SiteEmailSender, string>
+
+const EMPTY_SENDER: SenderForm = { fromEmail: '', fromName: '', replyTo: '' }
+
 interface Draft {
   subject: string
   body: string
   audience: NewsletterAudience
+  sender: SenderForm
 }
 
-const EMPTY: Draft = { subject: '', body: '', audience: 'both' }
+const EMPTY: Draft = { subject: '', body: '', audience: 'both', sender: EMPTY_SENDER }
+
+function toSenderForm(sender: SiteEmailSender): SenderForm {
+  return {
+    fromEmail: sender.fromEmail ?? '',
+    fromName: sender.fromName ?? '',
+    replyTo: sender.replyTo ?? '',
+  }
+}
+
+/** A blank field is an override given up, sent as null so the site's newsletter sender applies. */
+function toSenderInput(sender: SenderForm): SiteEmailSender {
+  return {
+    fromEmail: sender.fromEmail.trim() || null,
+    fromName: sender.fromName.trim() || null,
+    replyTo: sender.replyTo.trim() || null,
+  }
+}
 
 function NewsletterEditor({
   newsletter,
@@ -183,17 +207,29 @@ function NewsletterEditor({
   useEffect(() => {
     if (isNew) setDraft(EMPTY)
     else if (existing) {
-      setDraft({ subject: existing.subject, body: existing.body, audience: existing.audience })
+      setDraft({
+        subject: existing.subject,
+        body: existing.body,
+        audience: existing.audience,
+        sender: toSenderForm(existing.sender),
+      })
     }
   }, [isNew, existing])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['newsletters'] })
 
   const save = useMutation({
-    mutationFn: () =>
-      isNew
-        ? api.newsletters.create(draft)
-        : api.newsletters.update((existing as Newsletter).id, draft),
+    mutationFn: () => {
+      const input = {
+        subject: draft.subject,
+        body: draft.body,
+        audience: draft.audience,
+        sender: toSenderInput(draft.sender),
+      }
+      return isNew
+        ? api.newsletters.create(input)
+        : api.newsletters.update((existing as Newsletter).id, input)
+    },
     onSuccess: () => {
       invalidate()
       toast.success(isNew ? 'Draft created' : 'Draft saved')
@@ -276,8 +312,61 @@ function NewsletterEditor({
             />
           </div>
 
+          <fieldset className="space-y-4 rounded-lg border p-4" disabled={readOnly}>
+            <legend className="px-1 text-muted-foreground text-sm">
+              Sender — optional; blank uses this site's newsletter sender
+            </legend>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="nl-from-email">From address</Label>
+                <Input
+                  id="nl-from-email"
+                  type="email"
+                  placeholder="Site newsletter sender"
+                  value={draft.sender.fromEmail}
+                  onChange={(event) =>
+                    setDraft((d) => ({
+                      ...d,
+                      sender: { ...d.sender, fromEmail: event.target.value },
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nl-from-name">From name</Label>
+                <Input
+                  id="nl-from-name"
+                  placeholder="Site newsletter sender"
+                  value={draft.sender.fromName}
+                  onChange={(event) =>
+                    setDraft((d) => ({
+                      ...d,
+                      sender: { ...d.sender, fromName: event.target.value },
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2 sm:max-w-[calc(50%-0.5rem)]">
+              <Label htmlFor="nl-reply-to">Reply-to address</Label>
+              <Input
+                id="nl-reply-to"
+                type="email"
+                placeholder="Site newsletter sender"
+                value={draft.sender.replyTo}
+                onChange={(event) =>
+                  setDraft((d) => ({ ...d, sender: { ...d.sender, replyTo: event.target.value } }))
+                }
+              />
+            </div>
+          </fieldset>
+
           {draft.subject && draft.body && (
-            <NewsletterPreview subject={draft.subject} body={draft.body} />
+            <NewsletterPreview
+              subject={draft.subject}
+              body={draft.body}
+              sender={toSenderInput(draft.sender)}
+            />
           )}
 
           {existing && <TestSend id={existing.id} disabled={save.isPending} />}

@@ -31,9 +31,10 @@ app.get('/', async (c) => {
 /** Renders a subject and body with the newsletter shell, for the editor's live preview. */
 app.post('/preview', async (c) => {
   const input = await validate(c, newsletterPreviewInputSchema)
-  // The site's brand, not the deployment's — a preview that renders a different name from the send
-  // is a preview of something else.
-  const message = renderNewsletter(resolveBrand(c.env, requireSite(c)), {
+  // The newsletter brand, not the deployment's, and honouring the draft's own sender override — a
+  // preview that renders a different name from the send is a preview of something else (#134).
+  const brand = resolveBrand(c.env, requireSite(c), 'newsletter', input.sender)
+  const message = renderNewsletter(brand, {
     subject: input.subject,
     body: input.body,
     unsubscribeUrl: `${c.env.PUBLIC_URL}/api/v1/newsletter/unsubscribe?preview=1`,

@@ -21,6 +21,9 @@ function site(sender: Partial<SiteRow>): SiteRow {
     emailFrom: null,
     emailFromName: null,
     emailReplyTo: null,
+    newsletterFrom: null,
+    newsletterFromName: null,
+    newsletterReplyTo: null,
     ...sender,
   } as SiteRow
 }
@@ -63,6 +66,38 @@ describe('resolveSender', () => {
     // What an operator invite does: the site resolved on the request must not relabel it.
     expect(resolveSender(env, null, null).email).toBe('hedge@example.com')
   })
+
+  test('member and newsletter read different site columns (#134)', () => {
+    const s = site({
+      emailFrom: 'members@blog.example',
+      newsletterFrom: 'news@blog.example',
+    })
+    expect(resolveSender(env, null, s, 'member').email).toBe('members@blog.example')
+    expect(resolveSender(env, null, s, 'newsletter').email).toBe('news@blog.example')
+  })
+
+  test("a newsletter's per-campaign override wins over the site's newsletter sender", () => {
+    const s = site({ newsletterFrom: 'news@blog.example', newsletterFromName: 'Blog News' })
+    const sender = resolveSender(env, null, s, 'newsletter', {
+      fromEmail: 'mark.cuban@blog.example',
+      fromName: 'Mark Cuban',
+    })
+    expect(sender).toEqual({ email: 'mark.cuban@blog.example', name: 'Mark Cuban' })
+  })
+
+  test('a newsletter override field inherits on its own — an address with no name keeps the site name', () => {
+    const s = site({ newsletterFrom: 'news@blog.example', newsletterFromName: 'Blog News' })
+    const sender = resolveSender(env, null, s, 'newsletter', {
+      fromEmail: 'mark.cuban@blog.example',
+    })
+    expect(sender).toEqual({ email: 'mark.cuban@blog.example', name: 'Blog News' })
+  })
+
+  test('a member send ignores a newsletter override entirely', () => {
+    const s = site({ emailFrom: 'members@blog.example' })
+    const sender = resolveSender(env, null, s, 'member', { fromEmail: 'nope@blog.example' })
+    expect(sender.email).toBe('members@blog.example')
+  })
 })
 
 describe('resolveBrand', () => {
@@ -82,5 +117,20 @@ describe('resolveBrand', () => {
 
   test('an empty sender name is not a brand — the site name still answers', () => {
     expect(resolveBrand(env, site({ emailFromName: '' }))).toBe('The Blog')
+  })
+
+  test('the newsletter brand follows the newsletter sender name, not the member one (#134)', () => {
+    const s = site({ emailFromName: 'The Blog', newsletterFromName: 'The Blog Weekly' })
+    expect(resolveBrand(env, s, 'member')).toBe('The Blog')
+    expect(resolveBrand(env, s, 'newsletter')).toBe('The Blog Weekly')
+  })
+
+  test("a newsletter override's name is the brand, so the body agrees with the From line", () => {
+    const s = site({ newsletterFromName: 'The Blog Weekly' })
+    expect(resolveBrand(env, s, 'newsletter', { fromName: 'Mark Cuban' })).toBe('Mark Cuban')
+  })
+
+  test('a newsletter with no sender name at all still brands as the site, never the CMS', () => {
+    expect(resolveBrand(env, site({}), 'newsletter')).toBe('The Blog')
   })
 })

@@ -43,6 +43,7 @@ import type {
   NewsletterAudience,
   NewsletterDelivery,
   NewsletterPreview,
+  NewsletterPreviewInput,
   NewsletterTemplate,
   PageQuery,
   Paginated,
@@ -610,7 +611,7 @@ export const api = {
         ...json(input),
       }),
     remove: (id: string) => request<void>(`/newsletter-templates/${id}`, { method: 'DELETE' }),
-    preview: (input: { subject: string; body: string }) =>
+    preview: (input: NewsletterPreviewInput) =>
       request<NewsletterPreview>('/newsletter-templates/preview', {
         method: 'POST',
         ...json(input),

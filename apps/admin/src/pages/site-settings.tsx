@@ -30,6 +30,15 @@ function toSenderForm(sender: SiteEmailSender): SenderForm {
   }
 }
 
+/** A blank field is an override the site is giving up, sent as null so the fallback applies again. */
+function toSenderInput(sender: SenderForm): SiteEmailSender {
+  return {
+    fromEmail: sender.fromEmail.trim() || null,
+    fromName: sender.fromName.trim() || null,
+    replyTo: sender.replyTo.trim() || null,
+  }
+}
+
 /**
  * Per-site metadata defaults, custom fields and email sender — everything here is unique to the
  * active site. The metadata block is the SEO/social defaults every entry inherits; the custom
@@ -42,6 +51,7 @@ export function SiteSettingsPage() {
   const [meta, setMeta] = useState<SiteMetadata>(EMPTY_META)
   const [rows, setRows] = useState<FieldRow[]>([])
   const [sender, setSender] = useState<SenderForm>(EMPTY_SENDER)
+  const [newsletterSender, setNewsletterSender] = useState<SenderForm>(EMPTY_SENDER)
   const [previewUrl, setPreviewUrl] = useState('')
   const [previewEmbed, setPreviewEmbed] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
@@ -52,6 +62,7 @@ export function SiteSettingsPage() {
       setMeta({ ...EMPTY_META, ...site.metadata })
       setRows(toFieldRows(site.customFields))
       setSender(toSenderForm(site.emailSender))
+      setNewsletterSender(toSenderForm(site.newsletterSender))
       setPreviewUrl(site.previewUrl ?? '')
       setPreviewEmbed(site.previewEmbed)
     }
@@ -64,11 +75,8 @@ export function SiteSettingsPage() {
         customFields: rows.map((row) => row.field),
         // A blank field is an override the site is giving up, sent as null so the deployment
         // sender applies to it again.
-        emailSender: {
-          fromEmail: sender.fromEmail.trim() || null,
-          fromName: sender.fromName.trim() || null,
-          replyTo: sender.replyTo.trim() || null,
-        },
+        emailSender: toSenderInput(sender),
+        newsletterSender: toSenderInput(newsletterSender),
         // Blank means "this site has no preview endpoint", which hides the action rather than
         // rendering a button that would send an editor to a URL nobody serves.
         previewUrl: previewUrl.trim() || null,
@@ -264,51 +272,85 @@ export function SiteSettingsPage() {
 
         <section className="space-y-5">
           <div>
-            <h2 className="font-medium text-lg">Email sender</h2>
+            <h2 className="font-medium text-lg">Member email sender</h2>
             <p className="text-muted-foreground text-sm">
-              What this site's newsletters, and the invite, reset and verification emails its
-              members receive, are sent as. Leave a field blank to inherit the deployment sender
-              from Configuration → Email. Operator invites and password resets always use the
-              deployment sender.
+              What the invite, reset, verification and sign-in emails this site's members receive
+              are sent as. Leave a field blank to inherit the deployment sender from Configuration →
+              Email. Operator invites and password resets always use the deployment sender.
             </p>
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="sender-from-email">From address</Label>
-              <Input
-                id="sender-from-email"
-                type="email"
-                placeholder="Deployment default"
-                value={sender.fromEmail}
-                onChange={(event) => setSender((s) => ({ ...s, fromEmail: event.target.value }))}
-              />
-              <p className="text-muted-foreground text-xs">
-                Must be on a domain onboarded with Cloudflare Email Sending, or the send fails.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sender-from-name">From name</Label>
-              <Input
-                id="sender-from-name"
-                placeholder="Deployment default"
-                value={sender.fromName}
-                onChange={(event) => setSender((s) => ({ ...s, fromName: event.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2 sm:max-w-[calc(50%-0.5rem)]">
-            <Label htmlFor="sender-reply-to">Reply-to address</Label>
-            <Input
-              id="sender-reply-to"
-              type="email"
-              placeholder="Deployment default"
-              value={sender.replyTo}
-              onChange={(event) => setSender((s) => ({ ...s, replyTo: event.target.value }))}
-            />
-          </div>
+          <SenderFields idPrefix="member" values={sender} onChange={setSender} />
         </section>
+
+        <section className="space-y-5">
+          <div>
+            <h2 className="font-medium text-lg">Newsletter sender</h2>
+            <p className="text-muted-foreground text-sm">
+              The default sender for this site's newsletters, separate from member email. A single
+              newsletter can override it on the compose screen — so an author can send as themselves
+              — and a blank field here inherits the deployment sender.
+            </p>
+          </div>
+          <SenderFields
+            idPrefix="newsletter"
+            values={newsletterSender}
+            onChange={setNewsletterSender}
+          />
+        </section>
+      </div>
+    </>
+  )
+}
+
+/**
+ * One sender identity's three inputs. A site carries two — member and newsletter — so this is
+ * shared rather than duplicated, and `idPrefix` keeps their label/input ids distinct on the page.
+ */
+function SenderFields({
+  idPrefix,
+  values,
+  onChange,
+}: {
+  idPrefix: string
+  values: SenderForm
+  onChange: (update: (s: SenderForm) => SenderForm) => void
+}) {
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-from-email`}>From address</Label>
+          <Input
+            id={`${idPrefix}-from-email`}
+            type="email"
+            placeholder="Deployment default"
+            value={values.fromEmail}
+            onChange={(event) => onChange((s) => ({ ...s, fromEmail: event.target.value }))}
+          />
+          <p className="text-muted-foreground text-xs">
+            Must be on a domain onboarded with Cloudflare Email Sending, or the send fails.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-from-name`}>From name</Label>
+          <Input
+            id={`${idPrefix}-from-name`}
+            placeholder="Deployment default"
+            value={values.fromName}
+            onChange={(event) => onChange((s) => ({ ...s, fromName: event.target.value }))}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2 sm:max-w-[calc(50%-0.5rem)]">
+        <Label htmlFor={`${idPrefix}-reply-to`}>Reply-to address</Label>
+        <Input
+          id={`${idPrefix}-reply-to`}
+          type="email"
+          placeholder="Deployment default"
+          value={values.replyTo}
+          onChange={(event) => onChange((s) => ({ ...s, replyTo: event.target.value }))}
+        />
       </div>
     </>
   )

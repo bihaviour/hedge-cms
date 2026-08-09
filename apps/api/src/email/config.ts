@@ -31,26 +31,59 @@ export interface Sender {
 }
 
 /**
- * Who a message says it is from, resolved field by field down three levels:
+ * Which of a site's two sender identities a message uses (#134). `member` is the transactional email
+ * a member receives — invite, reset, verification, sign-in link; `newsletter` is a campaign. They
+ * read different columns on the site, so who is asking has to say which. Operator email passes no
+ * site and no purpose — it belongs to the deployment, not to either of a site's slots.
+ */
+export type SenderPurpose = 'member' | 'newsletter'
+
+/**
+ * A per-message sender override, above whatever the site carries. Only a newsletter uses one — a
+ * campaign that sends as its author (#134) — so it is honoured for `newsletter` and ignored
+ * otherwise. Each field is independent: an override that sets only a name keeps inheriting the
+ * address, exactly as the site levels do.
+ */
+export interface SenderOverride {
+  fromEmail?: string | null
+  fromName?: string | null
+  replyTo?: string | null
+}
+
+/** The site columns for one purpose, so the resolver reads the right pair. */
+function siteSenderFields(site: SiteRow, purpose: SenderPurpose) {
+  return purpose === 'newsletter'
+    ? { email: site.newsletterFrom, name: site.newsletterFromName, replyTo: site.newsletterReplyTo }
+    : { email: site.emailFrom, name: site.emailFromName, replyTo: site.emailReplyTo }
+}
+
+/**
+ * Who a message says it is from, resolved field by field down the levels that apply to it:
  *
- *   1. the site's own override — set by a site admin under Site settings
- *   2. the deployment's stored email config — set by an instance admin under Settings → Email
- *   3. `EMAIL_FROM` / `EMAIL_FROM_NAME` from the environment
+ *   1. the campaign's own override — newsletters only, set on the compose screen
+ *   2. the site's sender for this purpose — set by a site admin under Site settings
+ *   3. the deployment's stored email config — set by an instance admin under Settings → Email
+ *   4. `EMAIL_FROM` / `EMAIL_FROM_NAME` from the environment
  *
- * Per field rather than per level: a site that only wants its own display name keeps inheriting the
+ * Per field rather than per level: a level that sets only a display name keeps inheriting the
  * address it is allowed to send from. A `site` of null is deployment email — an operator invite or
- * password reset — which no site may relabel.
+ * password reset — which no site may relabel, so `purpose` and `override` do not apply to it.
  */
 export function resolveSender(
   env: Bindings,
   config: EmailConfigRow | null,
   site: SiteRow | null,
+  purpose: SenderPurpose = 'member',
+  override?: SenderOverride,
 ): Sender {
-  const replyTo = site?.emailReplyTo ?? config?.replyTo ?? undefined
+  const siteFields = site ? siteSenderFields(site, purpose) : null
+  const ovr = purpose === 'newsletter' ? override : undefined
+
+  const replyTo = ovr?.replyTo ?? siteFields?.replyTo ?? config?.replyTo ?? undefined
 
   return {
-    email: site?.emailFrom ?? config?.fromEmail ?? env.EMAIL_FROM,
-    name: site?.emailFromName ?? config?.fromName ?? env.EMAIL_FROM_NAME,
+    email: ovr?.fromEmail ?? siteFields?.email ?? config?.fromEmail ?? env.EMAIL_FROM,
+    name: ovr?.fromName ?? siteFields?.name ?? config?.fromName ?? env.EMAIL_FROM_NAME,
     ...(replyTo ? { replyTo } : {}),
   }
 }
@@ -63,16 +96,27 @@ export function resolveSender(
  *
  * **A site's email is branded as that site, never as the deployment.** A member is the audience of
  * one website; the CMS behind it is not something they have heard of, so an invite reading "Set up
- * your Hedge account" names the wrong product to the wrong person. The site's sender display name
- * wins when it has one — an operator who set it has already said what this site's mail calls itself
- * — and its own name is the answer otherwise. There is deliberately **no fall through to
- * `APP_NAME`**: a site always has a name, so reaching the deployment here would mean a site-facing
- * email branded as the CMS, which is the whole defect.
+ * your Hedge account" names the wrong product to the wrong person. The sender's display name wins
+ * when it has one — the campaign's override, then the site's sender for this purpose — and the
+ * site's own name is the answer otherwise. There is deliberately **no fall through to `APP_NAME`**:
+ * a site always has a name, so reaching the deployment here would mean a site-facing email branded
+ * as the CMS, which is the whole defect.
+ *
+ * It follows its sender field for field (#134): a newsletter sent as `mark.cuban@acme.com` reads as
+ * "Mark Cuban" if that name was set, so the From line and the body agree.
  *
  * A `site` of null is deployment email — an operator invite, a password reset, a sign-in code, a
  * review notification — and that is the deployment's to brand, for the same reason it is the
  * deployment's to send as.
  */
-export function resolveBrand(env: Bindings, site: SiteRow | null): string {
-  return site?.emailFromName || site?.name || env.APP_NAME
+export function resolveBrand(
+  env: Bindings,
+  site: SiteRow | null,
+  purpose: SenderPurpose = 'member',
+  override?: SenderOverride,
+): string {
+  if (!site) return env.APP_NAME
+  const siteFields = siteSenderFields(site, purpose)
+  const overrideName = purpose === 'newsletter' ? override?.fromName : undefined
+  return overrideName || siteFields.name || site.name || env.APP_NAME
 }

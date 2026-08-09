@@ -133,18 +133,23 @@ Details are in the rule files; these are the ones worth knowing before you read 
   wrangler provisions them on first deploy — which is what lets the README's Deploy to Cloudflare
   button work on somebody else's account. Same reason `PUBLIC_URL` is empty and filled from the
   request origin.
-- **An email's sender resolves site → deployment → environment**, field by field
-  (`email/config.ts`). `sendEmail` takes the site an email belongs to — a newsletter, or anything
-  sent to one site's member — and operator email passes none, so no site can relabel an invite or a
+- **An email's sender resolves override → site → deployment → environment**, field by field
+  (`email/config.ts`). `sendEmail` takes the site an email belongs to and a `purpose` — a site holds
+  **two** senders, one for the transactional email its members receive and one for its newsletters
+  (#134), on separate columns — plus, for a newsletter, a per-campaign `senderOverride` so an author
+  can send as themselves. Operator email passes no site, so no site can relabel an invite or a
   password reset. The member auth callbacks get their site from the request-scoped store in
   `lib/site.ts`, because Better Auth hands them nothing else.
 - **What a message calls itself follows the same split, and never falls back to the deployment.**
-  `resolveBrand` is what `{{appName}}` renders as, and for a site's email it is that site's sender
-  name or its own name — never `APP_NAME`. A member is the audience of one website and has never
-  heard of the CMS behind it, so "Set up your Hedge account" names the wrong product to the wrong
-  person (#129). `renderEmail` therefore takes the same site `sendEmail` does; pass both or neither,
-  because a body branded differently from the `From:` header is worse than either alone.
-  `SITE_EMAIL_TEMPLATE_KEYS` in `@hedge/core` is the one list of which templates are a site's.
+  `resolveBrand` is what `{{appName}}` renders as, and for a site's email it is that message's sender
+  name — the campaign override, then the site's sender for that purpose — else the site's own name,
+  never `APP_NAME`. A member is the audience of one website and has never heard of the CMS behind it,
+  so "Set up your Hedge account" names the wrong product to the wrong person (#129). It takes the
+  same `(site, purpose, override)` `resolveSender` does, so the body and the `From:` header agree by
+  construction — a newsletter sent as `mark.cuban@acme.com` reads as "Mark Cuban" in both.
+  `renderEmail`/`renderNewsletter` take the resolved brand; pass it and the sender together, because
+  a body branded differently from the header is worse than either alone. `SITE_EMAIL_TEMPLATE_KEYS`
+  in `@hedge/core` is the one list of which templates are a site's.
 - **Generated files are committed, never hand-edited**: `migrations/` + `migrations/meta/` from
   `db:generate`, `worker-configuration.d.ts` from `cf-typegen`, `apps/admin/src/components/ui/` from
   the shadcn CLI (also excluded from linting).

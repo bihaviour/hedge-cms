@@ -52,15 +52,27 @@ export const sites = sqliteTable(
     metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
     customFields: text('custom_fields', { mode: 'json' }).$type<unknown[]>(),
     /**
-     * This site's sender for its newsletters and its members' invite, reset and verification email.
-     * Null on each column means inherit — the deployment's `email_config` row, then `EMAIL_FROM` /
-     * `EMAIL_FROM_NAME`. They live on `sites` rather than in a table of their own because every
-     * request already resolves this row, so a send costs no extra query. Operator email never reads
-     * them; see `siteEmailSenderSchema` in `@hedge/core`.
+     * This site's sender for the transactional email its **members** receive — invite, password
+     * reset, verification, sign-in link. Null on each column means inherit: the deployment's
+     * `email_config` row, then `EMAIL_FROM` / `EMAIL_FROM_NAME`. They live on `sites` rather than in
+     * a table of their own because every request already resolves this row, so a send costs no
+     * extra query. Operator email never reads them; see `siteEmailSenderSchema` in `@hedge/core`.
+     *
+     * These were once the site's *only* sender, shared with newsletters. Newsletters split off into
+     * their own columns below (#134) so a site can invite members from one address and send a
+     * newsletter from another — the author's, typically.
      */
     emailFrom: text('email_from'),
     emailFromName: text('email_from_name'),
     emailReplyTo: text('email_reply_to'),
+    /**
+     * This site's default sender for its **newsletters**, separate from the member sender above. A
+     * single newsletter can override it per campaign (`newsletters.from_email` …), so this is the
+     * fallback when a campaign names none. Same inherit-on-null rule and same reasoning as above.
+     */
+    newsletterFrom: text('newsletter_from'),
+    newsletterFromName: text('newsletter_from_name'),
+    newsletterReplyTo: text('newsletter_reply_to'),
     /**
      * Base URL of this website's own preview endpoint, and whether the admin may frame it. Null and
      * false mean "no preview configured" — see `previewUrlSchema` in `@hedge/core`. Explicit rather
@@ -865,6 +877,14 @@ export const newsletters = sqliteTable(
     audience: text('audience', { enum: ['subscribers', 'members', 'both'] })
       .notNull()
       .default('both'),
+    /**
+     * This campaign's own sender override (#134). Null means fall back to the site's newsletter
+     * sender (`sites.newsletter_from` …), which is what lets an author send one newsletter as
+     * themselves without touching the site default every other campaign uses.
+     */
+    fromEmail: text('from_email'),
+    fromName: text('from_name'),
+    replyTo: text('reply_to'),
     sentAt: text('sent_at'),
     recipientCount: integer('recipient_count'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),

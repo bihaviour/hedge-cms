@@ -104,16 +104,20 @@ export const siteMetadataSchema = z.object({
 export type SiteMetadata = z.infer<typeof siteMetadataSchema>
 
 /**
- * The sender a site's *own* email goes out as: its newsletters, and the invite, reset and
- * verification emails its members receive. Every field is nullable and null means inherit — the
- * deployment's stored email config first, then `EMAIL_FROM` / `EMAIL_FROM_NAME`.
+ * A sender identity a site owns: an address it sends from, a display name, and a reply-to. Every
+ * field is nullable and null means inherit — the deployment's stored email config first, then
+ * `EMAIL_FROM` / `EMAIL_FROM_NAME`.
  *
- * Operator email (a CMS user's invite or password reset) is never affected. That belongs to the
+ * A site carries **two** of these (#134): one for the transactional email its members receive, one
+ * for its newsletters — so member invites and a newsletter can come from different addresses. They
+ * share this shape, hence one schema.
+ *
+ * Operator email (a CMS user's invite or password reset) reads neither. That belongs to the
  * deployment, not to a site, and a site admin must not be able to change what it says it is from.
  *
  * A `fromEmail` here is not a spoofing vector: Cloudflare Email Sending only accepts a domain
  * onboarded on the account, so an address on a domain the deployment does not own fails at the
- * provider rather than leaving it.
+ * provider rather than leaving it — which is why these fields can be self-served.
  */
 export const siteEmailSenderSchema = z.object({
   fromEmail: z.email().max(320).nullable(),
@@ -123,7 +127,12 @@ export const siteEmailSenderSchema = z.object({
 
 export type SiteEmailSender = z.infer<typeof siteEmailSenderSchema>
 
-/** Inherit everything — what a site that has never set a sender of its own reads as. */
+/** The member-transactional sender, named for clarity where both appear. */
+export type MemberEmailSender = SiteEmailSender
+/** The newsletter sender — same shape, distinct slot on the site. */
+export type NewsletterEmailSender = SiteEmailSender
+
+/** Inherit everything — what a sender a site has never set reads as. Both senders start here. */
 export const INHERITED_EMAIL_SENDER: SiteEmailSender = {
   fromEmail: null,
   fromName: null,
@@ -152,8 +161,10 @@ export const siteSchema = z.object({
    * for these under its `metadata.custom`, on top of whatever fields its own collection defines.
    */
   customFields: fieldsSchema,
-  /** This site's sender override for newsletters and member email — see `siteEmailSenderSchema`. */
+  /** This site's sender for the transactional email its members receive — see `siteEmailSenderSchema`. */
   emailSender: siteEmailSenderSchema,
+  /** This site's default sender for its newsletters, overridable per campaign (#134). */
+  newsletterSender: siteEmailSenderSchema,
   /**
    * Base URL of the website's own preview endpoint — see `preview.ts`. Null means this site has no
    * preview configured, and the admin hides the Preview action rather than rendering one that 404s.
@@ -245,13 +256,15 @@ export type UpdateSiteInput = z.infer<typeof updateSiteSchema>
  * `updateSiteSchema` because it is authorised at the *site* level — a per-site admin owns their
  * site's content configuration — where name, domain and member signup are instance-admin concerns.
  *
- * `emailSender` is all-or-nothing: sending it replaces all three fields, so clearing one override
- * is a matter of sending it as null rather than omitting it.
+ * Each sender is all-or-nothing: sending one replaces all three of its fields, so clearing one
+ * override is a matter of sending it as null rather than omitting it. Omitting a sender entirely
+ * leaves it untouched, which is what lets the two sender forms in Site settings save independently.
  */
 export const updateSiteConfigSchema = z.object({
   metadata: siteMetadataSchema.optional(),
   customFields: fieldsSchema.optional(),
   emailSender: siteEmailSenderSchema.optional(),
+  newsletterSender: siteEmailSenderSchema.optional(),
   /**
    * Where preview points, and whether it may be framed. Site-level rather than instance-level for
    * the same reason the rest of this schema is: which URL renders this site's drafts is the site
