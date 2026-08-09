@@ -1,4 +1,5 @@
 import {
+  createEmailSenderSchema,
   DEFAULT_EMAIL_TEMPLATES,
   EMAIL_TEMPLATE_KEYS,
   type EmailConfig,
@@ -6,8 +7,11 @@ import {
   type EmailTemplate,
   type EmailTemplateKey,
   emailTemplateVariables,
+  isSiteEmailTemplate,
   updateEmailConfigSchema,
+  updateEmailSenderSchema,
   updateEmailTemplateSchema,
+  updateSenderAssignmentSchema,
 } from '@hedge/core'
 import { count, desc, eq, lt } from 'drizzle-orm'
 import { type Context, Hono } from 'hono'
@@ -20,12 +24,20 @@ import {
   emailLog,
   emailTemplates,
 } from '../db/schema'
-import { EMAIL_CONFIG_ID, loadEmailConfig } from '../email/config'
+import { EMAIL_CONFIG_ID, loadEmailConfig, resolveBrand } from '../email/config'
 import { renderMessage } from '../email/render'
 import type { AppEnv } from '../env'
 import { requireActor, requirePermission } from '../lib/auth'
+import {
+  assignSenders,
+  createSender,
+  deleteSender,
+  listSenders,
+  updateSender,
+} from '../lib/email-senders'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
+import { requireSite } from '../lib/site'
 import { validate, validateQuery } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
@@ -117,10 +129,15 @@ app.delete('/templates/:key', async (c) => {
 /** Renders the passed draft with sample data, so the editor can preview unsaved edits. */
 app.post('/templates/:key/preview', async (c) => {
   // Validates the key in the path — a preview for an unknown template is a 404 like any other.
-  templateKeyParam(c)
+  const key = templateKeyParam(c)
   const input = await validate(c, updateEmailTemplateSchema)
+  // A member template renders as the site, so its preview has to as well, or it is a preview of an
+  // email nobody receives. Which site is the one the admin is looking at; the templates themselves
+  // are deployment-wide, so a member template genuinely reads differently per site.
+  const site = isSiteEmailTemplate(key) ? c.get('site') : null
   const message = renderMessage(
-    c.env.APP_NAME,
+    // No chosen sender in a preview — a member template brands as the site's own name.
+    resolveBrand(c.env, site, null),
     {
       subject: input.subject,
       heading: input.heading,
@@ -226,6 +243,41 @@ app.patch('/config', async (c) => {
     .returning()
 
   return c.json({ data: toConfig(c.env, row ?? null) })
+})
+
+/* ------------------------------------------------------------------ *
+ * Sender address book (#136)
+ *
+ * The list of addresses a site may send from, and which of them is its member and newsletter
+ * sender. These are per site — `requireSite` resolves the active one — but managing them is the
+ * same `email:manage` power as the global CMS sender above, which is why they live under this prefix
+ * rather than beside the site-admin config. The global CMS sender stays `email_config`.
+ * ------------------------------------------------------------------ */
+
+app.get('/senders', async (c) => {
+  return c.json({ data: await listSenders(c.env, requireSite(c).id) })
+})
+
+app.post('/senders', async (c) => {
+  const input = await validate(c, createEmailSenderSchema)
+  return c.json({ data: await createSender(c.env, requireSite(c).id, input) }, 201)
+})
+
+// `assignments` is fixed, so it is defined before `:id` — a PUT could never collide with the PATCH
+// and DELETE below, but keeping it above makes the intent plain.
+app.put('/senders/assignments', async (c) => {
+  const input = await validate(c, updateSenderAssignmentSchema)
+  return c.json({ data: await assignSenders(c.env, requireSite(c).id, input) })
+})
+
+app.patch('/senders/:id', async (c) => {
+  const input = await validate(c, updateEmailSenderSchema)
+  return c.json({ data: await updateSender(c.env, requireSite(c).id, c.req.param('id'), input) })
+})
+
+app.delete('/senders/:id', async (c) => {
+  await deleteSender(c.env, requireSite(c).id, c.req.param('id'))
+  return c.body(null, 204)
 })
 
 export default app

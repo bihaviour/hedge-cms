@@ -25,6 +25,7 @@ import {
   newsletterTemplates,
   type SiteRow,
 } from '../db/schema'
+import { loadSenderIdentity, resolveBrand } from '../email/config'
 import { renderNewsletter } from '../email/render'
 import { sendEmail } from '../email/send'
 import type { Bindings } from '../env'
@@ -373,6 +374,8 @@ export function toNewsletter(row: NewsletterRow): Newsletter {
     body: row.body,
     status: row.status,
     audience: row.audience,
+    // The listed address this campaign sends as, or null for the site's newsletter sender (#136).
+    senderId: row.senderId,
     sentAt: row.sentAt,
     recipientCount: row.recipientCount,
     createdAt: row.createdAt,
@@ -452,6 +455,8 @@ export async function createNewsletter(
       subject: input.subject,
       body: input.body,
       audience: input.audience,
+      // Null when none was picked — the campaign inherits the site's newsletter sender (#136).
+      senderId: input.senderId ?? null,
       createdBy: actorId,
     })
     .returning()
@@ -478,6 +483,9 @@ export async function updateNewsletter(
       subject: input.subject ?? existing.subject,
       body: input.body ?? existing.body,
       audience: input.audience ?? existing.audience,
+      // Omitting `senderId` leaves the stored pick untouched; sending null clears it back to the
+      // site's newsletter sender (#136).
+      ...(input.senderId !== undefined ? { senderId: input.senderId } : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(and(eq(newsletters.id, existing.id), eq(newsletters.siteId, siteId)))
@@ -503,14 +511,24 @@ export async function sendTestNewsletter(
   email: string,
 ): Promise<void> {
   const newsletter = await findNewsletter(env, site.id, id)
+  const sender = await newsletterSender(env, site, newsletter)
 
-  const message = renderNewsletter(env.APP_NAME, {
+  const message = renderNewsletter(resolveBrand(env, site, sender), {
     subject: `[Test] ${newsletter.subject}`,
     body: newsletter.body,
     unsubscribeUrl: `${env.PUBLIC_URL}/api/v1/newsletter/unsubscribe?test=1`,
   })
-  // Sent as the site, so the test shows the sender the audience will actually see.
-  await sendEmail(env, { ...message, to: email }, { site })
+  // Sent as the newsletter's own sender, so the test shows exactly what the audience will see.
+  await sendEmail(env, { ...message, to: email }, { site, sender })
+}
+
+/**
+ * The listed address a campaign sends as (#136): its own pick when it named one, else the site's
+ * newsletter sender, else null — which resolves to the CMS sender. A deleted pick resolves to null
+ * inside `loadSenderIdentity` and so falls back the same way.
+ */
+function newsletterSender(env: Bindings, site: SiteRow, row: NewsletterRow) {
+  return loadSenderIdentity(env, row.senderId ?? site.newsletterSenderId)
 }
 
 /**
@@ -540,11 +558,16 @@ export async function sendNewsletter(
     .set({ status: 'sending', updatedAt: new Date().toISOString() })
     .where(eq(newsletters.id, newsletter.id))
 
+  // Resolved once, outside the loop: both are the same for every recipient and this is the one send
+  // path that runs per address. The sender is the campaign's pick, else the site's newsletter sender.
+  const sender = await newsletterSender(env, site, newsletter)
+  const brand = resolveBrand(env, site, sender)
+
   let failed = 0
   for (const recipient of recipients) {
     try {
       const url = await unsubscribeUrl(env, site, recipient)
-      const message = renderNewsletter(env.APP_NAME, {
+      const message = renderNewsletter(brand, {
         subject: newsletter.subject,
         body: newsletter.body,
         unsubscribeUrl: url,
@@ -554,7 +577,7 @@ export async function sendNewsletter(
       await sendEmail(
         env,
         { ...message, to: recipient.email },
-        { site, newsletterId: newsletter.id },
+        { site, sender, newsletterId: newsletter.id },
       )
     } catch {
       failed++

@@ -3,7 +3,7 @@ import { getDb } from '../db/client'
 import { emailLog, type SiteRow } from '../db/schema'
 import type { Bindings } from '../env'
 import { newId } from '../lib/id'
-import { loadEmailConfig, resolveSender } from './config'
+import { loadEmailConfig, resolveSender, type SenderIdentity } from './config'
 import { loggedSubject } from './redact'
 
 export interface EmailMessage {
@@ -17,11 +17,16 @@ export interface SendOptions {
   /** The system template this message came from, recorded on the log row. */
   templateKey?: EmailTemplateKey
   /**
-   * The site this message belongs to — a newsletter, or an email to one of that site's members.
-   * Its sender override wins over the deployment's. Leave it out for deployment email: an operator
-   * invite or password reset is not a site's to relabel.
+   * The site this message belongs to — used only to record context; the sender is resolved by the
+   * caller and passed as `sender`. Left out for operator email.
    */
   site?: SiteRow | null
+  /**
+   * The listed sender this message goes out as (#136), already loaded by the caller — a site's
+   * member or newsletter sender, or a campaign's own pick. Null resolves to the global CMS sender,
+   * which is also what operator email uses. See `resolveSender`.
+   */
+  sender?: SenderIdentity | null
   /**
    * The campaign this send belongs to, recorded on the log row. Set by `sendNewsletter` and by
    * nothing else — it is what turns the log into per-campaign delivery numbers instead of a pile of
@@ -47,7 +52,7 @@ export async function sendEmail(
   options: SendOptions = {},
 ): Promise<void> {
   const config = await loadEmailConfig(env)
-  const { replyTo, ...from } = resolveSender(env, config, options.site ?? null)
+  const { replyTo, ...from } = resolveSender(env, config, options.sender ?? null)
 
   // Sending switched off in the config: compose and log, but never hand it to the provider. Unlike
   // the development branch below, this one runs in production, so the subject is redacted here too.

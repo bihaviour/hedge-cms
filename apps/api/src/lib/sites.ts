@@ -38,12 +38,10 @@ export function toSite(row: SiteRow): Site {
     // Null on rows predating these columns and on freshly created sites — parse into empty defaults.
     metadata: siteMetadataSchema.parse(row.metadata ?? {}),
     customFields: fieldsSchema.parse(row.customFields ?? []),
-    // Nulls are meaningful here rather than missing: each one means "inherit the deployment's".
-    emailSender: {
-      fromEmail: row.emailFrom,
-      fromName: row.emailFromName,
-      replyTo: row.emailReplyTo,
-    },
+    // Which listed address is this site's member / newsletter sender (#136). Null means inherit the
+    // global CMS sender; a deleted sender resolves the same way at send time.
+    memberSenderId: row.memberSenderId,
+    newsletterSenderId: row.newsletterSenderId,
     previewUrl: row.previewUrl,
     previewEmbed: row.previewEmbed,
     createdAt: row.createdAt,
@@ -156,15 +154,8 @@ export async function updateSiteConfig(
     .set({
       ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
       ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
-      // All three move together, so a cleared override is a null the caller sent rather than a
-      // field it happened to leave out.
-      ...(input.emailSender !== undefined
-        ? {
-            emailFrom: input.emailSender.fromEmail,
-            emailFromName: input.emailSender.fromName,
-            emailReplyTo: input.emailSender.replyTo,
-          }
-        : {}),
+      // Sender assignment is not here — it is an `email:manage` power set from the Email tab
+      // (`assignSenders`), not part of this site-admin config save (#136).
       ...(input.previewUrl !== undefined ? { previewUrl: input.previewUrl } : {}),
       ...(input.previewEmbed !== undefined ? { previewEmbed: input.previewEmbed } : {}),
       updatedAt: new Date().toISOString(),

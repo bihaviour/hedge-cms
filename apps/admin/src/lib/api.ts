@@ -15,6 +15,7 @@ import type {
   Collection,
   CreateApiKeyInput,
   CreateCollectionInput,
+  CreateEmailSenderInput,
   CreateEntryInput,
   CreateEntryVersionInput,
   CreateMemberInput,
@@ -26,6 +27,7 @@ import type {
   CreateSubscriberInput,
   EmailConfig,
   EmailLog,
+  EmailSender,
   EmailTemplate,
   EmailTemplateKey,
   EmailTemplatePreview,
@@ -43,6 +45,7 @@ import type {
   NewsletterAudience,
   NewsletterDelivery,
   NewsletterPreview,
+  NewsletterPreviewInput,
   NewsletterTemplate,
   PageQuery,
   Paginated,
@@ -62,6 +65,7 @@ import type {
   UpdateApiKeyInput,
   UpdateCollectionInput,
   UpdateEmailConfigInput,
+  UpdateEmailSenderInput,
   UpdateEmailTemplateInput,
   UpdateEntryInput,
   UpdateEntryVersionInput,
@@ -69,6 +73,7 @@ import type {
   UpdateNewsletterInput,
   UpdateNewsletterTemplateInput,
   UpdateRoleInput,
+  UpdateSenderAssignmentInput,
   UpdateSiteConfigInput,
   UpdateSiteInput,
   UpdateSubscriberInput,
@@ -569,6 +574,17 @@ export const api = {
     config: () => request<EmailConfig>('/email/config'),
     updateConfig: (input: UpdateEmailConfigInput) =>
       request<EmailConfig>('/email/config', { method: 'PATCH', ...json(input) }),
+
+    /** The active site's sender address book (#136). Returned whole; paged in the client. */
+    senders: () => request<EmailSender[]>('/email/senders'),
+    createSender: (input: CreateEmailSenderInput) =>
+      request<EmailSender>('/email/senders', { method: 'POST', ...json(input) }),
+    updateSender: (id: string, input: UpdateEmailSenderInput) =>
+      request<EmailSender>(`/email/senders/${id}`, { method: 'PATCH', ...json(input) }),
+    removeSender: (id: string) => request<void>(`/email/senders/${id}`, { method: 'DELETE' }),
+    /** Sets which listed address is the site's member and newsletter sender. Returns the site. */
+    assignSenders: (input: UpdateSenderAssignmentInput) =>
+      request<Site>('/email/senders/assignments', { method: 'PUT', ...json(input) }),
   },
 
   /** Per-site newsletter subscriber list. `pending` has no meaning here — everyone is just an email. */
@@ -610,7 +626,7 @@ export const api = {
         ...json(input),
       }),
     remove: (id: string) => request<void>(`/newsletter-templates/${id}`, { method: 'DELETE' }),
-    preview: (input: { subject: string; body: string }) =>
+    preview: (input: NewsletterPreviewInput) =>
       request<NewsletterPreview>('/newsletter-templates/preview', {
         method: 'POST',
         ...json(input),

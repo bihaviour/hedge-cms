@@ -158,13 +158,18 @@ export function NewslettersPage() {
   )
 }
 
+/** The sentinel a Select uses for "no pick" — react's Select cannot hold a null value. */
+const SITE_DEFAULT_SENDER = '__site__'
+
 interface Draft {
   subject: string
   body: string
   audience: NewsletterAudience
+  /** The chosen sender's id, or null to use the site's newsletter sender (#136). */
+  senderId: string | null
 }
 
-const EMPTY: Draft = { subject: '', body: '', audience: 'both' }
+const EMPTY: Draft = { subject: '', body: '', audience: 'both', senderId: null }
 
 function NewsletterEditor({
   newsletter,
@@ -175,6 +180,8 @@ function NewsletterEditor({
 }) {
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<Draft>(EMPTY)
+  // The site's address book, to pick a From from. Loaded once; empty when none are configured.
+  const senders = useQuery({ queryKey: ['email-senders'], queryFn: api.email.senders })
 
   const isNew = newsletter === 'new'
   const existing = newsletter && newsletter !== 'new' ? newsletter : null
@@ -183,17 +190,29 @@ function NewsletterEditor({
   useEffect(() => {
     if (isNew) setDraft(EMPTY)
     else if (existing) {
-      setDraft({ subject: existing.subject, body: existing.body, audience: existing.audience })
+      setDraft({
+        subject: existing.subject,
+        body: existing.body,
+        audience: existing.audience,
+        senderId: existing.senderId,
+      })
     }
   }, [isNew, existing])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['newsletters'] })
 
   const save = useMutation({
-    mutationFn: () =>
-      isNew
-        ? api.newsletters.create(draft)
-        : api.newsletters.update((existing as Newsletter).id, draft),
+    mutationFn: () => {
+      const input = {
+        subject: draft.subject,
+        body: draft.body,
+        audience: draft.audience,
+        senderId: draft.senderId,
+      }
+      return isNew
+        ? api.newsletters.create(input)
+        : api.newsletters.update((existing as Newsletter).id, input)
+    },
     onSuccess: () => {
       invalidate()
       toast.success(isNew ? 'Draft created' : 'Draft saved')
@@ -276,8 +295,42 @@ function NewsletterEditor({
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="nl-sender">From</Label>
+            <Select
+              value={draft.senderId ?? SITE_DEFAULT_SENDER}
+              onValueChange={(value) =>
+                setDraft((d) => ({
+                  ...d,
+                  senderId: value === SITE_DEFAULT_SENDER ? null : value,
+                }))
+              }
+              disabled={readOnly}
+            >
+              <SelectTrigger id="nl-sender">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SITE_DEFAULT_SENDER}>This site's newsletter sender</SelectItem>
+                {senders.data?.map((sender) => (
+                  <SelectItem key={sender.id} value={sender.id}>
+                    {sender.name ? `${sender.name} <${sender.email}>` : sender.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Addresses come from the site's list under Configuration → Email. Pick one to send this
+              issue as yourself; leave it on the default otherwise.
+            </p>
+          </div>
+
           {draft.subject && draft.body && (
-            <NewsletterPreview subject={draft.subject} body={draft.body} />
+            <NewsletterPreview
+              subject={draft.subject}
+              body={draft.body}
+              senderId={draft.senderId}
+            />
           )}
 
           {existing && <TestSend id={existing.id} disabled={save.isPending} />}

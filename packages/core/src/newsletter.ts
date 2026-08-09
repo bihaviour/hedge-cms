@@ -65,6 +65,12 @@ export const newsletterSchema = z.object({
   body: z.string(),
   status: z.enum(NEWSLETTER_STATUSES),
   audience: z.enum(NEWSLETTER_AUDIENCES),
+  /**
+   * The listed address (`EmailSender.id`) this campaign sends as (#136), or null to use the site's
+   * newsletter sender. This lets an author send one newsletter as themselves — by picking their own
+   * address from the site's list — without disturbing the default every other campaign uses.
+   */
+  senderId: z.string().nullable(),
   sentAt: z.string().nullable(),
   /** How many recipients it went to, set once sent. */
   recipientCount: z.number().int().nullable(),
@@ -78,6 +84,8 @@ export const createNewsletterSchema = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(50_000),
   audience: z.enum(NEWSLETTER_AUDIENCES).default('both'),
+  /** The address (`EmailSender.id`) to send as; omit or null for the site's newsletter sender (#136). */
+  senderId: z.string().nullable().optional(),
 })
 
 export type CreateNewsletterInput = z.infer<typeof createNewsletterSchema>
@@ -86,6 +94,7 @@ export const updateNewsletterSchema = z.object({
   subject: z.string().min(1).max(200).optional(),
   body: z.string().min(1).max(50_000).optional(),
   audience: z.enum(NEWSLETTER_AUDIENCES).optional(),
+  senderId: z.string().nullable().optional(),
 })
 
 export type UpdateNewsletterInput = z.infer<typeof updateNewsletterSchema>
@@ -132,6 +141,8 @@ export type UpdateNewsletterTemplateInput = z.infer<typeof updateNewsletterTempl
 export const newsletterPreviewInputSchema = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(50_000),
+  /** The draft's chosen sender, so the preview's brand matches what will actually send (#136). */
+  senderId: z.string().nullable().optional(),
 })
 
 export type NewsletterPreviewInput = z.infer<typeof newsletterPreviewInputSchema>

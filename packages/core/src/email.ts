@@ -21,6 +21,28 @@ export const EMAIL_TEMPLATE_KEYS = [
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]
 
+/**
+ * The templates that belong to a **site** rather than to the deployment (#129) — everything sent to
+ * a website's members. They go out as that site's sender when it has one, and `{{appName}}` renders
+ * as that site's name either way, because a reader of one website has never heard of the CMS behind
+ * it and an invite naming the CMS names the wrong product to the wrong person.
+ *
+ * Everything not in this list is operator email — a CMS user's invite, password reset or sign-in
+ * code, and the review notifications — and stays the deployment's, which a site admin must not be
+ * able to relabel. Newsletters are site-facing too, but they are authored content rather than a
+ * system template, so they are not keyed here.
+ */
+export const SITE_EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = [
+  'member_invite',
+  'member_reset',
+  'member_verify',
+  'member_magic_link',
+]
+
+export function isSiteEmailTemplate(key: EmailTemplateKey): boolean {
+  return SITE_EMAIL_TEMPLATE_KEYS.includes(key)
+}
+
 /** The four variables every template renders from, referenced as `{{name}}` in any field. */
 export const EMAIL_TEMPLATE_VARIABLES = ['appName', 'name', 'to', 'url'] as const
 

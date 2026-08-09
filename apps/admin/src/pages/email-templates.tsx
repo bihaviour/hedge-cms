@@ -1,4 +1,4 @@
-import type { EmailTemplate } from '@hedge/core'
+import { type EmailTemplate, isSiteEmailTemplate } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Mail, RotateCcw } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -147,6 +147,14 @@ function TemplateEditor({
               </span>
             ))}{' '}
             as placeholders.
+            {template && isSiteEmailTemplate(template.key) && (
+              <>
+                {' '}
+                This one goes to a website's members, so{' '}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">{'{{appName}}'}</code>{' '}
+                renders as the site's name, not the CMS's.
+              </>
+            )}
           </SheetDescription>
         </SheetHeader>
 

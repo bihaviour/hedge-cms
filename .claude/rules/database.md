@@ -83,6 +83,8 @@ migration failed) rather than pretending the file rolled back.
 | MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents` |
 | Members (Better Auth member instance) | `members`, `member_sites`, `member_sessions`, `member_accounts`, `member_verifications` |
 | Content | `collections`, `entries`, `entry_revisions`, `entry_versions`, `entry_version_approvals`, `media`, `api_keys` |
+| Newsletters | `newsletters`, `newsletter_templates`, `subscribers` |
+| Email | `email_config` (the one global CMS sender), `email_senders` (a site's address book, #136), `email_templates`, `email_log` |
 | Analytics | `analytics_daily` |
 
 Row types are exported at the bottom of `schema.ts` (`SiteRow`, `EntryRow`, …) — use those rather

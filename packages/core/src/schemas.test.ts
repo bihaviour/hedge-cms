@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   buildEntryValidator,
+  createEmailSenderSchema,
   createEntrySchema,
   createSiteSchema,
   entryMetadataSchema,
@@ -15,6 +16,7 @@ import {
   siteMetadataSchema,
   updateCollectionSchema,
   updateEntrySchema,
+  updateSenderAssignmentSchema,
   updateSiteConfigSchema,
 } from './index'
 
@@ -251,28 +253,35 @@ describe('updateSiteConfigSchema', () => {
     expect(updateSiteConfigSchema.parse({}).metadata).toBeUndefined()
   })
 
-  test('takes an email sender whose nulls mean "inherit the deployment sender"', () => {
+  test('carries no sender fields — sender assignment moved to the Email tab (#136)', () => {
     const parsed = updateSiteConfigSchema.parse({
-      emailSender: { fromEmail: 'news@example.com', fromName: 'Example', replyTo: null },
-    })
-    expect(parsed.emailSender).toEqual({
-      fromEmail: 'news@example.com',
-      fromName: 'Example',
-      replyTo: null,
-    })
+      metadata: { description: 'A site' },
+      // Extra keys are stripped by the schema rather than kept — proof they are not part of it.
+      emailSender: { fromEmail: 'news@example.com' },
+    } as Record<string, unknown>)
+    expect('emailSender' in parsed).toBe(false)
+  })
+})
+
+describe('email sender schemas (#136)', () => {
+  test('a sender takes an address and optional name/reply-to', () => {
+    const parsed = createEmailSenderSchema.parse({ email: 'mark@example.com', name: 'Mark' })
+    expect(parsed).toEqual({ email: 'mark@example.com', name: 'Mark' })
   })
 
   test('rejects a sender address that is not an address', () => {
-    const result = updateSiteConfigSchema.safeParse({
-      emailSender: { fromEmail: 'not-an-address', fromName: null, replyTo: null },
-    })
-    expect(result.success).toBe(false)
+    expect(createEmailSenderSchema.safeParse({ email: 'not-an-address' }).success).toBe(false)
   })
 
-  test('requires all three sender fields together, so a blank one clears rather than persists', () => {
-    const result = updateSiteConfigSchema.safeParse({
-      emailSender: { fromEmail: 'news@example.com' },
+  test('assignment takes two ids, either of which may be null to inherit the CMS sender', () => {
+    const parsed = updateSenderAssignmentSchema.parse({
+      memberSenderId: 'esnd_1',
+      newsletterSenderId: null,
     })
-    expect(result.success).toBe(false)
+    expect(parsed).toEqual({ memberSenderId: 'esnd_1', newsletterSenderId: null })
+  })
+
+  test('assignment requires both ids present, so a partial save cannot half-clear it', () => {
+    expect(updateSenderAssignmentSchema.safeParse({ memberSenderId: 'esnd_1' }).success).toBe(false)
   })
 })
