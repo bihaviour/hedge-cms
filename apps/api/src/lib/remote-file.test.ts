@@ -72,6 +72,34 @@ describe('host', () => {
     expect((await refusal(url))?.code).toBe('bad_request')
   })
 
+  /**
+   * One address, many spellings. The WHATWG parser normalises the readable forms — and it
+   * normalises `[0:0:0:0:0:ffff:127.0.0.1]` *into* `[::ffff:7f00:1]`, so a check that only
+   * understood the dotted form would never fire on anything `new URL()` actually produces. Every
+   * one of these is 127.0.0.1 or 10.0.0.1 wearing a different hat.
+   */
+  test.each([
+    ['decimal', 'https://2130706433/'],
+    ['hex', 'https://0x7f000001/'],
+    ['octal', 'https://017700000001/'],
+    ['short form', 'https://127.1/'],
+    ['v4-mapped, hex groups', 'https://[::ffff:7f00:1]/'],
+    ['v4-mapped, dotted', 'https://[::ffff:127.0.0.1]/'],
+    ['v4-mapped, uncompressed', 'https://[0:0:0:0:0:ffff:127.0.0.1]/'],
+    ['v4-mapped private', 'https://[::ffff:a00:1]/'],
+    ['v4-compatible', 'https://[::7f00:1]/'],
+    ['NAT64', 'https://[64:ff9b::7f00:1]/'],
+  ])('refuses loopback written as %s', async (_form, url) => {
+    expect((await refusal(url))?.code).toBe('bad_request')
+  })
+
+  test('allows a public address in an IPv6 wrapper', async () => {
+    // 93.184.216.34 is public, so the unwrapping must not block by itself.
+    respondWith(new Response('x', { headers: { 'content-type': 'image/png' } }))
+    expect(await fetchRemoteFile('https://[::ffff:5db8:d822]/a.png')).toBeDefined()
+    expect(await fetchRemoteFile('https://[2606:2800:220:1::]/a.png')).toBeDefined()
+  })
+
   test('allows a public host that only looks private', async () => {
     // 172.32 is outside 172.16/12, and 192.169 outside 192.168/16 — the two ranges a check written
     // from memory gets wrong in the permissive direction.

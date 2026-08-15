@@ -19,10 +19,53 @@ import { ApiError } from './errors'
 
 const TIMEOUT_MS = 15_000
 
+/** Expands an IPv6 literal to its eight 16-bit groups, or `null` if it is not one. */
+function ipv6Groups(host: string): number[] | null {
+  if (!host.includes(':')) return null
+
+  const [head, tail, ...rest] = host.split('::')
+  if (rest.length > 0) return null
+
+  const parse = (part: string): number[] | null => {
+    if (!part) return []
+    const out: number[] = []
+    for (const piece of part.split(':')) {
+      // A trailing dotted quad, as in `::ffff:127.0.0.1`, is two groups written the other way.
+      const quad = piece.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+      if (quad) {
+        const [a, b, c, d] = quad.slice(1).map(Number) as [number, number, number, number]
+        if ([a, b, c, d].some((n) => n > 255)) return null
+        out.push((a << 8) | b, (c << 8) | d)
+        continue
+      }
+      if (!/^[0-9a-f]{1,4}$/.test(piece)) return null
+      out.push(Number.parseInt(piece, 16))
+    }
+    return out
+  }
+
+  const left = parse(head ?? '')
+  if (!left) return null
+  if (tail === undefined) return left.length === 8 ? left : null
+
+  const right = parse(tail)
+  if (!right || left.length + right.length > 7) return null
+  return [...left, ...Array(8 - left.length - right.length).fill(0), ...right]
+}
+
 /**
  * Hostnames and literal addresses that must never be fetched. Loopback and link-local first (the
  * classic metadata-service targets), then RFC 1918 and unique-local, then the names a container
  * platform resolves internally.
+ *
+ * **IPv6 is parsed, not pattern-matched, because one address has many spellings.** `::ffff:127.0.0.1`
+ * and `::ffff:7f00:1` are the same address, and the WHATWG URL parser normalises the readable one
+ * *into* the hex one — so a check that only understood the dotted form would never fire on anything
+ * `new URL()` actually produced. Every IPv4-in-IPv6 embedding (v4-mapped, v4-compatible, and the
+ * NAT64 well-known prefix) is unwrapped and re-checked as the v4 address it carries.
+ *
+ * The dotted-quad branch needs no such care: this is only ever handed `url.hostname`, and the URL
+ * parser has already turned `2130706433`, `0x7f000001`, `017700000001` and `127.1` into `127.0.0.1`.
  */
 function isBlockedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
@@ -30,11 +73,29 @@ function isBlockedHost(hostname: string): boolean {
   if (host === 'localhost' || host.endsWith('.localhost')) return true
   if (host.endsWith('.internal') || host.endsWith('.local')) return true
 
-  // IPv6, including the IPv4-mapped form an allowlist written for dotted quads would miss.
-  if (host === '::1' || host === '::') return true
-  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true // unique-local fc00::/7
-  if (/^fe[89ab][0-9a-f]:/.test(host)) return true // link-local fe80::/10
-  if (host.startsWith('::ffff:')) return isBlockedHost(host.slice('::ffff:'.length))
+  const groups = ipv6Groups(host)
+  if (groups) {
+    // Always eight groups by construction; the defaults are only here to keep them typed `number`.
+    const [g0 = 0, g1 = 0, , , , g5 = 0, g6 = 0, g7 = 0] = groups
+
+    // `::`, `::1`, and anything else in the first /96 that is not an embedded v4 address.
+    const lowIsAll = (from: number) => groups.slice(0, from).every((g) => g === 0)
+
+    if (g0 === 0 && lowIsAll(7) && g7 <= 1) return true
+    if ((g0 & 0xfe00) === 0xfc00) return true // unique-local fc00::/7
+    if ((g0 & 0xffc0) === 0xfe80) return true // link-local fe80::/10
+
+    // An embedded IPv4 address is that address, whichever spelling carried it here.
+    const embedded =
+      (lowIsAll(5) && g5 === 0xffff) || // ::ffff:a.b.c.d — v4-mapped
+      (lowIsAll(6) && g6 !== 0) || // ::a.b.c.d — v4-compatible, deprecated but routable
+      (g0 === 0x0064 && g1 === 0xff9b && lowIsAll(6)) // 64:ff9b::/96 — NAT64
+    if (embedded) {
+      const quad = [g6 >> 8, g6 & 0xff, g7 >> 8, g7 & 0xff].join('.')
+      return isBlockedHost(quad)
+    }
+    return false
+  }
 
   const quad = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
   if (!quad) return false
