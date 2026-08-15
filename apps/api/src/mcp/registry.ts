@@ -2,6 +2,7 @@ import { type InstancePermission, type McpScope, type Role, roleAtLeast } from '
 import { z } from 'zod'
 import type { SiteRow } from '../db/schema'
 import type { Actor, Bindings } from '../env'
+import { ApiError } from '../lib/errors'
 import { type McpTool, McpToolError } from '../lib/mcp'
 
 /**
@@ -155,8 +156,18 @@ export function buildTools(
     handler: async (args: Record<string, unknown>) => {
       authorize(definition, ctx, granted)
       const input = parseArgs(definition.args, args)
-      const { structured, text } = await definition.handler(input, ctx)
-      return { content: [{ type: 'text' as const, text }], structuredContent: structured }
+      try {
+        const { structured, text } = await definition.handler(input, ctx)
+        return { content: [{ type: 'text' as const, text }], structuredContent: structured }
+      } catch (error) {
+        // Every tool delegates to the same `lib/` services the REST routes use, and those raise
+        // `ApiError` — "no such entry", "that slug is taken", "the file is too large". Only
+        // `McpToolError` is reported as a tool *result*, so without this translation a routine 404
+        // leaves the JSON-RPC layer entirely and the client gets a protocol failure with no id in
+        // it: a model reads that as "the CMS is broken" rather than "fix the slug and retry".
+        if (error instanceof ApiError) throw new McpToolError(error.message)
+        throw error
+      }
     },
   }))
 }

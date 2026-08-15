@@ -24,6 +24,44 @@ export const updateMediaSchema = z.object({
 export type UpdateMediaInput = z.infer<typeof updateMediaSchema>
 
 /**
+ * Upper bound on an upload sent as base64 *inside* a request body, well below `MAX_UPLOAD_BYTES`.
+ *
+ * The MCP `upload_media` tool accepts two sources and they are deliberately not equals. A `url` is
+ * fetched and streamed into R2 and costs a model's context window nothing, so it carries the full
+ * 25 MB. Base64 arrives through the context window itself, at four bytes per three, and exists only
+ * for content that has no URL because the model just produced it — a generated SVG, a small chart.
+ * A cap low enough to make that the obvious reading is the point: the refusal above it names `url`.
+ */
+export const MAX_INLINE_UPLOAD_BYTES = 1024 * 1024
+
+/**
+ * Arguments for uploading media through MCP. Exactly one source: `url` or `data`.
+ *
+ * There is no REST schema to reuse here — `POST /api/v1/media` takes a multipart body, which has no
+ * zod schema at all — so this is the one place an MCP tool defines its own arguments. It still lives
+ * in core rather than in the tool module, because everything downstream of it (the size cap, the
+ * allowed content types) is defined here and the two must not drift.
+ */
+export const uploadMediaSchema = z
+  .object({
+    url: z.url().optional(),
+    /** Base64, with or without a `data:` prefix — a model writes it both ways. */
+    data: z.string().min(1).optional(),
+    filename: z.string().min(1).max(255).optional(),
+    alt: z.string().max(500).optional(),
+    /**
+     * Only consulted for `data`. A fetched URL's type comes from the *response*, never from the
+     * caller: trusting a caller's word about it would let an allowed type be claimed for anything.
+     */
+    contentType: z.string().min(1).max(255).optional(),
+  })
+  .refine((input) => Boolean(input.url) !== Boolean(input.data), {
+    message: 'Provide exactly one of "url" or "data"',
+  })
+
+export type UploadMediaInput = z.infer<typeof uploadMediaSchema>
+
+/**
  * Where a `media` field's stored value lives, which is what decides how to turn it into a URL.
  *
  * Two origins were understood already — an R2 key, and an absolute URL pasted in by hand. The
