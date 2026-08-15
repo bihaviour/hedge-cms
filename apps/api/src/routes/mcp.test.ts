@@ -37,6 +37,7 @@ const realApiKeys = await import('../lib/api-keys')
 const realNewsletter = await import('../lib/newsletter')
 const realEntryVersions = await import('../lib/entry-versions')
 const realUsers = await import('../lib/users')
+const realErrors = await import('../lib/errors')
 
 mock.module('../auth/cms', () => ({
   ...realCmsAuth,
@@ -63,10 +64,16 @@ const collection = (slug: string) => ({
   updatedAt: '2026-01-01T00:00:00Z',
 })
 
+/** A slug `getCollection` should report as missing, so `write_collection` takes its create path. */
+let missingCollection: string | null = null
+
 mock.module('../lib/collections', () => ({
   ...realCollections,
   listCollections: async () => [collection('posts')],
-  getCollection: async (_e: unknown, _s: string, slug: string) => collection(slug),
+  getCollection: async (_e: unknown, _s: string, slug: string) => {
+    if (slug === missingCollection) throw realErrors.ApiError.notFound('Collection')
+    return collection(slug)
+  },
   createCollection: async (_e: unknown, _s: string, input: { slug: string }) => {
     created.push(input)
     return collection(input.slug)
@@ -312,7 +319,7 @@ describe('POST /mcp', () => {
     reset()
     const names = await listTools()
     // Content model, content, media, email, deployment.
-    expect(names).toContain('create_collection')
+    expect(names).toContain('write_collection')
     expect(names).toContain('create_entry')
     expect(names).toContain('update_media')
     expect(names).toContain('create_newsletter_template')
@@ -406,6 +413,52 @@ describe('POST /mcp', () => {
       const names = await listTools()
       expect(names).toContain('list_media')
       expect(names).not.toContain('upload_media')
+    })
+  })
+
+  /* ---------------------------------------------------------------- *
+   * write_collection (#144)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * `create_collection` and `update_collection` carried the same scope, the same role and the same
+   * 13-kind field union — so advertising both inlined that union twice for one operation with two
+   * names. Merged, the slug decides which it is. Deletes stay their own tool: they carry
+   * `destructiveHint`, which is what a client asks a human about, and #145 will make withholding
+   * them a scope an operator can decline.
+   */
+  describe('write_collection', () => {
+    test('updates the collection that already has the slug', async () => {
+      reset()
+      created.length = 0
+      const { json } = await call('write_collection', { slug: 'posts', name: 'Posts' })
+
+      expect(json.result.isError).toBeUndefined()
+      expect(json.result.content[0].text).toContain('Updated')
+      expect(created).toHaveLength(0)
+    })
+
+    test('creates when nothing has the slug', async () => {
+      reset()
+      created.length = 0
+      missingCollection = 'notes'
+
+      const { json } = await call('write_collection', { slug: 'notes', name: 'Notes' })
+
+      expect(json.result.content[0].text).toContain('Created')
+      expect(created).toEqual([{ slug: 'notes', name: 'Notes' }])
+      missingCollection = null
+    })
+
+    test('creating without a name says so rather than failing on the schema', async () => {
+      reset()
+      missingCollection = 'notes'
+
+      const { json } = await call('write_collection', { slug: 'notes' })
+
+      expect(json.result.isError).toBe(true)
+      expect(json.result.content[0].text).toContain('name')
+      missingCollection = null
     })
   })
 
@@ -516,14 +569,13 @@ describe('POST /mcp', () => {
    * A token issued before the surface grew carries only the collection scopes. It must still see
    * exactly the tools it saw then, and nothing it was never approved for.
    */
-  test('a collections-only token sees only the five collection tools', async () => {
+  test('a collections-only token sees only the four collection tools', async () => {
     reset()
     token = { userId: 'usr_1', scopes: 'openid collections:read collections:write' }
     expect(await listTools()).toEqual([
       'list_collections',
       'get_collection',
-      'create_collection',
-      'update_collection',
+      'write_collection',
       'delete_collection',
     ])
   })
@@ -547,7 +599,7 @@ describe('POST /mcp', () => {
   test('a tool outside the granted scopes is refused when called by name', async () => {
     reset()
     token = { userId: 'usr_1', scopes: 'openid collections:read' }
-    const { json } = await call('create_collection', { slug: 'x', name: 'X' })
+    const { json } = await call('write_collection', { slug: 'x', name: 'X' })
     expect(json.result.isError).toBe(true)
     expect(json.result.content[0].text).toContain('collections:write')
   })
@@ -557,10 +609,10 @@ describe('POST /mcp', () => {
    * ---------------------------------------------------------------- */
 
   /** The scope is what was delegated; the role is what the user has. Both have to pass. */
-  test('create_collection is refused when the user is not a site admin', async () => {
+  test('write_collection is refused when the user is not a site admin', async () => {
     reset()
     siteRole = 'editor'
-    const { json } = await call('create_collection', { slug: 'y', name: 'Y' })
+    const { json } = await call('write_collection', { slug: 'y', name: 'Y' })
     expect(json.result.isError).toBe(true)
     expect(json.result.content[0].text).toContain('admin')
   })
@@ -629,7 +681,7 @@ describe('POST /mcp', () => {
     instanceRole = 'owner'
 
     for (const [name, args] of [
-      ['create_collection', { slug: 'z', name: 'Z' }],
+      ['write_collection', { slug: 'z', name: 'Z' }],
       ['create_entry', { collection: 'posts', slug: 'p', data: { title: 'P' } }],
       ['list_users', {}],
     ] as const) {
@@ -644,7 +696,7 @@ describe('POST /mcp', () => {
 
   test('invalid arguments fail the call with a helpful message', async () => {
     reset()
-    const { json } = await call('create_collection', { slug: 'Not A Slug', name: 'X' })
+    const { json } = await call('write_collection', { slug: 'Not A Slug', name: 'X' })
     expect(json.result.isError).toBe(true)
     expect(json.result.content[0].text).toContain('slug')
   })
