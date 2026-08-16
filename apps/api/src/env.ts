@@ -81,6 +81,13 @@ export interface Actor {
   scopes: string[]
   /** Set for API keys, which are issued per site. Users are global to the deployment. */
   siteId: string | null
+  /**
+   * For an API key, the user who issued it (`api_keys.created_by`) — what bounds the key to its
+   * issuer's own delegated authority (#151). **Null is not "nobody"**: the column is
+   * `on delete set null` and every key issued before that epic has no creator, so null means
+   * "governed by its scopes alone", exactly as every key was.
+   */
+  issuerId?: string | null
 }
 
 export interface Variables {

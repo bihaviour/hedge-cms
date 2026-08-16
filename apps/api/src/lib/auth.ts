@@ -1,6 +1,7 @@
 import {
   ALL_SITE_PERMISSIONS,
   approvalLevelForSiteRole,
+  builtinSiteRole,
   hasSitePermission,
   type InstancePermission,
   type Role,
@@ -139,9 +140,8 @@ export async function currentSiteRole(c: Context<AppEnv>): Promise<Role | null> 
  *
  * Three answers, and the order matters:
  *
- * - an **API key** carries the matrix of the role its scopes imply, on its own site and no other.
- *   Unchanged from the rank it resolved to before; #156 is what makes a key follow its *issuer's*
- *   delegated column instead.
+ * - an **API key** is what its scopes allow *intersected with* what the role of whoever issued it
+ *   delegates to keys, on its own site and no other (#156). See `apiKeyPermissions`.
  * - an instance role carrying **`sites:access_all`** resolves to every permission, on every site,
  *   with no grant row involved. This is the floor the whole epic rests on: no edit to any matrix
  *   can lock a deployment out of itself, by construction rather than by a special case.
@@ -158,7 +158,7 @@ export async function sitePermissionsFor(
 ): Promise<readonly SitePermission[] | null> {
   if (actor.kind === 'api_key') {
     if (actor.siteId !== siteId) return null
-    return matrixForSlug(await roleRowFor(env, actor.role), actor.role)[surface]
+    return await apiKeyPermissions(env, actor)
   }
 
   if (actor.permissions.includes('sites:access_all')) return ALL_SITE_PERMISSIONS
@@ -174,10 +174,44 @@ export async function sitePermissionsFor(
   return matrixForSlug(grant.definition ?? undefined, grant.role)[surface]
 }
 
-/** One role row by slug, for the paths that have no `site_users` join to hang it off. */
-async function roleRowFor(env: Bindings, slug: string) {
-  const [row] = await getDb(env).select().from(roles).where(eq(roles.slug, slug)).limit(1)
-  return row
+/**
+ * What an API key may do: **what its scopes are for, bounded by what its issuer's role delegates
+ * to keys** (#156).
+ *
+ * Three decisions are in here, and each of them is easy to get wrong in a way nothing notices:
+ *
+ * - **The scope side is a fixed mapping in code**, not a role that can be edited. Scopes are the
+ *   client-facing declaration of what a key exists to do — a `content:read` key is a delivery
+ *   credential whatever anybody renames `viewer` to.
+ * - **A key with no issuer is bounded by its scopes alone**, exactly as every key was before this.
+ *   The column is `on delete set null` and every key predating the epic has no creator, so
+ *   unrecorded means ungoverned — the rule `INSTALLED_BY` unset and the #145 grant already follow.
+ *   A default of "no permissions" would break every working integration on the day it shipped.
+ *   The corollary is worth knowing: deleting a user *widens* the keys they issued, back to their
+ *   scopes. That cannot exceed what the scopes already allowed, which is the bound the deployment
+ *   ran on for its whole life until now.
+ * - **The issuer's role is read live, not snapshotted at issue.** One definition drives every
+ *   surface, which is the whole epic: narrowing a role narrows the keys its holders issued, in the
+ *   same edit, with nothing to reissue. The cost is real and deliberate — a key can stop working
+ *   because somebody changed jobs — and it is the same cost a person pays when their role changes.
+ */
+async function apiKeyPermissions(env: Bindings, actor: Actor): Promise<readonly SitePermission[]> {
+  const scoped: readonly SitePermission[] = builtinSiteRole(actor.role)?.site ?? []
+  if (!actor.issuerId) return scoped
+
+  const [issuer] = await getDb(env)
+    .select({ role: users.role, definition: roles })
+    .from(users)
+    .leftJoin(roles, eq(roles.slug, users.role))
+    .where(eq(users.id, actor.issuerId))
+    .limit(1)
+
+  // The issuer's row is gone but the key's is not — a foreign key would have nulled the column, so
+  // this is a database somebody edited by hand. Fall back to the scopes rather than to nothing.
+  if (!issuer) return scoped
+
+  const delegated = matrixForSlug(issuer.definition ?? undefined, issuer.role).apiKey
+  return scoped.filter((permission) => delegated.includes(permission))
 }
 
 /**

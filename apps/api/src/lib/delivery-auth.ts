@@ -8,14 +8,18 @@ import { API_KEY_PREFIX, resolveSessionActor } from './auth'
 import { hmac } from './crypto'
 
 /**
- * The site role a key acts with, derived from what it was issued to do. A key is never a *person*,
- * so it has no `site_users` grant to look up — its scopes are its grant.
+ * What a key's *scopes* say it is for, as a site role. A key is never a person, so it has no
+ * `site_users` grant to look up.
  *
  * `collections:write` reaches `admin` because reshaping the content model is a site-admin power and
  * the schema routes check for exactly that. Issuing such a key is itself gated on being a site
  * admin (`routes/api-keys.ts`), so this cannot manufacture an authority its creator lacked.
+ *
+ * Since #151 this is **half** the answer: `sitePermissionsFor` intersects what the scopes allow
+ * with what the issuer's role delegates to keys. The scope side stays a fixed mapping in code
+ * rather than an editable role, because it describes what the *client* asked to be able to do.
  */
-function roleForScopes(scopes: string[]): Role {
+export function roleForScopes(scopes: string[]): Role {
   if (scopes.includes('collections:write') || scopes.includes('members:session')) return 'admin'
   if (scopes.some((scope) => scope.endsWith(':write'))) return 'editor'
   return 'viewer'
@@ -70,6 +74,7 @@ async function apiKeyActor(c: Context<AppEnv>): Promise<Actor | null> {
     permissions: [],
     scopes: row.scopes,
     siteId: row.siteId,
+    issuerId: row.createdBy,
   }
 }
 
