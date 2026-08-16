@@ -15,6 +15,9 @@ const ALL_SCOPES =
 
 let token: { userId: string; scopes: string } | null = { userId: 'usr_1', scopes: ALL_SCOPES }
 
+/** Whether the operator let this client delete and overwrite. Unrecorded means `true` (#145). */
+let destructiveGrant = true
+
 /** The signed-in user's role on the current site. `null` means they cannot reach it at all. */
 let siteRole: string | null = 'admin'
 /** Their instance role — `users.role`. What separates user management from site work. */
@@ -259,6 +262,13 @@ mock.module('../lib/media', () => ({
   },
 }))
 
+const realGrants = await import('../lib/mcp-grants')
+
+mock.module('../lib/mcp-grants', () => ({
+  ...realGrants,
+  destructiveGrantFor: async () => destructiveGrant,
+}))
+
 const { default: mcp } = await import('./mcp')
 
 /**
@@ -306,6 +316,7 @@ function reset() {
   token = { userId: 'usr_1', scopes: ALL_SCOPES }
   siteRole = 'admin'
   instanceRole = 'admin'
+  destructiveGrant = true
 }
 
 describe('POST /mcp', () => {
@@ -413,6 +424,101 @@ describe('POST /mcp', () => {
       const names = await listTools()
       expect(names).toContain('list_media')
       expect(names).not.toContain('upload_media')
+    })
+  })
+
+  /* ---------------------------------------------------------------- *
+   * The destructive grant (#145)
+   * ---------------------------------------------------------------- */
+
+  /**
+   * What an operator granted *beyond* the scopes the client asked for. It is not a scope, because a
+   * scope is requested by the client and no client knows to ask for one Hedge invented — so it
+   * would be absent from every request and refuse every delete on the day it shipped.
+   */
+  describe('destructive grant', () => {
+    /** Every tool the grant covers: the ten annotated, plus the two media tools that opt in. */
+    const COVERED = [
+      'delete_collection',
+      'delete_entry',
+      'delete_media',
+      'delete_newsletter',
+      'delete_newsletter_template',
+      'delete_subscriber',
+      'delete_site',
+      'delete_api_key',
+      'delete_user',
+      'revoke_site_access',
+      'update_media',
+      'upload_media',
+    ]
+
+    test('is granted when the operator never said otherwise', async () => {
+      // The rule every consent given before #145 depends on: no row means yes. A default of "no"
+      // would have broken every working client on upgrade.
+      reset()
+      const names = await listTools()
+      for (const name of COVERED) expect(names).toContain(name)
+    })
+
+    test('withholds every covered tool from tools/list when declined', async () => {
+      reset()
+      destructiveGrant = false
+      const names = await listTools()
+      for (const name of COVERED) expect(names).not.toContain(name)
+    })
+
+    test('leaves everything else the client asked for intact', async () => {
+      reset()
+      destructiveGrant = false
+      const names = await listTools()
+
+      // The point of a coarse grant: declining deletes must not cost the client its ability to
+      // work. Writing, reading and listing all survive — including the rest of the media tools.
+      expect(names).toContain('create_entry')
+      expect(names).toContain('update_entry')
+      expect(names).toContain('write_collection')
+      expect(names).toContain('list_media')
+      expect(names).toContain('get_media')
+      expect(names).toContain('add_subscriber')
+    })
+
+    test('refuses a covered tool by name, saying what to do about it', async () => {
+      reset()
+      destructiveGrant = false
+      deleted.length = 0
+
+      const { json } = await call('delete_entry', { collection: 'posts', slug: 'hello' })
+
+      // Hidden but still callable, like a missing scope — so the model is told the real reason
+      // rather than "unknown tool", which it would read as "the CMS cannot do this".
+      expect(json.result.isError).toBe(true)
+      expect(json.result.content[0].text).toContain('deletes or overwrites')
+      expect(json.result.content[0].text).toContain('Settings')
+      expect(deleted).toHaveLength(0)
+    })
+
+    test('covers upload_media, which carries no destructiveHint', async () => {
+      reset()
+      destructiveGrant = false
+      uploaded.length = 0
+
+      const { json } = await call('upload_media', { url: 'https://example.com/a.png' })
+
+      expect(json.result.isError).toBe(true)
+      expect(uploaded).toHaveLength(0)
+    })
+
+    test('is checked before the role, so the reason names the grant', async () => {
+      // A viewer with no grant fails both checks. The grant is the operator's own decision about
+      // this client and cannot change between two calls on one token, so it is the more useful
+      // thing to report.
+      reset()
+      destructiveGrant = false
+      siteRole = 'viewer'
+
+      const { json } = await call('delete_entry', { collection: 'posts', slug: 'hello' })
+      expect(json.result.content[0].text).toContain('deletes or overwrites')
     })
   })
 

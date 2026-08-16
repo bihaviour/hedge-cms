@@ -80,7 +80,7 @@ migration failed) rather than pretending the file rolled back.
 | Tenancy | `sites`, `site_users` |
 | Operators (Better Auth CMS instance) | `users`, `sessions`, `accounts`, `verifications`, `rate_limits`, `auth_tokens` |
 | Step-up sign-in | `login_challenges`, `trusted_devices` |
-| MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents` |
+| MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents`, `mcp_client_grants` |
 | Members (Better Auth member instance) | `members`, `member_sites`, `member_sessions`, `member_accounts`, `member_verifications` |
 | Content | `collections`, `entries`, `entry_revisions`, `entry_versions`, `entry_version_approvals`, `media`, `api_keys` |
 | Newsletters | `newsletters`, `newsletter_templates`, `subscribers` |

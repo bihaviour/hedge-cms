@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { FormError } from '@/components/form-error'
 import { PageHeader } from '@/components/page-header'
 import { PasswordInput } from '@/components/password-input'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -372,6 +373,7 @@ function AuthorizedClients() {
               <TableRow>
                 <TableHead>Client</TableHead>
                 <TableHead>Approved</TableHead>
+                <TableHead>Can delete</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -380,6 +382,18 @@ function AuthorizedClients() {
                 <TableRow key={client.clientId}>
                   <TableCell>{client.name}</TableCell>
                   <TableCell>{formatDateTime(client.authorizedAt)}</TableCell>
+                  {/*
+                    Read-only, and deliberately so: narrowing an existing consent would mean
+                    editing what a live token may do, and the honest way to change your mind is to
+                    revoke and approve again — which is one click away in the next column.
+                  */}
+                  <TableCell>
+                    {client.destructive ? (
+                      <span className="text-muted-foreground">Yes</span>
+                    ) : (
+                      <Badge variant="secondary">No</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"

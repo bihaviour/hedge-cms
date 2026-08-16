@@ -39,6 +39,17 @@ export interface ToolAccess {
    * the same set `requirePermission` checks on the REST side.
    */
   instance?: InstancePermission
+  /**
+   * Opts a tool into the destructive grant (#145) when it is not one of the ten the annotation
+   * already catches.
+   *
+   * The gate derives from `annotations.destructiveHint` first, so a delete added later is covered
+   * without anyone remembering — the same shape as "a new management route must be in one of the
+   * two prefix lists". This field is for the tools that need the grant but must **not** claim that
+   * annotation: `upload_media` is purely additive and would be lying to every client that reads
+   * `destructiveHint` to decide whether to ask a human.
+   */
+  destructive?: true
 }
 
 /** What a tool handler is given. Resolved once per request, before any tool runs. */
@@ -52,6 +63,17 @@ export interface McpContext {
   instancePermissions: string[]
   /** Their role on the active site. Never null: the endpoint refuses a caller with none. */
   siteRole: Role
+  /**
+   * Whether the operator let this client delete and overwrite (#145). **True when they never said
+   * otherwise** — every consent given before the grant existed has no row, and must keep working
+   * exactly as it did.
+   */
+  destructive: boolean
+}
+
+/** Whether a tool needs the destructive grant: the annotation, or an explicit opt-in. */
+export function isDestructive(definition: ToolDefinition): boolean {
+  return definition.access.destructive === true || definition.annotations?.destructiveHint === true
 }
 
 export interface ToolResult {
@@ -123,6 +145,16 @@ function authorize(definition: ToolDefinition, ctx: McpContext, granted: Set<str
     throw new McpToolError(`This client was not granted the "${scope}" scope`)
   }
 
+  // Checked after the scope and before either role, because it is the operator's own decision about
+  // this client rather than anything the client presented — and unlike a role it cannot change
+  // between two calls on one token without the operator revisiting the consent.
+  if (!ctx.destructive && isDestructive(definition)) {
+    throw new McpToolError(
+      `"${definition.name}" deletes or overwrites, and you did not allow this client to do that. ` +
+        'Approve it again from Settings → Account to change that.',
+    )
+  }
+
   if (instance && !ctx.instancePermissions.includes(instance)) {
     throw new McpToolError(
       `"${definition.name}" requires the "${instance}" permission on this deployment, which your role does not carry`,
@@ -161,7 +193,12 @@ export function buildTools(
     description: definition.description,
     inputSchema: inputSchema(definition.args),
     ...(definition.annotations ? { annotations: definition.annotations } : {}),
-    hidden: !granted.has(definition.access.scope),
+    // Hidden on the same grounds a missing scope hides a tool: both are fixed for the life of the
+    // consent, so advertising one the client can never use only invites it to try. Calling it
+    // anyway still reports the real reason — `hidden` keeps a tool out of `tools/list`, not out of
+    // dispatch — which an operator can act on, unlike "unknown tool".
+    hidden:
+      !granted.has(definition.access.scope) || (!ctx.destructive && isDestructive(definition)),
     handler: async (args: Record<string, unknown>) => {
       authorize(definition, ctx, granted)
       const input = parseArgs(definition.args, args)

@@ -213,6 +213,26 @@ export const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   'keys:write': 'Issue and revoke API keys for this site',
 }
 
+/**
+ * The one thing an operator grants an MCP client **beyond** the scopes it asked for — or declines
+ * (#145).
+ *
+ * It is deliberately not an `McpScope`. A scope is requested by the client, and no client that
+ * exists today knows to ask for one Hedge invented, so a `destructive` scope would be missing from
+ * every authorization request and would refuse every delete on the day it shipped. Turning the
+ * question around — the operator grants rather than the client requests — is what makes this a
+ * decision somebody makes rather than a capability a client claims.
+ *
+ * It is coarse on purpose. "Can this agent delete things?" is the question an operator actually has
+ * about an agent, and it fits on one line of a screen whose failure mode is being skimmed. Per-area
+ * `entries:delete` / `media:delete` can be added later without moving this: the two compose.
+ */
+export const DESTRUCTIVE_GRANT = 'destructive' as const
+
+export const DESTRUCTIVE_GRANT_LABEL =
+  'Delete and overwrite — removing entries, media, sites, users and keys, and replacing a media ' +
+  'file’s details. Declining leaves everything else it asked for intact.'
+
 /** Admin route that asks the operator to approve an MCP client's authorization request. */
 export const OAUTH_CONSENT_PATH = '/oauth/consent'
 
@@ -222,6 +242,11 @@ export const authorizedClientSchema = z.object({
   name: z.string(),
   icon: z.string().nullable(),
   authorizedAt: z.string(),
+  /**
+   * Whether this client may delete and overwrite (#145). True when the operator never said
+   * otherwise, which is every consent given before the grant existed.
+   */
+  destructive: z.boolean(),
 })
 
 export type AuthorizedClient = z.infer<typeof authorizedClientSchema>

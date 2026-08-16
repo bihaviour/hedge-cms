@@ -188,6 +188,34 @@ users, API keys — one module per area, assembled in `mcp/index.ts`.
 | `access.site` | site-level minimum, for one tenant's content | `currentSiteRole` |
 | `access.instance` | instance-level minimum, for users and creating/deleting sites | `users.role` |
 
+**A third check sits in front of those two: the destructive grant** (#145). Ten tools carry
+`destructiveHint` and two more opt in (`access.destructive`), and none of them runs unless the
+operator allowed *this client* to delete and overwrite. Four things about it are load-bearing:
+
+- **It is not a scope, and could not have been.** A scope is requested by the client, and no client
+  that exists knows to ask for one Hedge invented — so a `destructive` scope would be missing from
+  every authorization request and would refuse every delete on the day it shipped. Turning the
+  question around, so the operator grants rather than the client requests, is the whole design.
+- **An unrecorded grant means granted.** Every consent given before this existed has no row in
+  `mcp_client_grants` and keeps working exactly as it did, the same rule `INSTALLED_BY` unset
+  follows. A row is only ever written to record a decision.
+- **The requirement is derived from the annotation, not declared per tool.** `isDestructive` in
+  `mcp/registry.ts` reads `destructiveHint` first, so a delete added later is covered without anyone
+  remembering — `registry.test.ts` pins that, because a tool that quietly escaped the grant would
+  work perfectly and nothing short of an audit would notice. `access.destructive` is the explicit
+  opt-in for the two that need the grant but must not claim the annotation: `upload_media` destroys
+  nothing, and `update_media` overwrites with no history but should not make a client prompt a human
+  before every caption fix.
+- **It is recorded before the consent that depends on it.** `POST /api/v1/auth/oauth/consent` is
+  ours and writes the grant, then delegates to Better Auth's `/oauth2/consent`. Better Auth's own
+  endpoint takes `{accept, consent_code}` and grants the scope parked when the authorization request
+  arrived, so a narrowing cannot travel through it at all. Approving first and recording second
+  would leave a window holding a live token with no narrowing behind it — and since unrecorded means
+  granted, that window defaults to the widest answer. Don't reorder them.
+
+A declined grant *hides* the covered tools, on the same grounds a missing scope does: both are fixed
+for the life of the consent. Calling one anyway still reports the real reason.
+
 Neither implies the other and the narrower wins, which is what makes the surface differ per user
 without any per-user configuration: the same client approved by an editor and by an owner can do
 two different things. **An owner needs no special case** — `roleAtLeast` clears every minimum and
