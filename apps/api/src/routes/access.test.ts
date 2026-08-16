@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { builtinSiteRole } from '@hedge/core'
 import { Hono } from 'hono'
 import type { SiteRow } from '../db/schema'
 import type { Actor, AppEnv } from '../env'
@@ -24,6 +25,7 @@ mock.module('../lib/auth', () => ({
   ...actualAuth,
   requireSiteRole: () => async (_c: unknown, next: () => Promise<void>) => await next(),
   currentSiteRole: async () => siteRole,
+  currentSitePermissions: async () => builtinSiteRole(siteRole)?.site ?? [],
   approvalLevelFor: async (_env: unknown, actor: Actor) =>
     actor.kind === 'user' && actor.via === 'session' && siteRole === 'admin' ? 2 : 0,
 }))
@@ -51,7 +53,7 @@ const apiKey: Actor = {
   siteId: 'site_1',
 }
 
-type AuthorityBody = { data: { role: string; approvalLevel: number } }
+type AuthorityBody = { data: { role: string; approvalLevel: number; permissions: string[] } }
 
 function get(actor: Actor) {
   const app = new Hono<AppEnv>()
@@ -77,7 +79,7 @@ describe('the caller’s authority on the active site', () => {
     // `session` is an instance *editor* who holds admin on this site — the grant is what the admin
     // gates on, so a route reporting `users.role` here would hide controls the server would allow.
     expect((await res.json()) as AuthorityBody).toEqual({
-      data: { role: 'admin', approvalLevel: 2 },
+      data: { role: 'admin', approvalLevel: 2, permissions: builtinSiteRole('admin')!.site },
     })
   })
 
@@ -86,8 +88,18 @@ describe('the caller’s authority on the active site', () => {
     const res = await get(session)
 
     expect((await res.json()) as AuthorityBody).toEqual({
-      data: { role: 'viewer', approvalLevel: 0 },
+      data: { role: 'viewer', approvalLevel: 0, permissions: builtinSiteRole('viewer')!.site },
     })
+  })
+
+  test('carries the permission set, which is what a control gates on', async () => {
+    // The slug is a name; two deployments can define `editor` differently, and #157's controls read
+    // this list. A viewer's is the four reads — no `entries:create` anywhere in it.
+    siteRole = 'viewer'
+    const body = (await (await get(session)).json()) as AuthorityBody
+
+    expect(body.data.permissions).toContain('entries:read')
+    expect(body.data.permissions).not.toContain('entries:create')
   })
 
   test('an API key is refused', async () => {

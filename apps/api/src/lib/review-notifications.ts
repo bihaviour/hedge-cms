@@ -1,4 +1,4 @@
-import { approvalLevelForSiteRole, type EntryVersion } from '@hedge/core'
+import { approvalLevelForSiteRole, type EntryVersion, type SiteRole } from '@hedge/core'
 import { and, eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { type SiteRow, siteUsers, users } from '../db/schema'
@@ -72,7 +72,7 @@ async function siteApprovers(
     const level = reachesEverySite.has(row.user.role)
       ? 2
       : row.grantRole
-        ? (row.override ?? approvalLevelForSiteRole(row.grantRole))
+        ? (row.override ?? approvalLevelForSiteRole(row.grantRole as SiteRole))
         : null
 
     if (level === null || level < 1) continue

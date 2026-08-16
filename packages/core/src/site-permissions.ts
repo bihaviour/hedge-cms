@@ -300,3 +300,17 @@ export const BUILTIN_SITE_ROLES = [
   description: string
   permissions: RolePermissions
 }[]
+
+/**
+ * The built-in site matrix for a slug, or undefined for a custom one.
+ *
+ * This is the **fallback**, not the source of truth: stage 2 seeds these three as editable rows, so
+ * a deployment answers from the database. It matters for the one case the database cannot cover — a
+ * slug whose row is missing, which is what a deployment looks like between the code landing and the
+ * migration running, and what a unit test with no database looks like always. Answering "the set
+ * this role has always carried" there is strictly better than answering "nothing".
+ */
+export function builtinSiteRole(slug: string): RolePermissions | undefined {
+  const found = BUILTIN_SITE_ROLES.find((role) => role.slug === slug)
+  return found ? { ...found.permissions } : undefined
+}

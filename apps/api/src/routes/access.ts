@@ -1,7 +1,13 @@
 import type { SiteRole } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { approvalLevelFor, currentSiteRole, requireSiteRole, requireUserActor } from '../lib/auth'
+import {
+  approvalLevelFor,
+  currentSitePermissions,
+  currentSiteRole,
+  requireSiteRole,
+  requireUserActor,
+} from '../lib/auth'
 import { requireSite } from '../lib/site'
 
 /**
@@ -28,7 +34,11 @@ app.get('/', requireSiteRole('viewer'), async (c) => {
   // roles. The wider `Role` the resolver is typed with is the instance ordering it shares.
   const role = (await currentSiteRole(c)) as SiteRole
   const approvalLevel = await approvalLevelFor(c.env, actor, requireSite(c).id)
-  return c.json({ data: { role, approvalLevel } })
+  // The set, which is what a control should gate on (#151): the slug beside it is a name, and two
+  // roles called the same thing on two deployments no longer mean the same thing. Never null here
+  // for the same reason `role` is not — the middleware above has already refused no-access.
+  const permissions = (await currentSitePermissions(c)) ?? []
+  return c.json({ data: { role, approvalLevel, permissions } })
 })
 
 export default app

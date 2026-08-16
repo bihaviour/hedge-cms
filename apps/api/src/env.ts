@@ -1,4 +1,4 @@
-import type { Role } from '@hedge/core'
+import type { Role, SitePermission } from '@hedge/core'
 import type { MemberRow, SiteRow } from './db/schema'
 import type { PreviewClaims } from './lib/preview'
 
@@ -97,6 +97,11 @@ export interface Variables {
   /** The actor's role on `site`, memoised per request. `null` means no access; unset means
    * it has not been looked up yet. */
   siteRole?: Role | null
+  /**
+   * What the actor may do on `site`, memoised the same way (#151). `null` is no access at all —
+   * distinct from an empty set, which is a role that reaches the site and may do nothing in it.
+   */
+  sitePermissions?: readonly SitePermission[] | null
   requestId: string
 }
 

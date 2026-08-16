@@ -1,19 +1,23 @@
 import {
+  ALL_SITE_PERMISSIONS,
   approvalLevelForSiteRole,
+  builtinSiteRole,
+  hasSitePermission,
   type InstancePermission,
   type Role,
-  roleAtLeast,
+  type SitePermission,
+  type SitePermissionSurface,
 } from '@hedge/core'
 import { and, asc, eq } from 'drizzle-orm'
 import type { Context, MiddlewareHandler } from 'hono'
 import { getCmsAuth } from '../auth/cms'
 import { getDb } from '../db/client'
-import { type SiteRow, sites, siteUsers, users } from '../db/schema'
+import { roles, type SiteRow, sites, siteUsers, users } from '../db/schema'
 import type { Actor, AppEnv, Bindings } from '../env'
 import { hmac, randomToken } from './crypto'
 import { ApiError } from './errors'
 import { newId } from './id'
-import { permissionsForRole } from './roles'
+import { matrixForSlug, permissionsForRole } from './roles'
 import { requireSite } from './site'
 
 export const API_KEY_PREFIX = 'hdg_'
@@ -112,7 +116,11 @@ export async function siteRoleFor(
     .where(and(eq(siteUsers.siteId, siteId), eq(siteUsers.userId, actor.id)))
     .limit(1)
 
-  return grant?.role ?? null
+  // The column is a plain slug since #151, so a deployment with a custom site role could return one
+  // that is not on the `admin > editor > viewer` ladder. Nothing assigns one yet — `setSiteRoleSchema`
+  // is still the three — and what remains of this function is display and approval level, both of
+  // which #157 moves onto the set. Until then the cast says what is true today.
+  return (grant?.role as Role) ?? null
 }
 
 /** Same, memoised for the current request — several middlewares ask this per route. */
@@ -125,14 +133,107 @@ export async function currentSiteRole(c: Context<AppEnv>): Promise<Role | null> 
   return role
 }
 
-/** Per-site authorisation. Everything that reads or writes one site's content goes through it. */
+/**
+ * What this caller may do on one site, verb by verb — `null` when they may not reach it at all
+ * (#151). The set replaces the rank; `siteRoleFor` above still answers *which* role they hold,
+ * which is what the admin displays and what approval level derives from.
+ *
+ * Three answers, and the order matters:
+ *
+ * - an **API key** carries the matrix of the role its scopes imply, on its own site and no other.
+ *   Unchanged from the rank it resolved to before; #156 is what makes a key follow its *issuer's*
+ *   delegated column instead.
+ * - an instance role carrying **`sites:access_all`** resolves to every permission, on every site,
+ *   with no grant row involved. This is the floor the whole epic rests on: no edit to any matrix
+ *   can lock a deployment out of itself, by construction rather than by a special case.
+ * - otherwise the **grant** in `site_users` names a role slug, and that role's matrix is the answer.
+ *
+ * `surface` picks the column: what the person may do, or what they delegate to an MCP client or to
+ * a key. A delegated column is a subset of `site` — enforced when the role is written, not here.
+ */
+export async function sitePermissionsFor(
+  env: Bindings,
+  actor: Actor,
+  siteId: string,
+  surface: SitePermissionSurface = 'site',
+): Promise<readonly SitePermission[] | null> {
+  if (actor.kind === 'api_key') {
+    if (actor.siteId !== siteId) return null
+    return matrixForSlug(await roleRowFor(env, actor.role), actor.role)[surface]
+  }
+
+  if (actor.permissions.includes('sites:access_all')) return ALL_SITE_PERMISSIONS
+
+  const [grant] = await getDb(env)
+    .select({ role: siteUsers.role, definition: roles })
+    .from(siteUsers)
+    .leftJoin(roles, eq(roles.slug, siteUsers.role))
+    .where(and(eq(siteUsers.siteId, siteId), eq(siteUsers.userId, actor.id)))
+    .limit(1)
+
+  if (!grant) return null
+  return matrixForSlug(grant.definition ?? undefined, grant.role)[surface]
+}
+
+/** One role row by slug, for the paths that have no `site_users` join to hang it off. */
+async function roleRowFor(env: Bindings, slug: string) {
+  const [row] = await getDb(env).select().from(roles).where(eq(roles.slug, slug)).limit(1)
+  return row
+}
+
+/**
+ * The `site` column, memoised for the current request. Every gate on a management route asks this,
+ * and a route often runs two of them.
+ */
+export async function currentSitePermissions(
+  c: Context<AppEnv>,
+): Promise<readonly SitePermission[] | null> {
+  const cached = c.get('sitePermissions')
+  if (cached !== undefined) return cached
+
+  const permissions = await sitePermissionsFor(c.env, requireActor(c), requireSite(c).id)
+  c.set('sitePermissions', permissions)
+  return permissions
+}
+
+/**
+ * Per-site authorisation, one verb at a time. Everything that reads or writes one site's content
+ * goes through it — `requireSitePermission('entries:delete')` is a different question from
+ * `requireSitePermission('entries:update')`, which is the whole of #151.
+ */
+export function requireSitePermission(permission: SitePermission): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const site = requireSite(c)
+    const permissions = await currentSitePermissions(c)
+
+    if (!permissions) throw ApiError.forbidden(`You do not have access to the "${site.slug}" site`)
+    if (!hasSitePermission(permissions, permission)) {
+      throw ApiError.forbidden(`Requires "${permission}" on the "${site.slug}" site`)
+    }
+    await next()
+  }
+}
+
+/**
+ * The rank, expressed as a set — a shim, and a deliberately temporary one (#153).
+ *
+ * "At least editor" becomes "holds everything an editor holds", which is exactly what the ordering
+ * meant: `admin`'s set is a superset of `editor`'s and `viewer`'s is not. Routes move onto
+ * `requireSitePermission` one at a time in #154 and this goes with the last of them.
+ *
+ * The bar is the **code** definition of the minimum role rather than its seeded row, on purpose.
+ * This stage stores the matrix and changes no behaviour; a check that read an edited row would make
+ * an operator's edit take effect through the one path that is supposed to be inert until #154.
+ */
 export function requireSiteRole(minimum: Role): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const site = requireSite(c)
-    const role = await currentSiteRole(c)
+    const permissions = await currentSitePermissions(c)
 
-    if (!role) throw ApiError.forbidden(`You do not have access to the "${site.slug}" site`)
-    if (!roleAtLeast(role, minimum)) {
+    if (!permissions) throw ApiError.forbidden(`You do not have access to the "${site.slug}" site`)
+
+    const bar = builtinSiteRole(minimum)?.site ?? ALL_SITE_PERMISSIONS
+    if (!bar.every((permission) => hasSitePermission(permissions, permission))) {
       throw ApiError.forbidden(`Requires ${minimum} access to the "${site.slug}" site`)
     }
     await next()

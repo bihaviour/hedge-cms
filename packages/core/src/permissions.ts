@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { slugSchema } from './collection'
 import { SITE_ROLES } from './site'
+import { builtinSiteRole, rolePermissionsSchema } from './site-permissions'
 
 /**
  * Instance-level permissions — the deployment-management powers a role can carry.
@@ -65,6 +66,14 @@ export const roleDefinitionSchema = z.object({
   permissions: z.array(z.enum(INSTANCE_PERMISSIONS)),
   defaultSiteRole: z.enum(SITE_ROLES).nullable(),
   builtin: z.boolean(),
+  /**
+   * The site matrix (#151): what a holder may do *inside a site*, and what they delegate to an MCP
+   * client and to a key they issue. Stored on the same row as `permissions` above because a person
+   * holds one role and it answers every question about them — but the two levels stay separate
+   * sets, because they are separate questions. `builtin` still fixes the instance half in code; the
+   * site half is editable on every role, which is what the matrix editor edits.
+   */
+  sitePermissions: rolePermissionsSchema,
 })
 
 export type RoleDefinition = z.infer<typeof roleDefinitionSchema>
@@ -73,9 +82,14 @@ export type RoleDefinition = z.infer<typeof roleDefinitionSchema>
  * The roles every deployment starts with. `owner` is all-powerful and immutable; the other three
  * are sensible defaults an operator supplements with their own.
  *
- * Built-in permission sets live here in code, not in the database, so they cannot drift and no
- * amount of editing can lock an owner out of their own deployment. Custom roles live in the
- * `roles` table; the two are merged wherever the full list is needed.
+ * Built-in **instance** permission sets live here in code, not in the database, so they cannot
+ * drift and no amount of editing can lock an owner out of their own deployment. Custom roles live
+ * in the `roles` table; the two are merged wherever the full list is needed.
+ *
+ * Their **site** matrices are the other way round (#151): seeded as rows and editable, because
+ * "an editor may write but not delete" is exactly the thing operators need to change and no
+ * deployment is locked out by it — an instance owner resolves to full site authority without
+ * consulting a role at all. What is here is the fallback for a deployment whose seed has not run.
  */
 export const BUILTIN_ROLES: RoleDefinition[] = [
   {
@@ -85,6 +99,7 @@ export const BUILTIN_ROLES: RoleDefinition[] = [
     permissions: [...INSTANCE_PERMISSIONS],
     defaultSiteRole: null,
     builtin: true,
+    sitePermissions: builtinSiteRole('admin')!,
   },
   {
     slug: 'admin',
@@ -101,6 +116,7 @@ export const BUILTIN_ROLES: RoleDefinition[] = [
     ],
     defaultSiteRole: null,
     builtin: true,
+    sitePermissions: builtinSiteRole('admin')!,
   },
   {
     slug: 'editor',
@@ -109,6 +125,7 @@ export const BUILTIN_ROLES: RoleDefinition[] = [
     permissions: [],
     defaultSiteRole: 'editor',
     builtin: true,
+    sitePermissions: builtinSiteRole('editor')!,
   },
   {
     slug: 'viewer',
@@ -117,6 +134,7 @@ export const BUILTIN_ROLES: RoleDefinition[] = [
     permissions: [],
     defaultSiteRole: 'viewer',
     builtin: true,
+    sitePermissions: builtinSiteRole('viewer')!,
   },
 ]
 
@@ -138,6 +156,9 @@ export const createRoleSchema = z.object({
   description: z.string().max(200).default(''),
   permissions: z.array(z.enum(INSTANCE_PERMISSIONS)).default([]),
   defaultSiteRole: z.enum(SITE_ROLES).nullable().default('editor'),
+  /** The site matrix. Omitted means a role that reaches no site content at all — deliberate: a
+   * role defined for its instance powers should not acquire content access by being created. */
+  sitePermissions: rolePermissionsSchema.default({ site: [], mcp: [], apiKey: [] }),
 })
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>
@@ -147,6 +168,12 @@ export const updateRoleSchema = z.object({
   description: z.string().max(200).optional(),
   permissions: z.array(z.enum(INSTANCE_PERMISSIONS)).optional(),
   defaultSiteRole: z.enum(SITE_ROLES).nullable().optional(),
+  /**
+   * Editable on **every** role, built-in included — that is the asymmetry #151 introduces, and the
+   * whole feature: `editor` losing `entries:delete` is the change an operator came to make. The
+   * instance half above stays refused for a built-in, because that one can lock a deployment out.
+   */
+  sitePermissions: rolePermissionsSchema.optional(),
 })
 
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>

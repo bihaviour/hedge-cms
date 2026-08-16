@@ -127,6 +127,13 @@
       "when": 1786850200094,
       "tag": "0017_round_vin_gonzales",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1786861307631,
+      "tag": "0018_colorful_prowler",
+      "breakpoints": true
     }
   ]
 }
