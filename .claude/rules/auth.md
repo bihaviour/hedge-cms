@@ -207,6 +207,29 @@ is holding. `ToolResult.structured` in `mcp/registry.ts` is typed `Record<string
 the wrong shape a compile error rather than a documented rule; that is also why `CreateSiteResult`
 in `@hedge/core` is a type alias and not an interface.
 
+**`tools/list` has a budget, and it is a test** (#144). Every client fetches it before it can do
+anything and the whole of it lands in a model's context window, so its size is a feature with a
+number on it: `schema-compact.test.ts` fails when the serialised surface passes `PAYLOAD_BUDGET`.
+Two things keep it there, and both are easy to undo:
+
+- **`compactSchema` runs on every tool's `inputSchema`** (`mcp/schema-compact.ts`). It factors the
+  head a union's branches share into `$defs` and hoists whatever else repeats — the 13-kind field
+  union was 37% of the payload, inlined three times, each branch restating the same five base
+  properties. It changes size and nothing else, and the test proves that per tool by expanding the
+  result and comparing it to what it started as, rather than by asserting it in a comment.
+- **A `create_*`/`update_*` pair whose scope *and* role match is one `write_*` tool**, because
+  advertising both inlines one argument schema twice. `write_collection` is the merge that paid;
+  entries deliberately did **not** merge, because `slug` would have to mean both "which entry" and
+  "what to call the new one", and `update_entry` already carries `newSlug` to keep those apart.
+
+**A delete never merges into a write tool.** It carries `destructiveHint`, which is what a client
+asks a human about, and #145 makes withholding deletes a grant an operator can decline — an
+`action: "delete"` argument can be neither annotated nor withheld.
+
+Descriptions are not where to find the next saving. They are what stops a tool being misused, and
+the long ones are long for a reason — `create_api_key` warns that a raw secret lands in the context,
+`link_translation` explains what a merge does and does not move.
+
 Adding an area means adding a `:read`/`:write` pair to `MCP_SCOPES` **and** a line to
 `MCP_SCOPE_LABELS` in `packages/core/src/auth.ts` — the consent screen renders from the labels, and
 a scope with no label reaches an operator as a bare `users:write` nobody can evaluate. Nothing else

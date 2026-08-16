@@ -4,6 +4,7 @@ import type { SiteRow } from '../db/schema'
 import type { Actor, Bindings } from '../env'
 import { ApiError } from '../lib/errors'
 import { type McpTool, McpToolError } from '../lib/mcp'
+import { compactSchema } from './schema-compact'
 
 /**
  * The tool registry behind the MCP endpoint.
@@ -86,10 +87,18 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
   return definition as ToolDefinition
 }
 
-/** JSON Schema as MCP clients expect it — the input side of the zod schema, sans `$schema`. */
+/**
+ * JSON Schema as MCP clients expect it — the input side of the zod schema, sans `$schema`, and
+ * compacted.
+ *
+ * The compaction is not cosmetic: `tools/list` is fetched before a client can do anything and all
+ * of it lands in a model's context window, so a schema that restates itself is a tax on every
+ * session. `compactSchema` factors out what repeats and changes nothing about what is accepted —
+ * `schema-compact.test.ts` checks that by expanding every tool's schema back and comparing.
+ */
 function inputSchema(schema: z.ZodType): Record<string, unknown> {
   const { $schema, ...rest } = z.toJSONSchema(schema, { io: 'input' }) as Record<string, unknown>
-  return rest
+  return compactSchema(rest)
 }
 
 function parseArgs<S extends z.ZodType>(schema: S, args: unknown): z.infer<S> {

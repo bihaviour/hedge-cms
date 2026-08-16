@@ -1,6 +1,5 @@
 import {
   type CreateCollectionInput,
-  createCollectionSchema,
   MCP_SCOPES,
   slugSchema,
   type UpdateCollectionInput,
@@ -14,6 +13,7 @@ import {
   listCollections,
   updateCollection,
 } from '../lib/collections'
+import { McpToolError } from '../lib/mcp'
 import { defineTool } from './registry'
 
 const slugArg = z.object({ slug: slugSchema })
@@ -56,35 +56,42 @@ export const collectionTools = [
   }),
 
   defineTool({
-    name: 'create_collection',
-    title: 'Create collection',
+    name: 'write_collection',
+    title: 'Create or update collection',
     description:
-      'Create a new collection. `slug` must be lowercase kebab-case. Omit `fields` to start ' +
-      'with a default title + body pair. `kind` is "multiple" (many entries) or "single" (one).',
-    args: createCollectionSchema,
-    access: { scope: MCP_SCOPES.collectionsWrite, site: 'admin' },
-    handler: async (input, ctx) => {
-      const data = await createCollection(ctx.env, ctx.site.id, input as CreateCollectionInput)
-      return { structured: data, text: `Created collection "${data.slug}".` }
-    },
-  }),
-
-  defineTool({
-    name: 'update_collection',
-    title: 'Update collection',
-    description:
-      'Update a collection by slug. Only the provided keys change; `fields`, when given, ' +
-      'replaces the whole field list.',
+      'Create a collection, or update the one that already has this slug. `slug` is ' +
+      'lowercase kebab-case and identifies which. Creating needs `name`; omit `fields` and it ' +
+      'starts with a title + body pair. Updating changes only the keys you send — but `fields`, ' +
+      'when sent, replaces the whole field list rather than adding to it, so read the collection ' +
+      'first and send the list you want. `kind` is "multiple" (many entries) or "single" (one).',
+    // The update shape, which is the create shape with everything but `slug` optional. Carrying
+    // both would inline the 13-kind field union twice for one operation with two names.
     args: slugArg.extend(updateCollectionSchema.shape),
     access: { scope: MCP_SCOPES.collectionsWrite, site: 'admin' },
     handler: async ({ slug, ...input }, ctx) => {
-      const data = await updateCollection(
-        ctx.env,
-        ctx.site.id,
+      const existing = await getCollection(ctx.env, ctx.site.id, slug).catch(() => null)
+
+      if (existing) {
+        const data = await updateCollection(
+          ctx.env,
+          ctx.site.id,
+          slug,
+          input as UpdateCollectionInput,
+        )
+        return { structured: data, text: `Updated collection "${data.slug}".` }
+      }
+
+      // `name` is the one key a create cannot infer, and the schema cannot require it without
+      // requiring it on every update too.
+      if (!input.name) {
+        throw new McpToolError(`No collection "${slug}" exists — creating one needs "name"`)
+      }
+      const data = await createCollection(ctx.env, ctx.site.id, {
+        ...input,
         slug,
-        input as UpdateCollectionInput,
-      )
-      return { structured: data, text: `Updated collection "${data.slug}".` }
+        name: input.name,
+      } as CreateCollectionInput)
+      return { structured: data, text: `Created collection "${data.slug}".` }
     },
   }),
 
