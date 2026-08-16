@@ -31,7 +31,7 @@ jobs:
 
       - run: bun run typecheck
 
-      - run: bun test
+      - run: bun test --isolate
 
       - name: Build
         run: bun run build

@@ -35,11 +35,17 @@ locally. Emails aren't sent in development — invite and reset links print to t
 ```bash
 bun run lint             # biome check .          (lint:fix to write)
 bun run typecheck        # tsc --noEmit in every workspace
-bun test                 # bun's runner, whole repo
+bun test --isolate       # bun's runner, whole repo — `bun run test` and CI both pass --isolate
 bun test apps/api/src/lib/mcp.test.ts          # one file
 bun test -t 'rejects a plain code challenge'   # one test by name
 bun run build            # core typecheck → admin vite build → worker dry-run bundle
 ```
+
+**`--isolate` is not optional.** `mock.module` is process-wide and is never undone, so a test file
+that stubs `../lib/entries` decides what *every later file* imports — an integration test exercising
+the real module then passes or fails on file order alone, silently. `--isolate` gives each file a
+fresh global. Without it the suite is green locally and red in CI whenever the order differs, which
+is exactly how it was found. Keep the flag in both `package.json` and the workflow.
 
 CI (`.github/workflows/ci.yml`) runs `cf-typegen`, then lint, typecheck, test, build. Run all four
 before opening a PR — `/gh` (`.claude/skills/gh/SKILL.md`) does this and the codegen checks for you.

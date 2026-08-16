@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { MAX_INLINE_UPLOAD_BYTES } from '@hedge/core'
 import { Hono } from 'hono'
 import type { SiteRow } from '../db/schema'
 import type { AppEnv } from '../env'
@@ -195,6 +196,62 @@ mock.module('../lib/users', () => ({
   removeUserSiteRole: async () => {},
 }))
 
+/**
+ * `upload_media` is the one tool that reaches outside the deployment. Both halves are stubbed —
+ * the fetch and the R2 write — so what is exercised here is the tool: which source it took, what
+ * it passed on, and the gate in front of it. `remote-file.test.ts` owns what a URL is refused for,
+ * and `media-upload.integration.test.ts` owns what reaches the bucket.
+ */
+const uploaded: { filename: string; contentType: string; bytes: number }[] = []
+const fetched: string[] = []
+
+const realMedia = await import('../lib/media')
+const realRemoteFile = await import('../lib/remote-file')
+
+mock.module('../lib/remote-file', () => ({
+  ...realRemoteFile,
+  fetchRemoteFile: async (url: string) => {
+    fetched.push(url)
+    return {
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]))
+          controller.close()
+        },
+      }),
+      contentType: 'image/png',
+      filename: 'remote.png',
+    }
+  },
+}))
+
+mock.module('../lib/media', () => ({
+  ...realMedia,
+  storeUpload: async (
+    _e: unknown,
+    _s: unknown,
+    input: { body: ReadableStream<Uint8Array>; filename: string; contentType: string },
+  ) => {
+    let bytes = 0
+    for await (const chunk of input.body as unknown as AsyncIterable<Uint8Array>) {
+      bytes += chunk.byteLength
+    }
+    uploaded.push({ filename: input.filename, contentType: input.contentType, bytes })
+    return {
+      id: 'med_1',
+      key: `blog/2026/08/med_1-${input.filename}`,
+      filename: input.filename,
+      contentType: input.contentType,
+      size: bytes,
+      width: null,
+      height: null,
+      alt: null,
+      url: `https://cms.example.com/media/blog/2026/08/med_1-${input.filename}`,
+      createdAt: '2026-08-15T00:00:00.000Z',
+    }
+  },
+}))
+
 const { default: mcp } = await import('./mcp')
 
 /**
@@ -266,6 +323,92 @@ describe('POST /mcp', () => {
     expect(names).toContain('create_api_key')
   })
 
+  /* ---------------------------------------------------------------- *
+   * upload_media (#143)
+   * ---------------------------------------------------------------- */
+
+  describe('upload_media', () => {
+    test('fetches a url and stores what came back, naming neither in the conversation', async () => {
+      reset()
+      uploaded.length = 0
+      fetched.length = 0
+
+      const { json } = await call('upload_media', { url: 'https://example.com/a/photo.png' })
+
+      expect(json.error).toBeUndefined()
+      expect(fetched).toEqual(['https://example.com/a/photo.png'])
+      expect(uploaded[0]).toEqual({ filename: 'remote.png', contentType: 'image/png', bytes: 3 })
+      expect(json.result.structuredContent.url).toContain('/media/blog/')
+    })
+
+    test('a caller’s filename wins over the one derived from the URL', async () => {
+      reset()
+      uploaded.length = 0
+      await call('upload_media', { url: 'https://example.com/x.png', filename: 'cover.png' })
+      expect(uploaded[0]?.filename).toBe('cover.png')
+    })
+
+    test('decodes base64, with or without a data: prefix, and never fetches', async () => {
+      reset()
+      uploaded.length = 0
+      fetched.length = 0
+
+      // "hello" — five bytes either way, which is what pins that the prefix is stripped rather
+      // than decoded as part of the payload.
+      await call('upload_media', { data: 'aGVsbG8=', contentType: 'text/plain' })
+      await call('upload_media', { data: 'data:text/plain;base64,aGVsbG8=' })
+
+      expect(fetched).toEqual([])
+      expect(uploaded.map((item) => item.bytes)).toEqual([5, 5])
+      // The second call named no content type, so the one in the prefix is what was used.
+      expect(uploaded[1]?.contentType).toBe('text/plain')
+    })
+
+    test('refuses base64 over the inline cap, and says to pass a url instead', async () => {
+      reset()
+      uploaded.length = 0
+
+      const { json } = await call('upload_media', {
+        data: btoa('x'.repeat(MAX_INLINE_UPLOAD_BYTES + 1)),
+        contentType: 'text/plain',
+      })
+
+      expect(json.result.isError).toBe(true)
+      expect(JSON.stringify(json.result.content)).toContain('url')
+      expect(uploaded).toHaveLength(0)
+    })
+
+    test('refuses both sources at once, and neither', async () => {
+      reset()
+      for (const args of [{ url: 'https://example.com/a.png', data: 'aGk=' }, {}]) {
+        const { json } = await call('upload_media', args)
+        expect(json.result.isError).toBe(true)
+      }
+    })
+
+    test('needs media:write and editor on the site — the gate POST /api/v1/media carries', async () => {
+      reset()
+      token = { userId: 'usr_1', scopes: 'openid media:read' }
+      expect(
+        JSON.stringify((await call('upload_media', { url: 'https://e.com/a.png' })).json),
+      ).toContain('media:write')
+
+      reset()
+      siteRole = 'viewer'
+      expect(
+        JSON.stringify((await call('upload_media', { url: 'https://e.com/a.png' })).json),
+      ).toContain('editor')
+    })
+
+    test('is hidden from a client that was not granted media:write', async () => {
+      reset()
+      token = { userId: 'usr_1', scopes: 'openid media:read' }
+      const names = await listTools()
+      expect(names).toContain('list_media')
+      expect(names).not.toContain('upload_media')
+    })
+  })
+
   /**
    * The bulk send is the one REST power deliberately withheld: it reaches real inboxes and cannot
    * be recalled. Its absence is a decision, so it is pinned.
@@ -291,6 +434,23 @@ describe('POST /mcp', () => {
     expect(names).not.toContain('approve_entry_version')
     expect(names).not.toContain('reject_entry_version')
     expect(names).not.toContain('publish_entry_version')
+  })
+
+  /**
+   * Every tool delegates to the same services the REST routes use, and those raise `ApiError`. Only
+   * `McpToolError` is reported as a tool *result*, so an untranslated one leaves the JSON-RPC layer
+   * altogether: the client gets a protocol failure with no id and a body that is not JSON, which a
+   * model reads as "the CMS is broken" rather than "fix the argument". `buildTools` translates at
+   * the seam, which is what keeps a routine refusal recoverable.
+   */
+  test('a service refusal comes back as a tool result, not a protocol failure', async () => {
+    reset()
+    const { status, json } = await call('upload_media', { data: 'not base64 at all !!' })
+
+    expect(status).toBe(200)
+    expect(json.error).toBeUndefined()
+    expect(json.result.isError).toBe(true)
+    expect(JSON.stringify(json.result.content)).toContain('base64')
   })
 
   test('every tool name is unique', async () => {

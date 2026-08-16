@@ -198,7 +198,11 @@ export const MCP_SCOPE_LABELS: Record<McpScope, string> = {
   'entries:read': 'Read this site’s entries, including unpublished drafts',
   'entries:write': 'Create, edit, publish and delete this site’s entries',
   'media:read': 'List this site’s uploaded media',
-  'media:write': 'Rename, re-caption and delete this site’s media',
+  // Says "add" first because it is the newest power here and the one an operator is least likely
+  // to assume: a client with this scope can put files into the library, not just tidy the ones
+  // already in it. A consent screen that undersells a grant is the one bug in this flow with no
+  // technical symptom.
+  'media:write': 'Add files to this site’s media library, and rename, re-caption and delete them',
   'newsletters:read': 'Read this site’s newsletters, templates and subscriber list',
   'newsletters:write': 'Write newsletters and templates, and manage subscribers',
   'sites:read': 'See the sites you have access to and their settings',

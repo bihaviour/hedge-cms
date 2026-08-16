@@ -1,22 +1,158 @@
-import type {
-  ListMediaQuery,
-  Media,
-  MediaTypeFilter,
-  Paginated,
-  UpdateMediaInput,
+import {
+  isAllowedUploadType,
+  type ListMediaQuery,
+  MAX_UPLOAD_BYTES,
+  type Media,
+  type MediaTypeFilter,
+  type Paginated,
+  type UpdateMediaInput,
 } from '@hedge/core'
 import { and, count, desc, eq, like, lt, not, or, type SQL } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { type MediaRow, media } from '../db/schema'
 import type { Bindings } from '../env'
 import { ApiError } from './errors'
+import { newId } from './id'
+import { IMAGE_HEAD_BYTES, readImageSize } from './image-size'
 
 /**
- * Media metadata operations shared by the REST route and the MCP endpoint.
+ * Media operations shared by the REST route and the MCP endpoint — including the upload itself.
  *
- * Uploading is deliberately not here: it takes a multipart body and a stream into R2, neither of
- * which survives a JSON-RPC round trip. The route keeps that one to itself.
+ * `storeUpload` lives here rather than in `routes/media.ts` because there are now two ways a file
+ * arrives (a multipart body, and a URL the Worker fetches for `upload_media`) and exactly one of
+ * them may own the R2 write, the key layout, the dimension read and the row. Two copies of that is
+ * how the two paths drift into storing different things for the same file.
  */
+
+/** `blog/2026/07/k1a2b3-photo.jpg` — site- and date-prefixed so the bucket stays browsable. */
+function buildKey(siteSlug: string, filename: string): string {
+  const now = new Date()
+  const safe = filename
+    .toLowerCase()
+    .replace(/[^a-z0-9.\-_]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(-80)
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0')
+  return `${siteSlug}/${now.getUTCFullYear()}/${month}/${newId()}-${safe || 'file'}`
+}
+
+export interface StoreUploadInput {
+  body: ReadableStream<Uint8Array>
+  filename: string
+  contentType: string
+  alt?: string | null
+  /** The user this is attributed to, or null for a machine actor — matching the column. */
+  uploadedBy?: string | null
+}
+
+/**
+ * What a metered upload learned on its way past: the head, for dimensions, and the true length.
+ *
+ * Both come out of the *stream*, not out of a header or a `File.size`, and that is the difference
+ * that matters for a fetched URL: `content-length` is a claim by somebody else's server, and a
+ * chunked response makes no claim at all.
+ */
+interface Metered {
+  head: Uint8Array
+  bytes: number
+}
+
+/**
+ * Wraps a body so it can be measured while it streams, without ever holding the whole of it.
+ *
+ * Two jobs in one pass. It keeps the first `IMAGE_HEAD_BYTES` — which is all `readImageSize` reads,
+ * whatever the file weighs — and it counts every byte, erroring the stream the moment the count
+ * passes `MAX_UPLOAD_BYTES`. Erroring mid-stream is what makes the cap real rather than advisory:
+ * the R2 write fails with it, so an oversized file cannot land and then be rejected afterwards.
+ */
+function meter(body: ReadableStream<Uint8Array>, into: Metered): ReadableStream<Uint8Array> {
+  const head: Uint8Array[] = []
+  let headBytes = 0
+
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        into.bytes += chunk.byteLength
+        if (into.bytes > MAX_UPLOAD_BYTES) {
+          controller.error(
+            new ApiError('payload_too_large', `Files must be under ${MAX_UPLOAD_BYTES} bytes`),
+          )
+          return
+        }
+        if (headBytes < IMAGE_HEAD_BYTES) {
+          const take = chunk.subarray(0, IMAGE_HEAD_BYTES - headBytes)
+          head.push(take)
+          headBytes += take.byteLength
+        }
+        controller.enqueue(chunk)
+      },
+      flush() {
+        const joined = new Uint8Array(headBytes)
+        let offset = 0
+        for (const part of head) {
+          joined.set(part, offset)
+          offset += part.byteLength
+        }
+        into.head = joined
+      },
+    }),
+  )
+}
+
+/**
+ * Streams a file into R2 and records it. The one place either upload path writes an object.
+ *
+ * The content type is checked here rather than by each caller, so a source added later cannot skip
+ * it — `upload_media` fetching an arbitrary URL is exactly the caller that would.
+ */
+export async function storeUpload(
+  env: Bindings,
+  site: { id: string; slug: string },
+  input: StoreUploadInput,
+): Promise<Media> {
+  const contentType = input.contentType.split(';')[0]!.trim() || 'application/octet-stream'
+  if (!isAllowedUploadType(contentType)) {
+    void input.body.cancel()
+    throw new ApiError('unsupported_media_type', `Files of type "${contentType}" are not allowed`)
+  }
+
+  const key = buildKey(site.slug, input.filename)
+  const metered: Metered = { head: new Uint8Array(), bytes: 0 }
+
+  try {
+    await env.MEDIA.put(key, meter(input.body, metered), {
+      httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
+    })
+  } catch (error) {
+    // A body that tripped the cap failed *during* the write, so the object may be partly there.
+    // Nothing references it — no row was written — so it would sit in the bucket unreachable.
+    await env.MEDIA.delete(key).catch(() => {})
+    throw error instanceof ApiError
+      ? error
+      : new ApiError('internal_error', 'The upload could not be stored')
+  }
+
+  const size = readImageSize(metered.head)
+
+  const [row] = await getDb(env)
+    .insert(media)
+    .values({
+      id: newId('med'),
+      siteId: site.id,
+      key,
+      filename: input.filename || 'file',
+      contentType,
+      size: metered.bytes,
+      // Null for anything the reader does not recognise, which is what these columns already mean.
+      width: size?.width ?? null,
+      height: size?.height ?? null,
+      alt: input.alt || null,
+      uploadedBy: input.uploadedBy ?? null,
+    })
+    .returning()
+
+  return toMedia(row!, env)
+}
 
 export function toMedia(row: MediaRow, env: Bindings): Media {
   return {

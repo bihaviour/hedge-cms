@@ -217,12 +217,19 @@ so calling it reports the missing scope rather than "unknown tool" — which a m
 cannot do this" and works around. Role failures are never hidden; a role can change between two calls
 on one token.
 
-Three REST powers are deliberately withheld, and `mcp.test.ts` pins the first and the third:
+Two REST powers are deliberately withheld and `mcp.test.ts` pins both, and one constraint survives
+from a third that was lifted:
 
 - **Sending a newsletter to its audience.** It reaches real inboxes and cannot be recalled.
   `send_test_newsletter` mails one named address, which is what an agent actually needs.
-- **Uploading media.** It needs a multipart body streamed into R2; base64 through a context window
-  is not a substitute. Everything *about* an upload — listing, captioning, deleting — is exposed.
+- **Moving a whole file through the context window.** This one used to read "uploading media", and
+  #143 narrowed it: uploading is exposed, base64 as the *transport* for it is not. `upload_media`
+  takes a `url`, which the Worker fetches and streams into R2 through the same `storeUpload` the
+  multipart route uses — the file never enters the conversation. `data` takes base64 for content
+  that has no URL because the model just made it, and is capped at `MAX_INLINE_UPLOAD_BYTES`
+  (1 MB, against the REST route's 25 MB) so the cheap path stays the obvious one. Fetching a
+  caller-supplied URL is the deployment's only outbound request driven by caller input, so
+  `lib/remote-file.ts` is where the SSRF guards live and it exports nothing else.
 - **Approving, rejecting or publishing an entry version** (#62). Authoring one and submitting it for
   review are exposed; blessing one is not. The reasoning is sharper than the newsletter's: the point
   of the workflow is a second pair of *human* eyes, and an agent approving the version it has just

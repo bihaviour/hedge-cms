@@ -82,7 +82,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "cf-typegen": "bun run --cwd apps/api cf-typegen"
   },
   "devDependencies": {
