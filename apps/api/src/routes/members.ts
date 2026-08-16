@@ -13,7 +13,7 @@ import {
 import { and, count, desc, eq, like, lt, type SQL } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { authApiError } from '../auth/errors'
+import { authApiError, swallowAuthFailure } from '../auth/errors'
 import {
   getMemberAuth,
   hasCredential,
@@ -175,9 +175,15 @@ memberAuth.post('/register', async (c) => {
     return c.json({ data: { ...signedIn, member: toMember(signedIn.member, grant) } }, 201)
   }
 
-  const result = await getMemberAuth(c.env).api.signUpEmail({
-    body: { email, name: input.name, password: input.password },
-  })
+  // The read above and this write are not one transaction, so an account can appear between them —
+  // two registrations for one address in flight at once, most plainly. Better Auth refuses that with
+  // its own `APIError`, which `app.onError` does not recognise, so the lost race used to crash where
+  // the branch above answers `conflict` for the very same fact (#164).
+  const result = await getMemberAuth(c.env)
+    .api.signUpEmail({ body: { email, name: input.name, password: input.password } })
+    .catch(async (error) => {
+      throw await signUpError(c.env, email, error)
+    })
 
   const grant = await grantForSignIn(c.env, site, result.user.id)
   const row = (await memberByEmail(c.env, email))!
@@ -205,12 +211,18 @@ memberAuth.post('/login', async (c) => {
   return c.json({ data: { ...signedIn, member: toMember(signedIn.member, grant) } })
 })
 
+/**
+ * Ending a session, which is idempotent: a token that was already spent, has expired or was never
+ * ours leaves the caller in exactly the state they asked for. So a refusal is swallowed rather than
+ * translated — the line above already answers `{ ok: true }` when no token is presented at all, and
+ * a *bad* token answering differently would be the louder of the two (#164).
+ */
 memberAuth.post('/logout', async (c) => {
   const token = c.req.header('x-member-token')?.trim()
   if (token) {
-    await getMemberAuth(c.env).api.signOut({
-      headers: new Headers({ authorization: `Bearer ${token}` }),
-    })
+    await getMemberAuth(c.env)
+      .api.signOut({ headers: new Headers({ authorization: `Bearer ${token}` }) })
+      .catch(swallowAuthFailure('/sign-out'))
   }
   return c.json({ data: { ok: true } })
 })
@@ -227,13 +239,19 @@ memberAuth.post('/forgot-password', async (c) => {
   const input = await validate(c, z.object({ email: z.email(), redirectTo: z.url().optional() }))
   await throttle(c, `member-forgot:${site.id}`, { window: 900, max: 5 })
 
-  // Answers the same either way, so it cannot be used to test which addresses are members.
-  await getMemberAuth(c.env).api.requestPasswordReset({
-    body: {
-      email: input.email.toLowerCase(),
-      redirectTo: resetRedirect(c.env, site, input.redirectTo),
-    },
-  })
+  // Answers the same either way, so it cannot be used to test which addresses are members — a claim
+  // that holds only while this cannot throw, which is why the failure is swallowed rather than
+  // translated (#164). Better Auth answers an unknown address with the same `{ status: true }` a
+  // member gets today and absorbs a failed send itself, so nothing here changes what a caller sees;
+  // the catch is what keeps the sentence above true if either of those ever stops being so.
+  await getMemberAuth(c.env)
+    .api.requestPasswordReset({
+      body: {
+        email: input.email.toLowerCase(),
+        redirectTo: resetRedirect(c.env, site, input.redirectTo),
+      },
+    })
+    .catch(swallowAuthFailure('/request-password-reset'))
 
   return c.json({ data: { ok: true } })
 })
@@ -369,14 +387,25 @@ memberAuth.get('/magic-link/verify', async (c) => {
   return c.redirect(url.toString())
 })
 
+/**
+ * Asks for the verification mail again — the first one bounced, or was sent before the reader was
+ * ready to act on it.
+ *
+ * `/forgot-password`'s argument, and the site where it actually bit (#164). Better Auth answers an
+ * unknown address with `{ status: true }` but lets a *failed send* escape as a plain `Error`, which
+ * reaches `app.onError` as `500` — so with the mailer down a member's address answered 500 and a
+ * stranger's answered 200, which is the membership oracle this route is shaped to deny. It is
+ * swallowed for that reason, not to be quiet about mail failures: the cause is in the Worker log.
+ */
 memberAuth.post('/send-verification-email', async (c) => {
   const site = requireSite(c)
   const input = await validate(c, z.object({ email: z.email() }))
   await throttle(c, `member-verify:${site.id}`, { window: 900, max: 5 })
 
-  await getMemberAuth(c.env).api.sendVerificationEmail({
-    body: { email: input.email.toLowerCase() },
-  })
+  await getMemberAuth(c.env)
+    .api.sendVerificationEmail({ body: { email: input.email.toLowerCase() } })
+    .catch(swallowAuthFailure('/send-verification-email'))
+
   return c.json({ data: { ok: true } })
 })
 
@@ -638,6 +667,31 @@ memberSessionMint.post(
   },
 )
 
+/**
+ * What a refused registration answers.
+ *
+ * The address already being taken is the one refusal a registration form can act on, and it has to
+ * read the same whether the pre-check caught it or the race did: `authApiError` alone answers `400`
+ * where the branch a moment earlier answers `409`, and a client cannot be asked to treat two codes
+ * as one fact.
+ *
+ * **The database is asked, not the error.** Which of Better Auth's codes comes back depends on how
+ * the two requests interleaved — `USER_ALREADY_EXISTS` when the loser's own lookup ran after the
+ * winner's insert, `FAILED_TO_CREATE_USER` when both looked first and the unique index on
+ * `members.email` refused the second — and both are `422`, so neither the status nor the code
+ * separates a taken address from a genuine failure to write one. Whether the address is taken *now*
+ * does, it is one indexed read, and it stays true if Better Auth renames a code.
+ */
+async function signUpError(env: Bindings, email: string, error: unknown): Promise<ApiError> {
+  if (await memberByEmail(env, email)) {
+    // The cause is still worth a line: a create that failed for some other reason, on an address
+    // that happens to be taken, would otherwise leave nothing behind.
+    console.error('[member] register lost a race', error)
+    return ApiError.conflict('An account with that email already exists')
+  }
+  return authApiError(error, '/sign-up/email', 'That account could not be created')
+}
+
 /** Signs a member in and normalises what Better Auth hands back into our wire shape. */
 async function signIn(c: { env: Bindings }, email: string, password: string) {
   const result = await getMemberAuth(c.env)
@@ -661,11 +715,19 @@ async function signIn(c: { env: Bindings }, email: string, password: string) {
  *
  * It is Better Auth's own reset flow — the token, its expiry and its single use are all handled
  * there, and it picks the invitation wording precisely because there is no password yet.
+ *
+ * The refusal is *translated* here rather than swallowed, which is the opposite of the same call in
+ * `/forgot-password` and is the whole of the difference between the two routes (#164). Nothing is
+ * being kept from an anonymous caller: an admin who has just added a member, and whose grant row is
+ * already written, is owed the news that the invite did not go out — and a `429` they can wait out
+ * is different news from a deployment that has fallen over.
  */
 async function sendInvite(env: Bindings, site: SiteRow, email: string): Promise<void> {
-  await getMemberAuth(env).api.requestPasswordReset({
-    body: { email, redirectTo: resetRedirect(env, site) },
-  })
+  await getMemberAuth(env)
+    .api.requestPasswordReset({ body: { email, redirectTo: resetRedirect(env, site) } })
+    .catch((error) => {
+      throw authApiError(error, '/request-password-reset', 'The invitation email could not be sent')
+    })
 }
 
 /**
