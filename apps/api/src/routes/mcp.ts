@@ -4,6 +4,7 @@ import { getCmsAuth } from '../auth/cms'
 import type { AppEnv } from '../env'
 import { currentSiteRole, userRole } from '../lib/auth'
 import { handleRpcPayload, type McpServer } from '../lib/mcp'
+import { destructiveGrantFor } from '../lib/mcp-grants'
 import { permissionsForRole } from '../lib/roles'
 import { requireSite } from '../lib/site'
 import { ALL_TOOLS, buildTools, type McpContext } from '../mcp'
@@ -64,7 +65,18 @@ app.post('/', async (c) => {
     )
   }
 
-  const ctx: McpContext = { env: c.env, site, actor, instancePermissions: permissions, siteRole }
+  // What the operator allowed this client beyond the scopes it asked for. Unrecorded means granted,
+  // so a consent given before #145 keeps behaving exactly as it did.
+  const destructive = await destructiveGrantFor(c.env, token.userId, token.clientId)
+
+  const ctx: McpContext = {
+    env: c.env,
+    site,
+    actor,
+    instancePermissions: permissions,
+    siteRole,
+    destructive,
+  }
   const tools = buildTools(ALL_TOOLS, ctx, scopes)
 
   const server: McpServer = {

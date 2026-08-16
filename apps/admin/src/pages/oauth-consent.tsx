@@ -1,8 +1,12 @@
+import { DESTRUCTIVE_GRANT_LABEL } from '@hedge/core'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { decideConsent, describeScopes } from '@/lib/oauth'
 
@@ -19,6 +23,13 @@ export function OAuthConsentPage() {
   const clientId = params.get('client_id') ?? ''
   const scopes = describeScopes(params.get('scope'))
 
+  /**
+   * The one thing on this screen the operator decides rather than reads (#145). It starts on,
+   * because that is what approving has always meant and an upgrade should not quietly take a
+   * capability away — but it is a switch, in front of them, at the moment they are deciding.
+   */
+  const [destructive, setDestructive] = useState(true)
+
   const client = useQuery({
     queryKey: ['oauth-client', clientId],
     queryFn: () => api.auth.oauthPending(clientId),
@@ -26,7 +37,7 @@ export function OAuthConsentPage() {
   })
 
   const decide = useMutation({
-    mutationFn: (accept: boolean) => decideConsent(consentCode, accept),
+    mutationFn: (accept: boolean) => decideConsent(consentCode, clientId, accept, destructive),
   })
 
   if (!consentCode || !clientId) {
@@ -67,6 +78,26 @@ export function OAuthConsentPage() {
             </li>
           ))}
         </ul>
+
+        {/*
+          Separated from the list above by a rule, because it is a different kind of thing: that
+          list is what the client asked for and cannot be edited here, this is the one answer the
+          operator gives. Turning it off leaves everything else it asked for intact.
+        */}
+        <div className="flex items-start gap-3 rounded-lg border p-3">
+          <Switch
+            id="allow-destructive"
+            checked={destructive}
+            onCheckedChange={setDestructive}
+            className="mt-0.5"
+          />
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="allow-destructive" className="font-medium text-sm">
+              Allow it to delete and overwrite
+            </Label>
+            <p className="text-muted-foreground text-xs">{DESTRUCTIVE_GRANT_LABEL}</p>
+          </div>
+        </div>
 
         {decide.error && (
           <p className="text-destructive text-sm">{(decide.error as Error).message}</p>

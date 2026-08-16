@@ -43,6 +43,7 @@ import {
   revokeTrustedDevice,
   startLoginChallenge,
 } from '../lib/login-verification'
+import { destructiveGrantsFor, setDestructiveGrant } from '../lib/mcp-grants'
 import { permissionsForRole } from '../lib/roles'
 import { requireSite } from '../lib/site'
 import { throttle } from '../lib/throttle'
@@ -458,6 +459,50 @@ app.get('/oauth/pending', async (c) => {
   return c.json({ data: { clientId, name: client.name, icon: client.icon } })
 })
 
+/**
+ * Approving an MCP client, with whatever the operator narrowed (#145).
+ *
+ * This exists because Better Auth's own `/oauth2/consent` cannot express a narrowing: it takes
+ * `{accept, consent_code}`, and the scope it grants was parked server-side when the authorization
+ * request arrived. So the decision is recorded beside it, in our own table, and applied where the
+ * tools are built.
+ *
+ * **The order is the safety argument, and it is enforced here rather than trusted to the browser.**
+ * The grant is written first and the consent given second, so a failure to record means no token is
+ * ever issued. The other way round leaves a window holding a live token with no narrowing behind
+ * it — and since an unrecorded grant means *granted*, that window defaults to the widest answer.
+ */
+app.post('/oauth/consent', async (c) => {
+  const actor = requireUserActor(c)
+  const input = await validate(
+    c,
+    z.object({
+      consentCode: z.string().min(1),
+      clientId: z.string().min(1),
+      accept: z.boolean(),
+      /** False only when the operator cleared the box. Absent means they left it as it was. */
+      destructive: z.boolean().default(true),
+    }),
+  )
+
+  if (input.accept) {
+    await setDestructiveGrant(c.env, actor.id, input.clientId, input.destructive)
+  }
+
+  const result = await getCmsAuth(c.env)
+    .api.oAuthConsent({
+      body: { accept: input.accept, consent_code: input.consentCode },
+      headers: c.req.raw.headers,
+    })
+    .catch(() => null)
+
+  if (!result?.redirectURI) {
+    throw ApiError.badRequest('Could not complete the authorization request')
+  }
+
+  return c.json({ data: { redirectURI: result.redirectURI } })
+})
+
 /** MCP clients this user has approved, and still holds live tokens for. */
 app.get('/oauth/clients', async (c) => {
   const actor = requireUserActor(c)
@@ -474,11 +519,16 @@ app.get('/oauth/clients', async (c) => {
     .where(eq(oauthAccessTokens.userId, actor.id))
     .orderBy(desc(oauthAccessTokens.createdAt))
 
+  // What each was narrowed to. One query for the lot rather than one per client, and an unrecorded
+  // grant reads as `true` here for the same reason it does at the endpoint.
+  const grants = await destructiveGrantsFor(c.env, actor.id)
+
   const data: AuthorizedClient[] = rows.map((row) => ({
     clientId: row.clientId,
     name: row.name,
     icon: row.icon,
     authorizedAt: row.createdAt.toISOString(),
+    destructive: grants.get(row.clientId) ?? true,
   }))
 
   return c.json({ data })

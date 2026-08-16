@@ -81,7 +81,12 @@ export const mediaTools = [
       `it (a generated SVG or chart); it is capped at ${MAX_INLINE_UPLOAD_BYTES} bytes, so do not ` +
       'use it to move a large file you could have linked. Exactly one of the two.',
     args: uploadMediaSchema,
-    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor' },
+    // Behind the destructive grant despite being purely additive (#145): it writes a file into the
+    // bucket and reaches outside the deployment to do it, which is a power an operator may not want
+    // an agent to have even when they are happy for it to caption what is already there. It carries
+    // no `destructiveHint`, because that annotation is what a client reads to decide whether to ask
+    // a human, and claiming an upload may destroy something would be false.
+    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor', destructive: true },
     handler: async (input, ctx) => {
       const source = input.url
         ? await fetchRemoteFile(input.url)
@@ -143,9 +148,13 @@ export const mediaTools = [
     title: 'Update media',
     description:
       'Change a media item’s alt text or display filename. The stored object and its URL do not ' +
-      'move — this is metadata only, which makes it the tool for captioning a backlog of images.',
+      'move — this is metadata only, which makes it the tool for captioning a backlog of images. ' +
+      'The value you send replaces the old one and nothing keeps a copy of it.',
     args: updateMediaSchema.extend({ id: z.string().min(1) }),
-    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor' },
+    // An overwrite with no history is not an additive update, so it needs the grant (#145). No
+    // `destructiveHint` either: a client would prompt a human before every caption fix, which is
+    // the wrong trade for a tool whose whole point is working through a backlog.
+    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor', destructive: true },
     handler: async ({ id, ...input }, ctx) => {
       const data = await updateMedia(ctx.env, ctx.site.id, id, input)
       return { structured: data, text: `Updated media "${data.filename}".` }

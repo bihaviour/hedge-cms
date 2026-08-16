@@ -10,7 +10,13 @@
 import { MCP_SCOPE_LABELS } from '@hedge/core'
 
 const AUTHORIZE_PATH = '/api/v1/auth/mcp/authorize'
-const CONSENT_PATH = '/api/v1/auth/oauth2/consent'
+/**
+ * **Ours, not Better Auth's `/oauth2/consent`** (#145). That endpoint takes `{accept, consent_code}`
+ * and grants the scope parked when the authorization request arrived, so it cannot carry what the
+ * operator narrowed. Ours records the narrowing first and delegates second, which is what makes a
+ * failure to record mean "no token" rather than "a token with nothing behind it".
+ */
+const CONSENT_PATH = '/api/v1/auth/oauth/consent'
 
 /** The in-flight authorization request in the current URL, if there is one. */
 export function pendingAuthorization(search: string = window.location.search): string | null {
@@ -30,24 +36,29 @@ export function resumeAuthorization(search: string = window.location.search): bo
  * Approves or refuses the request, then follows Better Auth back to the client's redirect URI —
  * which carries either the authorization code or the refusal.
  */
-export async function decideConsent(consentCode: string, accept: boolean): Promise<void> {
+export async function decideConsent(
+  consentCode: string,
+  clientId: string,
+  accept: boolean,
+  destructive: boolean,
+): Promise<void> {
   const response = await fetch(CONSENT_PATH, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ accept, consent_code: consentCode }),
+    body: JSON.stringify({ accept, consentCode, clientId, destructive }),
   })
 
   const payload = (await response.json().catch(() => null)) as {
-    redirectURI?: string
-    message?: string
+    data?: { redirectURI?: string }
+    error?: { message?: string }
   } | null
 
-  if (!response.ok || !payload?.redirectURI) {
-    throw new Error(payload?.message ?? 'Could not complete the authorization request')
+  if (!response.ok || !payload?.data?.redirectURI) {
+    throw new Error(payload?.error?.message ?? 'Could not complete the authorization request')
   }
 
-  window.location.assign(payload.redirectURI)
+  window.location.assign(payload.data.redirectURI)
 }
 
 /**

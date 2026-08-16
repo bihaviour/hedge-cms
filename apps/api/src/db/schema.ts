@@ -417,6 +417,38 @@ export const oauthConsents = sqliteTable(
   (t) => [index('oauth_consents_user_client_idx').on(t.userId, t.clientId)],
 )
 
+/**
+ * What the operator narrowed when they approved an MCP client — **ours, not Better Auth's** (#145).
+ *
+ * It is a separate table rather than a column on `oauth_consents` for the reason the whole project
+ * splits these: Better Auth owns identity and writes that row itself, from its own consent endpoint,
+ * with the scopes the *client* asked for. This records what the *operator* decided on top, and the
+ * two answer different questions.
+ *
+ * It could not be a scope either. A scope is requested by the client, and no client that exists
+ * today knows to ask for one Hedge invented — so a `destructive` scope would be absent from every
+ * request and would refuse every delete on the day it shipped. Turning the question around, so the
+ * operator grants rather than the client requests, is what makes it a decision somebody makes.
+ *
+ * **A missing row means granted**, exactly as `INSTALLED_BY` unset means "show both": every consent
+ * given before this existed has none, and must keep working as it did. The row is only ever written
+ * to record a narrowing.
+ */
+export const mcpClientGrants = sqliteTable(
+  'mcp_client_grants',
+  {
+    id: text('id').primaryKey(),
+    clientId: text('client_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Whether this client may reach the tools that delete or overwrite. Default true. */
+    destructive: integer('destructive', { mode: 'boolean' }).notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('mcp_client_grants_user_client_idx').on(t.userId, t.clientId)],
+)
+
 /* ------------------------------------------------------------------ *
  * Website members — the `user` model of the *second* Better Auth instance, in `auth/member.ts`.
  *
@@ -1048,3 +1080,4 @@ export type NewsletterSubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type NewsletterRow = typeof newsletters.$inferSelect
 export type NewsletterTemplateRow = typeof newsletterTemplates.$inferSelect
 export type AnalyticsDailyRow = typeof analyticsDaily.$inferSelect
+export type McpClientGrantRow = typeof mcpClientGrants.$inferSelect
