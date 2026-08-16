@@ -157,9 +157,12 @@ export async function listUserSites(env: Bindings, userId: string): Promise<Site
 
   // The effective level is resolved here rather than in the admin, so one rule decides it — the
   // same one `approvalLevelFor` applies when a decision is actually made.
+  // `site_users.role` is a plain slug since #151, and this shape still reports one of the three.
+  // Nothing assigns a custom site role yet; #157 is where this stops being a cast.
   return rows.map((row) => ({
     ...row,
-    effectiveApprovalLevel: row.approvalLevel ?? approvalLevelForSiteRole(row.role),
+    role: row.role as SiteRole,
+    effectiveApprovalLevel: row.approvalLevel ?? approvalLevelForSiteRole(row.role as SiteRole),
   }))
 }
 

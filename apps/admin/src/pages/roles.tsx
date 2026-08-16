@@ -256,6 +256,9 @@ function RoleDialog({
         description: form.description,
         permissions: form.permissions,
         defaultSiteRole,
+        // A new role reaches no site content until somebody says what it may do there. The matrix
+        // that says it is #157; this screen only edits the deployment half so far.
+        sitePermissions: { site: [], mcp: [], apiKey: [] },
       })
     },
     onSuccess: () => {

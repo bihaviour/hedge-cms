@@ -125,10 +125,21 @@ export const users = sqliteTable(
 )
 
 /**
- * Operator-defined instance roles. Only *custom* roles live here — the four built-ins are fixed in
- * `@hedge/core` so their powers cannot drift and an owner cannot edit themselves out of control.
- * `permissions` is a JSON array of instance-permission ids; `slug` is what `users.role` references,
- * so it is permanent once assigned.
+ * Roles: what a slug means, at both levels.
+ *
+ * `permissions` is the **instance** half — a JSON array of instance-permission ids, read when this
+ * slug is somebody's `users.role`. Only *custom* roles carry it here: the four built-ins are fixed
+ * in `@hedge/core` so their deployment-management powers cannot drift and an owner cannot edit
+ * themselves out of control.
+ *
+ * The three `*_permissions` columns are the **site** half (#151) — the matrix, read when this slug
+ * is somebody's `site_users.role`. Those are rows for every role including the built-ins, seeded by
+ * migration `0018` with exactly what `admin`, `editor` and `viewer` granted before it ran, because
+ * "an editor may write but not delete" is the thing an operator needs to change and nothing here
+ * can lock a deployment out: an instance owner resolves to full site authority without consulting
+ * a role row at all.
+ *
+ * `slug` is what both `users.role` and `site_users.role` reference, so it is permanent once assigned.
  */
 export const roles = sqliteTable(
   'roles',
@@ -138,6 +149,21 @@ export const roles = sqliteTable(
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
     permissions: text('permissions', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    /** What a holder may do in the admin and over the management REST API. */
+    sitePermissions: text('site_permissions', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    /** What an MCP client acting as them may do — a subset of the above, enforced in `@hedge/core`. */
+    mcpPermissions: text('mcp_permissions', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    /** What a key they issued may do. Same subset rule; see `rolePermissionsSchema`. */
+    apiKeyPermissions: text('api_key_permissions', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     defaultSiteRole: text('default_site_role', { enum: ['admin', 'editor', 'viewer'] }),
     ...timestamps,
   },
@@ -158,9 +184,13 @@ export const siteUsers = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    role: text('role', { enum: ['admin', 'editor', 'viewer'] })
-      .notNull()
-      .default('editor'),
+    /**
+     * The role slug this grant carries. **Not an enum** since #151: a role is a permission matrix
+     * defined in `roles`, so a deployment can assign one of its own here and the three built-in
+     * slugs are only the ones every deployment starts with. The column was always plain `text` —
+     * SQLite never held the constraint — so relaxing the type changed no storage.
+     */
+    role: text('role').notNull().default('editor'),
     /**
      * What this user may approve on this site — see `entry_versions` below. Null means "derive it
      * from the site role", which is what keeps every grant that predates the workflow behaving as

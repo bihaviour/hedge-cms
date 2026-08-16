@@ -10,6 +10,7 @@ import {
   timezoneSchema,
 } from './i18n'
 import { previewUrlSchema } from './preview'
+import { SITE_PERMISSIONS } from './site-permissions'
 
 /**
  * A site is the tenant boundary. One deployment holds many sites — a blog, a docs site, a
@@ -58,6 +59,13 @@ export type SiteAccess = z.infer<typeof siteAccessSchema>
 export const siteAuthoritySchema = z.object({
   role: z.enum(SITE_ROLES),
   approvalLevel: z.number().int().min(0).max(2),
+  /**
+   * What they may actually do, verb by verb (#151). The role slug above stays because the admin
+   * still shows it and an assignment is still made by slug, but nothing should *gate* on it: a
+   * custom role is not on the `admin > editor > viewer` ladder, and the whole point of the matrix
+   * is that two roles with the same name can differ. Gate on this set.
+   */
+  permissions: z.array(z.enum(SITE_PERMISSIONS)),
 })
 
 export type SiteAuthority = z.infer<typeof siteAuthoritySchema>

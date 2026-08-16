@@ -78,6 +78,7 @@ migration failed) rather than pretending the file rolled back.
 | Family | Tables |
 | --- | --- |
 | Tenancy | `sites`, `site_users` |
+| Roles | `roles` — instance permissions *and* the site matrix (#151) |
 | Operators (Better Auth CMS instance) | `users`, `sessions`, `accounts`, `verifications`, `rate_limits`, `auth_tokens` |
 | Step-up sign-in | `login_challenges`, `trusted_devices` |
 | MCP OAuth | `oauth_applications`, `oauth_access_tokens`, `oauth_consents`, `mcp_client_grants` |
@@ -89,6 +90,31 @@ migration failed) rather than pretending the file rolled back.
 
 Row types are exported at the bottom of `schema.ts` (`SiteRow`, `EntryRow`, …) — use those rather
 than re-deriving `$inferSelect` at the call site.
+
+## A role carries both levels, and they are stored differently on purpose
+
+`roles` answers two questions about one slug, and which half is authoritative differs (#151):
+
+- **Instance permissions** (`permissions`) — the deployment powers. For the four built-ins these are
+  fixed in `@hedge/core` and the *column is empty*, so no edit can leave a deployment with no owner.
+  Only a custom role's instance half lives in the row.
+- **The site matrix** (`site_permissions`, `mcp_permissions`, `api_key_permissions`) — a row for
+  **every** role including the built-ins, seeded by `0018` with exactly what `admin`, `editor` and
+  `viewer` granted before it existed. This half *is* editable on a built-in, because "an editor may
+  write but not delete" is the change operators come to make and it locks nobody out: an instance
+  owner resolves to full site authority without consulting a role row at all.
+
+`site_users.role` is therefore a plain slug, not an enum — a deployment can assign one of its own.
+The three built-in slugs are only the ones every deployment starts with. A grant whose slug has no
+row falls back to that slug's built-in set (`matrixForSlug`), which is what the window between a
+deploy and its migration looks like; resolving to nothing there would take every editor's access
+away until somebody ran the migration.
+
+`mcp_permissions` and `api_key_permissions` are subsets of `site_permissions`, enforced in
+`rolePermissionsSchema` where the role is written rather than where it is read. A delegation wider
+than the delegator is not a misconfiguration to warn about — an agent acts *as* a person and a key
+acts *for* one, so it is a sentence with no meaning, and storing it would put an authority in the
+database that nothing can honestly resolve.
 
 ## Step-up sign-in tables
 
