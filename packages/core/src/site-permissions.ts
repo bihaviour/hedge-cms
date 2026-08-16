@@ -11,8 +11,9 @@ import { z } from 'zod'
  * Instance permissions (`permissions.ts`) are unchanged and answer a different question: what
  * somebody may do to the *deployment* — users, sites, email, the roles themselves. The two compose.
  *
- * Nothing reads these yet. This file is the vocabulary; the stages behind #151 move the gates onto
- * it, and until then the ranks in `site.ts` are still what decides.
+ * Every site route gates on one of these since #154, and `requireSiteRole` is gone with them.
+ * `SITE_ROLES` in `site.ts` survives as the three slugs a deployment starts with — a name for a
+ * matrix, not an ordering anything checks.
  */
 
 /**
@@ -254,7 +255,7 @@ const EDITOR_SITE_PERMISSIONS: readonly SitePermission[] = [
   'analytics:read',
 ]
 
-/** And `viewer`: the four things a `requireSiteRole('viewer')` route serves. */
+/** And `viewer`: the four reads a `viewer` route served before #154 gave each one a permission. */
 const VIEWER_SITE_PERMISSIONS: readonly SitePermission[] = [
   'entries:read',
   'media:read',

@@ -38,9 +38,11 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
   from `useSession`, a set-membership check (the sidebar gates on it). **Site** powers are not —
   the same person can be an admin on one site and a viewer on the next, so they come from
   `useSiteAuthority` / `useHasSiteRole` in `hooks/use-site.ts`, one `GET /api/v1/access` per site,
-  keyed on the active slug. A control whose route carries `requireSiteRole` is gated with the
+  keyed on the active slug. A control whose route carries `requireSitePermission` is gated with the
   second, never with `user.role` — that field is only the default someone was invited with, and
-  reading it would hide controls the server would allow and show ones it would refuse.
+  reading it would hide controls the server would allow and show ones it would refuse. Since #151
+  that answer carries a **permission set** beside the role slug: gate on the set, because the slug
+  is a name and two deployments can define `editor` differently.
 - **Both catalogs, always.** `catalog.test.ts` fails when an English key has no Indonesian
   translation, or when the two disagree on `{placeholders}`. A key present in one and missing from
   the other degrades silently to English and can sit unnoticed for a release, which is why it is a

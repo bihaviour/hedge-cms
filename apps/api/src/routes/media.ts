@@ -1,7 +1,7 @@
 import { listMediaQuerySchema, MAX_UPLOAD_BYTES, updateMediaSchema } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
+import { requireActor, requireScope, requireSitePermission } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import { deleteMedia, listMedia, storeUpload, updateMedia } from '../lib/media'
 import { requireSite } from '../lib/site'
@@ -9,12 +9,12 @@ import { validate, validateQuery } from '../lib/validate'
 
 const app = new Hono<AppEnv>()
 
-app.get('/', requireSiteRole('viewer'), requireScope('media:read'), async (c) => {
+app.get('/', requireSitePermission('media:read'), requireScope('media:read'), async (c) => {
   const query = validateQuery(c, listMediaQuerySchema)
   return c.json(await listMedia(c.env, requireSite(c).id, query))
 })
 
-app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
+app.post('/', requireSitePermission('media:create'), requireScope('media:write'), async (c) => {
   const site = requireSite(c)
   const actor = requireActor(c)
   const contentLength = Number(c.req.header('content-length') ?? 0)
@@ -46,15 +46,20 @@ app.post('/', requireSiteRole('editor'), requireScope('media:write'), async (c) 
   return c.json({ data }, 201)
 })
 
-app.patch('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
+app.patch('/:id', requireSitePermission('media:update'), requireScope('media:write'), async (c) => {
   const input = await validate(c, updateMediaSchema)
   const data = await updateMedia(c.env, requireSite(c).id, c.req.param('id'), input)
   return c.json({ data })
 })
 
-app.delete('/:id', requireSiteRole('editor'), requireScope('media:write'), async (c) => {
-  await deleteMedia(c.env, requireSite(c).id, c.req.param('id'))
-  return c.body(null, 204)
-})
+app.delete(
+  '/:id',
+  requireSitePermission('media:delete'),
+  requireScope('media:write'),
+  async (c) => {
+    await deleteMedia(c.env, requireSite(c).id, c.req.param('id'))
+    return c.body(null, 204)
+  },
+)
 
 export default app

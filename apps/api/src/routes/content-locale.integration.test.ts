@@ -58,7 +58,7 @@ const { resolveSite } = await import('../lib/site')
 
 /**
  * The credential a public website holds, presented the way the middleware in `index.ts` sets it —
- * so the delivery API's own `requireSiteRole` and `requireScope` run for real.
+ * so the delivery API's own `requireSitePermission` and `requireScope` run for real.
  *
  * `lib/auth`, `lib/site` and `lib/preview` used to be replaced with stubs here. `mock.module` is
  * process-wide and outlives this file, so those stubs decided how *other* suites resolved a site

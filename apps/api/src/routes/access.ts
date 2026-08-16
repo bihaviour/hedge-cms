@@ -5,9 +5,9 @@ import {
   approvalLevelFor,
   currentSitePermissions,
   currentSiteRole,
-  requireSiteRole,
   requireUserActor,
 } from '../lib/auth'
+import { ApiError } from '../lib/errors'
 import { requireSite } from '../lib/site'
 
 /**
@@ -23,21 +23,28 @@ import { requireSite } from '../lib/site'
  *
  * This is the one place the question is answered, so the review inbox and the entry editor read the
  * same row as the collection settings page. The gating it drives is cosmetic — every route it hides
- * a control for still runs its own `requireSiteRole`.
+ * a control for still runs its own `requireSitePermission`.
+ *
+ * **It carries no permission gate of its own**, which every other site route now does. Asking what
+ * you may do is not one of the things you may do: a role that grants nothing still has to be able
+ * to learn that, or the admin cannot render the empty state it should. Reaching the site at all is
+ * the whole requirement, and that is what a `null` set means.
  */
 const app = new Hono<AppEnv>()
 
-app.get('/', requireSiteRole('viewer'), async (c) => {
+app.get('/', async (c) => {
   const actor = requireUserActor(c)
-  // `requireSiteRole` has already refused a caller with no role here, and a user's site role only
-  // ever comes from a `site_users` grant or from `sites:access_all` resolving to admin — both site
-  // roles. The wider `Role` the resolver is typed with is the instance ordering it shares.
+  const site = requireSite(c)
+  const permissions = await currentSitePermissions(c)
+  if (!permissions) throw ApiError.forbidden(`You do not have access to the "${site.slug}" site`)
+
+  // A user's site role only ever comes from a `site_users` grant or from `sites:access_all`
+  // resolving to admin — both site roles. The wider `Role` the resolver is typed with is the
+  // instance ordering it shares.
   const role = (await currentSiteRole(c)) as SiteRole
-  const approvalLevel = await approvalLevelFor(c.env, actor, requireSite(c).id)
-  // The set, which is what a control should gate on (#151): the slug beside it is a name, and two
-  // roles called the same thing on two deployments no longer mean the same thing. Never null here
-  // for the same reason `role` is not — the middleware above has already refused no-access.
-  const permissions = (await currentSitePermissions(c)) ?? []
+  const approvalLevel = await approvalLevelFor(c.env, actor, site.id)
+  // The set is what a control should gate on (#151): the slug beside it is a name, and two roles
+  // called the same thing on two deployments no longer mean the same thing.
   return c.json({ data: { role, approvalLevel, permissions } })
 })
 

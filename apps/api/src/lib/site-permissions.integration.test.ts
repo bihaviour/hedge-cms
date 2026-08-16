@@ -24,7 +24,7 @@ let db: ReturnType<typeof drizzle>
 const realClient = await import('../db/client')
 mock.module('../db/client', () => ({ ...realClient, getDb: () => db }))
 
-const { sitePermissionsFor, requireSitePermission, requireSiteRole } = await import('./auth')
+const { sitePermissionsFor, requireSitePermission } = await import('./auth')
 const { errorResponse } = await import('./errors')
 const { deleteRole, updateRole } = await import('./roles')
 
@@ -227,7 +227,7 @@ describe('editing a built-in', () => {
 })
 
 describe('the middlewares', () => {
-  function server(actor: Actor, middleware: ReturnType<typeof requireSiteRole>) {
+  function server(actor: Actor, middleware: ReturnType<typeof requireSitePermission>) {
     const app = new Hono<AppEnv>()
     app.use('*', async (c, next) => {
       c.set('actor', actor)
@@ -251,17 +251,16 @@ describe('the middlewares', () => {
     })
   })
 
-  test('requireSiteRole still means what it meant, expressed as a set', async () => {
-    // The dual-run: "at least editor" is "holds everything an editor holds". Nothing moves onto the
-    // permissions until #154, so every route in the suite has to keep answering exactly as it did.
+  test('an editor writes and deletes, and cannot reshape the model', async () => {
+    // What `requireSiteRole('editor')` and `requireSiteRole('admin')` used to separate, now said
+    // one verb at a time. The rank is gone; this is the whole of what replaced it.
     await grant('usr_1', 'editor')
-    expect((await server(person(), requireSiteRole('editor'))).status).toBe(200)
-    expect((await server(person(), requireSiteRole('viewer'))).status).toBe(200)
-    expect((await server(person(), requireSiteRole('admin'))).status).toBe(403)
+    expect((await server(person(), requireSitePermission('entries:delete'))).status).toBe(200)
+    expect((await server(person(), requireSitePermission('collections:create'))).status).toBe(403)
   })
 
   test('and refuses a caller with no access with the message it always did', async () => {
-    const res = await server(person(), requireSiteRole('viewer'))
+    const res = await server(person(), requireSitePermission('entries:read'))
 
     expect(res.status).toBe(403)
     expect(await res.json()).toMatchObject({

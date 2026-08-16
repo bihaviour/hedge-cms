@@ -20,7 +20,7 @@ const actualAuth = await import('../lib/auth')
 
 mock.module('../lib/auth', () => ({
   ...actualAuth,
-  requireSiteRole: () => async (_c: unknown, next: () => Promise<void>) => await next(),
+  requireSitePermission: () => async (_c: unknown, next: () => Promise<void>) => await next(),
   requireScope: () => async (_c: unknown, next: () => Promise<void>) => await next(),
   approvalLevelFor: async () => 2,
 }))

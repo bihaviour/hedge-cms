@@ -30,7 +30,7 @@ import {
   type SiteRow,
 } from '../db/schema'
 import type { AppEnv, Bindings } from '../env'
-import { requireActor, requireScope, requireSiteRole } from '../lib/auth'
+import { requireActor, requireScope, requireSitePermission } from '../lib/auth'
 import { hashPassword } from '../lib/crypto'
 import { ApiError } from '../lib/errors'
 import { newId } from '../lib/id'
@@ -365,7 +365,7 @@ memberAuth.post('/send-verification-email', async (c) => {
 
 const app = new Hono<AppEnv>()
 
-app.get('/', requireSiteRole('editor'), async (c) => {
+app.get('/', requireSitePermission('members:read'), async (c) => {
   const site = requireSite(c)
   const query = validateQuery(
     c,
@@ -420,7 +420,7 @@ app.get('/', requireSiteRole('editor'), async (c) => {
  * An admin never sets that password: the only person who should ever know a member's credential is
  * the member, and an emailed link is also what proves the address is theirs.
  */
-app.post('/', requireSiteRole('admin'), async (c) => {
+app.post('/', requireSitePermission('members:create'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, createMemberSchema)
   const db = getDb(c.env)
@@ -454,7 +454,7 @@ app.post('/', requireSiteRole('admin'), async (c) => {
 })
 
 /** Sends the invite again — the first one bounced, went to spam, or simply expired. */
-app.post('/:id/invite', requireSiteRole('admin'), async (c) => {
+app.post('/:id/invite', requireSitePermission('members:update'), async (c) => {
   const site = requireSite(c)
   const id = c.req.param('id')
 
@@ -474,7 +474,7 @@ app.post('/:id/invite', requireSiteRole('admin'), async (c) => {
   return c.json({ data: { ok: true } })
 })
 
-app.patch('/:id', requireSiteRole('admin'), async (c) => {
+app.patch('/:id', requireSitePermission('members:update'), async (c) => {
   const site = requireSite(c)
   const input = await validate(c, updateMemberSchema)
   const db = getDb(c.env)
@@ -506,7 +506,7 @@ app.patch('/:id', requireSiteRole('admin'), async (c) => {
  * Removes a member from *this* site. The identity itself only goes when nothing is left to belong
  * to — otherwise deleting a reader from the blog would sign them out of the docs site too.
  */
-app.delete('/:id', requireSiteRole('admin'), async (c) => {
+app.delete('/:id', requireSitePermission('members:delete'), async (c) => {
   const site = requireSite(c)
   const db = getDb(c.env)
   const id = c.req.param('id')
@@ -554,8 +554,9 @@ export const memberSessionMint = new Hono<AppEnv>()
  *
  * Two gates, both of which have to hold:
  *
- * - `requireSiteRole('admin')`, which for a key means the scope below (`roleForScopes`), and for a
- *   person means a site admin. Handing out a reader's session is not editorial work.
+ * - `requireSitePermission('members:update')`, which for a key means the scope below
+ *   (`roleForScopes` resolves `members:session` to site admin) and for a person means a role that
+ *   manages members. Handing out a reader's session is not editorial work.
  * - `requireScope('members:session')`, so an authoring key that reaches this prefix for content and
  *   media cannot mint one by virtue of living next door. The prefix decides what is *resolved*; the
  *   route decides what is *allowed*.
@@ -568,7 +569,7 @@ export const memberSessionMint = new Hono<AppEnv>()
  */
 memberSessionMint.post(
   '/',
-  requireSiteRole('admin'),
+  requireSitePermission('members:update'),
   requireScope('members:session'),
   async (c) => {
     const site = requireSite(c)

@@ -75,7 +75,7 @@ describe('the catalog', () => {
 
 describe('the built-in sets, against the route audit', () => {
   test('site admin holds everything', () => {
-    // Every `requireSiteRole('admin' | 'editor' | 'viewer')` route passes for a site admin today.
+    // Every site route passed for a site admin before #154, and every one of them still does.
     expect(sorted(role('admin').permissions.site)).toEqual(sorted(ALL_SITE_PERMISSIONS))
   })
 

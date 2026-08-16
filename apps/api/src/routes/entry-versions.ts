@@ -10,7 +10,7 @@ import {
   approvalLevelFor,
   requireActor,
   requireScope,
-  requireSiteRole,
+  requireSitePermission,
   requireUserActor,
 } from '../lib/auth'
 import {
@@ -46,7 +46,7 @@ const params = (c: { req: { param: (key: string) => string } }) => ({
   slug: c.req.param('slug'),
 })
 
-app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
+app.get('/', requireSitePermission('entries:read'), requireScope('content:read'), async (c) => {
   const query = validateQuery(c, listEntryVersionsQuerySchema)
   const { collection, slug } = params(c)
   const data = await listEntryVersions(
@@ -60,20 +60,25 @@ app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) 
   return c.json({ data })
 })
 
-app.get('/:versionId', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
-  const { collection, slug } = params(c)
-  const data = await getEntryVersion(
-    c.env,
-    requireSite(c),
-    collection,
-    slug,
-    c.req.param('versionId'),
-    c.req.query('locale'),
-  )
-  return c.json({ data })
-})
+app.get(
+  '/:versionId',
+  requireSitePermission('entries:read'),
+  requireScope('content:read'),
+  async (c) => {
+    const { collection, slug } = params(c)
+    const data = await getEntryVersion(
+      c.env,
+      requireSite(c),
+      collection,
+      slug,
+      c.req.param('versionId'),
+      c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
 
-app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
+app.post('/', requireSitePermission('entries:update'), requireScope('content:write'), async (c) => {
   const input = await validate(c, createEntryVersionSchema)
   const { collection, slug } = params(c)
   const data = await createEntryVersion(
@@ -88,37 +93,47 @@ app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c
   return c.json({ data }, 201)
 })
 
-app.patch('/:versionId', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const input = await validate(c, updateEntryVersionSchema)
-  const { collection, slug } = params(c)
-  const data = await updateEntryVersion(
-    c.env,
-    requireSite(c),
-    collection,
-    slug,
-    c.req.param('versionId'),
-    input,
-    c.req.query('locale'),
-  )
-  return c.json({ data })
-})
+app.patch(
+  '/:versionId',
+  requireSitePermission('entries:update'),
+  requireScope('content:write'),
+  async (c) => {
+    const input = await validate(c, updateEntryVersionSchema)
+    const { collection, slug } = params(c)
+    const data = await updateEntryVersion(
+      c.env,
+      requireSite(c),
+      collection,
+      slug,
+      c.req.param('versionId'),
+      input,
+      c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
 
-app.delete('/:versionId', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const { collection, slug } = params(c)
-  const data = await discardEntryVersion(
-    c.env,
-    requireSite(c),
-    collection,
-    slug,
-    c.req.param('versionId'),
-    c.req.query('locale'),
-  )
-  return c.json({ data })
-})
+app.delete(
+  '/:versionId',
+  requireSitePermission('entries:update'),
+  requireScope('content:write'),
+  async (c) => {
+    const { collection, slug } = params(c)
+    const data = await discardEntryVersion(
+      c.env,
+      requireSite(c),
+      collection,
+      slug,
+      c.req.param('versionId'),
+      c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
 
 app.post(
   '/:versionId/submit',
-  requireSiteRole('editor'),
+  requireSitePermission('entries:update'),
   requireScope('content:write'),
   async (c) => {
     const { collection, slug } = params(c)
@@ -144,33 +159,38 @@ for (const [path, decision] of [
   ['/:versionId/approve', 'approved'],
   ['/:versionId/reject', 'rejected'],
 ] as const) {
-  app.post(path, requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-    const { comment } = await validate(c, reviewDecisionSchema)
-    const actor = requireUserActor(c)
-    const site = requireSite(c)
-    const { collection, slug } = params(c)
+  app.post(
+    path,
+    requireSitePermission('entries:update'),
+    requireScope('content:write'),
+    async (c) => {
+      const { comment } = await validate(c, reviewDecisionSchema)
+      const actor = requireUserActor(c)
+      const site = requireSite(c)
+      const { collection, slug } = params(c)
 
-    const data = await decideEntryVersion(
-      c.env,
-      site,
-      collection,
-      slug,
-      c.req.param('versionId'),
-      decision,
-      {
-        userId: actor.id,
-        approverLevel: await approvalLevelFor(c.env, actor, site.id),
-        comment,
-      },
-      c.req.query('locale'),
-    )
-    return c.json({ data })
-  })
+      const data = await decideEntryVersion(
+        c.env,
+        site,
+        collection,
+        slug,
+        c.req.param('versionId'),
+        decision,
+        {
+          userId: actor.id,
+          approverLevel: await approvalLevelFor(c.env, actor, site.id),
+          comment,
+        },
+        c.req.query('locale'),
+      )
+      return c.json({ data })
+    },
+  )
 }
 
 app.post(
   '/:versionId/publish',
-  requireSiteRole('editor'),
+  requireSitePermission('entries:update'),
   requireScope('content:write'),
   async (c) => {
     const actor = requireUserActor(c)

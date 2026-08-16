@@ -1,7 +1,7 @@
 import { reviewQueueQuerySchema } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { approvalLevelFor, requireSiteRole, requireUserActor } from '../lib/auth'
+import { approvalLevelFor, requireSitePermission, requireUserActor } from '../lib/auth'
 import { countReviewQueue, listReviewQueue } from '../lib/entry-versions'
 import { requireSite } from '../lib/site'
 import { validateQuery } from '../lib/validate'
@@ -29,14 +29,14 @@ async function reviewer(c: Parameters<typeof requireUserActor>[0]) {
   return { site, reviewer: { id: actor.id, level: await approvalLevelFor(c.env, actor, site.id) } }
 }
 
-app.get('/queue', requireSiteRole('editor'), async (c) => {
+app.get('/queue', requireSitePermission('entries:read'), async (c) => {
   const query = validateQuery(c, reviewQueueQuerySchema)
   const { site, reviewer: who } = await reviewer(c)
   return c.json(await listReviewQueue(c.env, site, query, who))
 })
 
 /** Just the number, for the sidebar badge. Polls on the admin's existing query cadence. */
-app.get('/queue/count', requireSiteRole('editor'), async (c) => {
+app.get('/queue/count', requireSitePermission('entries:read'), async (c) => {
   const { site, reviewer: who } = await reviewer(c)
   return c.json({ data: { count: await countReviewQueue(c.env, site, who) } })
 })

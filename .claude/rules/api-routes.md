@@ -84,13 +84,18 @@ Auth's catch-all, so shared paths answer in our error format.
 
 ## Authorization — two independent levels
 
-Both live in `lib/auth.ts`:
+Both live in `lib/auth.ts`, and **only one of them is a rank**:
 
-- **Instance** — `users.role` (`owner` > `admin` > `editor` > `viewer`), via `requireRole`. Managing
-  users and sites. Owners and admins reach every site.
-- **Site** — `site_users`, via `requireSiteRole`. For editors and viewers the grant *is* their
-  access; their `users.role` is only the default they were invited with. `currentSiteRole` memoises
-  the lookup per request.
+- **Instance** — a permission set carried by `users.role`, via `requirePermission`. Managing users,
+  sites, email and roles. `sites:access_all` is what makes an owner or admin reach every site.
+- **Site** — a permission set resolved per (user, site), via `requireSitePermission`. For editors
+  and viewers the `site_users` grant *is* their access; their `users.role` is only the default they
+  were invited with. `currentSitePermissions` memoises the lookup per request.
+
+**A site route names the verb it needs, not a role that happens to include it** (#151). Deleting an
+entry and updating one were one power because they were one role, and "may write, may not delete"
+could not be said at all — of a person, an agent, or a machine. `requireSiteRole` and the site-level
+use of `roleAtLeast` are gone; `roleAtLeast` remains for the *instance* ordering only.
 
 `requireScope` layers on top for credentials that carry scopes (API keys, delegated OAuth clients);
 a session actor has none, so the check passes through for people.
@@ -98,13 +103,26 @@ a session actor has none, so the check passes through for people.
 A typical route uses both:
 
 ```ts
-app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
+app.post('/', requireSitePermission('entries:create'), requireScope('content:write'), async (c) => {
   const input = await validate(c, createEntrySchema)
   return c.json({ data: await createEntry(c.env, requireSite(c).id, input) }, 201)
 })
 ```
 
-Never hand-roll a role comparison — `roleAtLeast` from `@hedge/core` is the only ordering.
+Two consequences worth knowing before adding a route:
+
+- **Pick the permission by what the route does, not by who does it today.** The mapping is in the
+  audit table on #151; `entries:read` covers revisions and translations because reading them is
+  reading the entry, and a version's create/update/delete are all `entries:update` because a version
+  is a proposal to change one entry. Approve, reject and publish keep `requireUserActor` and the
+  approval level on top — a permission never buys the right to bless a version (#59).
+- **A mounted `app.use('*', …)` gate cannot express a matrix**, so `api-keys.ts` and
+  `newsletter-templates.ts` lost theirs: reading which keys exist and issuing one are different
+  verbs, and one mount can only ask for the wider of the two.
+
+`GET /api/v1/access` is the one site route with **no** permission gate, deliberately: asking what
+you may do is not one of the things you may do, and a role that grants nothing still has to be able
+to learn that. Reaching the site at all is its whole requirement.
 
 ## Site resolution (`lib/site.ts`)
 

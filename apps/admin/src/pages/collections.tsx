@@ -33,7 +33,7 @@ export function CollectionsPage() {
   const t = useT()
   const [open, setOpen] = useState(false)
   const siteSlug = useActiveSiteSlug()
-  // Creating one is `requireSiteRole('admin')`, like reshaping and deleting one — see
+  // Creating one is `requireSitePermission('collections:create')`, like reshaping and deleting one — see
   // collection-settings.tsx. An editor sees the collections and none of the model-editing controls.
   const canManage = useHasSiteRole('admin')
   const collections = useQuery({
