@@ -46,10 +46,20 @@ handlers therefore carry `requireUserActor` themselves rather than trusting wher
 test pins it. When a route inside an existing prefix needs a narrower credential than the prefix
 grants, say so in the route; do not move the whole prefix.
 
-A key's role comes from its scopes (`roleForScopes` in `lib/delivery-auth.ts`): `collections:write`
-→ `admin`, any other `:write` → `editor`, otherwise `viewer`. `requireRole` — instance level —
-rejects API keys outright whatever that role says, so a key can never gain authority over the
-deployment by way of a route added later.
+**A key may do what its scopes are for, bounded by what its issuer's role delegates to keys**
+(#156, `apiKeyPermissions` in `lib/auth.ts`). The scope half is a fixed mapping in code
+(`roleForScopes` in `lib/delivery-auth.ts`): `collections:write` → `admin`, any other `:write` →
+`editor`, otherwise `viewer`. The issuer half is the `apiKey` column of the role held by
+`api_keys.created_by`, read **live**, so narrowing a role narrows the keys its holders issued with
+nothing to reissue.
+
+**A key with no issuer is bounded by its scopes alone** — the column is `on delete set null` and
+every key predating #151 has none, so unrecorded means ungoverned, the rule `INSTALLED_BY` unset
+already follows. The corollary is worth knowing before it is discovered: deleting a user *widens*
+the keys they issued, back to the bound the deployment ran on until that epic.
+
+`requirePermission` — instance level — rejects API keys outright whatever any of this says, so a key
+can never gain authority over the deployment by way of a route added later.
 
 Then `resolveSite` (an API key is bound to the site it was issued for, so the actor comes first),
 then `resolveMember` for delivery and member routes only, then `resolvePreview` for delivery routes

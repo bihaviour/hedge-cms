@@ -63,7 +63,10 @@ const EMPTY_MATRIX: RolePermissions = { site: [], mcp: [], apiKey: [] }
  */
 export function matrixForSlug(row: RoleRow | undefined, slug: string): RolePermissions {
   if (row) return toMatrix(row)
-  return builtinSiteRole(slug) ?? EMPTY_MATRIX
+  // `builtinRole` rather than `builtinSiteRole`, so this answers for `owner` too — an instance role
+  // with no site row of its own, which resolves to the full matrix. Without it, every key issued by
+  // an owner would be bounded by an empty delegation.
+  return builtinRole(slug)?.sitePermissions ?? builtinSiteRole(slug) ?? EMPTY_MATRIX
 }
 
 function toRole(row: RoleRow): RoleDefinition {

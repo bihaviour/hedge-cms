@@ -6,7 +6,7 @@ import { ALL_SITE_PERMISSIONS, builtinSiteRole } from '@hedge/core'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { Hono } from 'hono'
-import { roles, type SiteRow, siteUsers } from '../db/schema'
+import { roles, type SiteRow, siteUsers, users } from '../db/schema'
 import type { Actor, AppEnv } from '../env'
 
 /**
@@ -161,7 +161,7 @@ describe('resolving a set', () => {
     expect(await sitePermissionsFor(env, reachesEverySite, 'site_2')).toEqual(ALL_SITE_PERMISSIONS)
   })
 
-  test('a key carries its role’s matrix, on its own site and no other', async () => {
+  test('a key with no issuer carries what its scopes are for, on its own site and no other', async () => {
     expect(await sitePermissionsFor(env, authoringKey, 'site_1')).toEqual(
       builtinSiteRole('editor')!.site,
     )
@@ -179,6 +179,79 @@ describe('resolving a set', () => {
     // …and narrowing what is delegated leaves the person themselves untouched, which is the whole
     // point of there being three columns rather than one.
     expect(await sitePermissionsFor(env, person(), 'site_1')).toContain('entries:delete')
+  })
+})
+
+describe('a key is bounded by whoever issued it (#156)', () => {
+  /** The issuer, and a key they created — the two halves `api_keys.created_by` ties together. */
+  async function issuer(role: string) {
+    await db.insert(users).values({
+      id: 'usr_issuer',
+      email: 'issuer@example.com',
+      name: 'Issuer',
+      role,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    return { ...authoringKey, issuerId: 'usr_issuer' }
+  }
+
+  test('a role that withholds the delete from keys withholds it from their keys', async () => {
+    // The key's scopes say `content:write`, which has always meant "an editor" — and the editor
+    // role, edited to delegate everything but the delete, is what the key now inherits.
+    const key = await issuer('editor')
+    await db
+      .update(roles)
+      .set({
+        apiKeyPermissions: builtinSiteRole('editor')!.site.filter((p) => p !== 'entries:delete'),
+      })
+      .where(eq(roles.slug, 'editor'))
+
+    const permissions = await sitePermissionsFor(env, key, 'site_1')
+
+    expect(permissions).toContain('entries:update')
+    expect(permissions).not.toContain('entries:delete')
+  })
+
+  test('and cannot widen one past its scopes', async () => {
+    // The intersection runs both ways. A site admin issuing a read-only key does not hand it their
+    // own authority — `content:read` is the delivery credential whoever created it.
+    const key = { ...(await issuer('admin')), role: 'viewer', scopes: ['content:read'] }
+
+    expect(await sitePermissionsFor(env, key, 'site_1')).toEqual(builtinSiteRole('viewer')!.site)
+  })
+
+  test('an owner issues a key that works, with no site row of their own', async () => {
+    // `owner` is an instance role and has no seeded matrix row. Reading nothing there would leave
+    // every key issued by the person most likely to issue one bounded by an empty delegation.
+    const key = await issuer('owner')
+
+    expect(await sitePermissionsFor(env, key, 'site_1')).toEqual(builtinSiteRole('editor')!.site)
+  })
+
+  test('a key with no issuer keeps behaving exactly as it did', async () => {
+    // `created_by` is `on delete set null`, and every key issued before this epic has none.
+    // Unrecorded means ungoverned; a default of "nothing" would break every live integration.
+    expect(await sitePermissionsFor(env, authoringKey, 'site_1')).toEqual(
+      builtinSiteRole('editor')!.site,
+    )
+  })
+
+  test('deleting the issuer widens their keys back to their scopes, and no further', async () => {
+    // Worth stating rather than discovering: the row is nulled by the foreign key, so the key falls
+    // back to the bound the deployment ran on for its whole life. It is a widening, and it is the
+    // same widening as "this key was issued before #156".
+    const key = await issuer('editor')
+    await db
+      .update(roles)
+      .set({ apiKeyPermissions: ['entries:read'] })
+      .where(eq(roles.slug, 'editor'))
+    expect(await sitePermissionsFor(env, key, 'site_1')).toEqual(['entries:read'])
+
+    await db.delete(users).where(eq(users.id, 'usr_issuer'))
+    expect(await sitePermissionsFor(env, { ...key, issuerId: null }, 'site_1')).toEqual(
+      builtinSiteRole('editor')!.site,
+    )
   })
 })
 
