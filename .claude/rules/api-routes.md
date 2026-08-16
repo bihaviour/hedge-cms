@@ -153,6 +153,17 @@ code to forget a deleted site.
 - Shared request/response shapes belong in `packages/core`, so the Worker and the admin agree by
   construction. Don't redeclare a type in `apps/api`.
 
+**`app.onError` recognises only `ApiError`, so a route that calls Better Auth must translate what it
+throws** (#131). `auth.api.*` raises its own `APIError`, which is not one of ours and therefore
+became `500 internal_error` — including for a reset link that had merely expired, which left a
+website unable to tell "ask for a new link" from "the CMS is down". `authApiError` in
+`auth/errors.ts` is the translation, and it shares one status table with the `forwardToAuth` facade
+so both doors answer alike. Keep the status Better Auth chose rather than collapsing to a 400: a
+`429` a caller can back off from and a dead token are not the same news. Anything that is not an
+`APIError` is a real crash and stays a 500 — the member routes' `.catch(() => null)` shortcut is
+fine where the only possible failure is the credential (`signIn`, `magicLinkVerify`) and wrong
+anywhere the caller has to tell the two apart.
+
 ## Pagination
 
 Keyset, not offset: the cursor is the last row's sort value, and ids are timestamp-prefixed
