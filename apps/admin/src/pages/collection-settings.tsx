@@ -38,7 +38,7 @@ export function CollectionSettingsPage() {
   const siteSlug = useActiveSiteSlug()
 
   // Editing the content model is site-admin work — `POST`, `PATCH` and `DELETE` on a collection all
-  // carry `requireSiteRole('admin')`. An editor may fill this collection but not reshape or delete
+  // carry `requireSitePermission('collections:update')`. An editor may fill this collection but not reshape or delete
   // it, so they are shown the fields rather than a button whose only answer is a 403 toast. The
   // server check is what makes it true; this only keeps the UI from lying about it.
   const canManage = useHasSiteRole('admin')

@@ -23,7 +23,6 @@ let siteRole: 'admin' | 'editor' | 'viewer' = 'viewer'
 
 mock.module('../lib/auth', () => ({
   ...actualAuth,
-  requireSiteRole: () => async (_c: unknown, next: () => Promise<void>) => await next(),
   currentSiteRole: async () => siteRole,
   currentSitePermissions: async () => builtinSiteRole(siteRole)?.site ?? [],
   approvalLevelFor: async (_env: unknown, actor: Actor) =>

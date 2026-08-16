@@ -17,7 +17,7 @@ import { z } from 'zod'
 import { getDb } from '../db/client'
 import { collections, entries, media } from '../db/schema'
 import type { AppEnv, Bindings } from '../env'
-import { requireScope, requireSiteRole } from '../lib/auth'
+import { requireScope, requireSitePermission } from '../lib/auth'
 import {
   cursorCondition,
   decodeCursor,
@@ -290,7 +290,7 @@ async function resolvePageMedia(
 }
 
 // A user browsing the delivery API still needs to be able to see the site it belongs to.
-app.use('*', requireSiteRole('viewer'))
+app.use('*', requireSitePermission('entries:read'))
 app.use('*', requireScope('content:read'))
 
 app.get('/:collection', async (c) => {

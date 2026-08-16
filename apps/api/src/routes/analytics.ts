@@ -14,7 +14,7 @@ import {
   shareStats,
   timeseries,
 } from '../lib/analytics-report'
-import { requireSiteRole } from '../lib/auth'
+import { requireSitePermission } from '../lib/auth'
 import { findCollection } from '../lib/collections'
 import { newsletterAnalytics, newsletterDelivery } from '../lib/newsletter-stats'
 import { requireSite } from '../lib/site'
@@ -33,7 +33,7 @@ import { validateQuery } from '../lib/validate'
  */
 const app = new Hono<AppEnv>()
 
-app.use('*', requireSiteRole('viewer'))
+app.use('*', requireSitePermission('analytics:read'))
 
 app.use('*', async (c, next) => {
   await next()

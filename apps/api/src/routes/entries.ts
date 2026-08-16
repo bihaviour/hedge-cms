@@ -7,7 +7,7 @@ import {
 } from '@hedge/core'
 import { Hono } from 'hono'
 import type { Actor, AppEnv } from '../env'
-import { requireActor, requireScope, requireSiteRole, requireUserActor } from '../lib/auth'
+import { requireActor, requireScope, requireSitePermission, requireUserActor } from '../lib/auth'
 import {
   attachTranslation,
   createEntry,
@@ -30,7 +30,7 @@ const app = new Hono<AppEnv>()
 /** Only a person is recorded as an author; a key or a delegated client leaves the column null. */
 const authorId = (actor: Actor) => (actor.kind === 'user' ? actor.id : null)
 
-app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
+app.get('/', requireSitePermission('entries:read'), requireScope('content:read'), async (c) => {
   const query = validateQuery(c, listEntriesQuerySchema)
   const page = await listEntries(
     c.env,
@@ -42,18 +42,23 @@ app.get('/', requireSiteRole('viewer'), requireScope('content:read'), async (c) 
   return c.json(page)
 })
 
-app.get('/:slug', requireSiteRole('viewer'), requireScope('content:read'), async (c) => {
-  const data = await getEntry(
-    c.env,
-    requireSite(c),
-    c.req.param('collection')!,
-    c.req.param('slug'),
-    c.req.query('locale'),
-  )
-  return c.json({ data })
-})
+app.get(
+  '/:slug',
+  requireSitePermission('entries:read'),
+  requireScope('content:read'),
+  async (c) => {
+    const data = await getEntry(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+      c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
 
-app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
+app.post('/', requireSitePermission('entries:create'), requireScope('content:write'), async (c) => {
   const input = await validate(c, createEntrySchema)
   const data = await createEntry(
     c.env,
@@ -65,45 +70,60 @@ app.post('/', requireSiteRole('editor'), requireScope('content:write'), async (c
   return c.json({ data }, 201)
 })
 
-app.patch('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  const input = await validate(c, updateEntrySchema)
-  const data = await updateEntry(
-    c.env,
-    requireSite(c),
-    c.req.param('collection')!,
-    c.req.param('slug'),
-    input,
-    authorId(requireActor(c)),
-    c.req.query('locale'),
-  )
-  return c.json({ data })
-})
+app.patch(
+  '/:slug',
+  requireSitePermission('entries:update'),
+  requireScope('content:write'),
+  async (c) => {
+    const input = await validate(c, updateEntrySchema)
+    const data = await updateEntry(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+      input,
+      authorId(requireActor(c)),
+      c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
 
-app.delete('/:slug', requireSiteRole('editor'), requireScope('content:write'), async (c) => {
-  await deleteEntry(
-    c.env,
-    requireSite(c),
-    c.req.param('collection')!,
-    c.req.param('slug'),
-    c.req.query('locale'),
-  )
-  return c.body(null, 204)
-})
+app.delete(
+  '/:slug',
+  requireSitePermission('entries:delete'),
+  requireScope('content:write'),
+  async (c) => {
+    await deleteEntry(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+      c.req.query('locale'),
+    )
+    return c.body(null, 204)
+  },
+)
 
-app.get('/:slug/revisions', requireSiteRole('editor'), requireScope('content:read'), async (c) => {
-  const data = await listEntryRevisions(
-    c.env,
-    requireSite(c),
-    c.req.param('collection')!,
-    c.req.param('slug'),
-    c.req.query('locale'),
-  )
-  return c.json({ data })
-})
+app.get(
+  '/:slug/revisions',
+  requireSitePermission('entries:read'),
+  requireScope('content:read'),
+  async (c) => {
+    const data = await listEntryRevisions(
+      c.env,
+      requireSite(c),
+      c.req.param('collection')!,
+      c.req.param('slug'),
+      c.req.query('locale'),
+    )
+    return c.json({ data })
+  },
+)
 
 app.post(
   '/:slug/revisions/:revisionId/restore',
-  requireSiteRole('editor'),
+  requireSitePermission('entries:update'),
   requireScope('content:write'),
   async (c) => {
     const data = await restoreEntryRevision(
@@ -130,7 +150,7 @@ app.post(
  */
 app.get(
   '/:slug/translations',
-  requireSiteRole('viewer'),
+  requireSitePermission('entries:read'),
   requireScope('content:read'),
   async (c) => {
     // No `?locale=`: a slug names one post whichever language it is written in, and the admin asks
@@ -147,7 +167,7 @@ app.get(
 
 app.post(
   '/:slug/translations',
-  requireSiteRole('editor'),
+  requireSitePermission('entries:update'),
   requireScope('content:write'),
   async (c) => {
     const input = await validate(c, attachTranslationSchema)
@@ -170,7 +190,7 @@ app.post(
  */
 app.delete(
   '/:slug/translations/:locale',
-  requireSiteRole('editor'),
+  requireSitePermission('entries:update'),
   requireScope('content:write'),
   async (c) => {
     const data = await detachTranslation(
@@ -205,7 +225,7 @@ app.route('/:slug/versions', entryVersions)
  * environment variables, or an MCP client acting on someone's behalf, must not be able to
  * manufacture one.
  */
-app.post('/:slug/preview-token', requireSiteRole('viewer'), async (c) => {
+app.post('/:slug/preview-token', requireSitePermission('entries:read'), async (c) => {
   const actor = requireUserActor(c)
   const input = await validate(c, createPreviewTokenSchema)
   const data = await mintPreviewToken(

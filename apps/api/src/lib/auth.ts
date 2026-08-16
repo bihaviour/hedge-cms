@@ -1,7 +1,6 @@
 import {
   ALL_SITE_PERMISSIONS,
   approvalLevelForSiteRole,
-  builtinSiteRole,
   hasSitePermission,
   type InstancePermission,
   type Role,
@@ -73,8 +72,8 @@ export function requireUserActor(c: Context<AppEnv>): Actor {
 
 /**
  * Instance-level authorisation: managing users, sites, email and the roles themselves. Use
- * `requireSiteRole` for anything that belongs to one site — passing this alone would let a site
- * admin invite users.
+ * `requireSitePermission` for anything that belongs to one site — passing this alone would let a
+ * site admin invite users.
  *
  * The check is set membership against the caller's role permissions, not a rank: a role carries
  * exactly the powers it was defined with. An API key never satisfies this, whatever its scopes
@@ -214,31 +213,9 @@ export function requireSitePermission(permission: SitePermission): MiddlewareHan
   }
 }
 
-/**
- * The rank, expressed as a set — a shim, and a deliberately temporary one (#153).
- *
- * "At least editor" becomes "holds everything an editor holds", which is exactly what the ordering
- * meant: `admin`'s set is a superset of `editor`'s and `viewer`'s is not. Routes move onto
- * `requireSitePermission` one at a time in #154 and this goes with the last of them.
- *
- * The bar is the **code** definition of the minimum role rather than its seeded row, on purpose.
- * This stage stores the matrix and changes no behaviour; a check that read an edited row would make
- * an operator's edit take effect through the one path that is supposed to be inert until #154.
- */
-export function requireSiteRole(minimum: Role): MiddlewareHandler<AppEnv> {
-  return async (c, next) => {
-    const site = requireSite(c)
-    const permissions = await currentSitePermissions(c)
-
-    if (!permissions) throw ApiError.forbidden(`You do not have access to the "${site.slug}" site`)
-
-    const bar = builtinSiteRole(minimum)?.site ?? ALL_SITE_PERMISSIONS
-    if (!bar.every((permission) => hasSitePermission(permissions, permission))) {
-      throw ApiError.forbidden(`Requires ${minimum} access to the "${site.slug}" site`)
-    }
-    await next()
-  }
-}
+// `requireSiteRole` was here, and #154 removed it: every site route names the verb it needs, so
+// there is nothing left for a rank to answer. `roleAtLeast` survives for the *instance* ordering,
+// which is still an ordering — `owner > admin > editor > viewer` is about a deployment, not a site.
 
 /**
  * What this caller may approve on one site — 0 for nothing, 1 or 2 for the levels an entry version
