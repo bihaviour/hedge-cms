@@ -287,6 +287,16 @@ export const api = {
         `/auth/oauth/pending?client_id=${encodeURIComponent(clientId)}`,
       ),
     oauthClients: () => request<AuthorizedClient[]>('/auth/oauth/clients'),
+    /**
+     * Takes deletes away from a client without ending its access (#149). One-way by construction —
+     * there is no argument, because the route refuses `true`: granting deletes back is a fresh
+     * consent, not a field.
+     */
+    narrowOauthClient: (clientId: string) =>
+      request<void>(`/auth/oauth/clients/${encodeURIComponent(clientId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ destructive: false }),
+      }),
     revokeOauthClient: (clientId: string) =>
       request<void>(`/auth/oauth/clients/${encodeURIComponent(clientId)}`, { method: 'DELETE' }),
   },

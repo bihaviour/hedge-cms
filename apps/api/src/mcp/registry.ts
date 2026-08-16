@@ -169,8 +169,9 @@ function authorize(definition: ToolDefinition, ctx: McpContext, granted: Set<str
   }
 
   // Checked after the scope and before either role, because it is the operator's own decision about
-  // this client rather than anything the client presented — and unlike a role it cannot change
-  // between two calls on one token without the operator revisiting the consent.
+  // this client rather than anything the client presented. It is read per request, so an operator
+  // taking deletes away (#149) lands on the client's very next call — but only in that direction:
+  // widening is still a fresh consent, so a tool refused here is refused for the rest of this one.
   if (!ctx.destructive && isDestructive(definition)) {
     throw new McpToolError(
       `"${definition.name}" deletes or overwrites, and you did not allow this client to do that. ` +
@@ -224,10 +225,13 @@ export function buildTools(
     description: definition.description,
     inputSchema: inputSchema(definition.args),
     ...(definition.annotations ? { annotations: definition.annotations } : {}),
-    // Hidden on the same grounds a missing scope hides a tool: both are fixed for the life of the
-    // consent, so advertising one the client can never use only invites it to try. Calling it
-    // anyway still reports the real reason — `hidden` keeps a tool out of `tools/list`, not out of
-    // dispatch — which an operator can act on, unlike "unknown tool".
+    // Hidden on the same grounds a missing scope hides a tool: neither can come back within this
+    // consent, so advertising one the client can never use only invites it to try. A grant can be
+    // narrowed mid-consent (#149) and that only ever removes tools — it never un-hides one, so the
+    // list stays a shrinking answer rather than one that flips. Calling a hidden tool anyway still
+    // reports the real reason — `hidden` keeps a tool out of `tools/list`, not out of dispatch —
+    // which an operator can act on, unlike "unknown tool". `tools.listChanged` is advertised false
+    // and a client re-lists on connect, so a long-lived session keeps offering what now refuses.
     hidden:
       !granted.has(definition.access.scope) || (!ctx.destructive && isDestructive(definition)),
     handler: async (args: Record<string, unknown>) => {
