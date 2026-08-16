@@ -41,6 +41,11 @@ export async function destructiveGrantFor(
  * a failure here means no token is ever issued. Approving first and recording second would leave a
  * window in which a live token exists with no narrowing behind it — and since a missing row means
  * granted, that window would default to the widest answer.
+ *
+ * The account page writes here too, later and one-way (#149): `destructiveGrantFor` runs per
+ * request, so a `false` written now is obeyed by the client's next call with nothing reissued. The
+ * route is what refuses to write a `true` after the fact — this function takes the value it is
+ * given, because re-approving a client through consent legitimately writes one.
  */
 export async function setDestructiveGrant(
   env: Bindings,

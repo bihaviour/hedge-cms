@@ -523,10 +523,28 @@ describe('POST /mcp', () => {
       expect(uploaded).toHaveLength(0)
     })
 
+    test('is read per request, so narrowing lands on the next call (#149)', async () => {
+      // What makes taking deletes away from Settings → Account possible at all: the grant is looked
+      // up on every request rather than baked into the token at consent. One token, two calls, and
+      // the second obeys a decision made after the first — nothing reissued, nothing propagated.
+      reset()
+      deleted.length = 0
+
+      const before = await call('delete_entry', { collection: 'posts', slug: 'hello' })
+      expect(before.json.result.isError).toBeUndefined()
+      expect(deleted).toHaveLength(1)
+
+      destructiveGrant = false
+
+      const after = await call('delete_entry', { collection: 'posts', slug: 'goodbye' })
+      expect(after.json.result.isError).toBe(true)
+      expect(deleted).toHaveLength(1)
+    })
+
     test('is checked before the role, so the reason names the grant', async () => {
       // A viewer with no grant fails both checks. The grant is the operator's own decision about
-      // this client and cannot change between two calls on one token, so it is the more useful
-      // thing to report.
+      // this client rather than anything the client presented, so it is the more useful thing to
+      // report.
       reset()
       destructiveGrant = false
       siteRole = 'viewer'

@@ -229,8 +229,24 @@ operator allowed *this client* to delete and overwrite. Four things about it are
   would leave a window holding a live token with no narrowing behind it — and since unrecorded means
   granted, that window defaults to the widest answer. Don't reorder them.
 
-A declined grant *hides* the covered tools, on the same grounds a missing scope does: both are fixed
-for the life of the consent. Calling one anyway still reports the real reason.
+A declined grant *hides* the covered tools, on the same grounds a missing scope does: neither can
+come back within this consent. Calling one anyway still reports the real reason.
+
+**The grant can be narrowed afterwards, and only narrowed** (#149).
+`PATCH /api/v1/auth/oauth/clients/:clientId` `{destructive: false}` takes deletes away from a
+connected client without ending its access; the same route refuses `true` with a 400 saying to
+revoke and approve again. The asymmetry is the whole of it: `destructiveGrantFor` runs on **every**
+MCP request rather than at token issue, so narrowing lands on the client's next call with no token
+to reissue and nothing to propagate — an operator withdrawing a power they granted is revoking, only
+smaller. Widening is equally immediate, which is exactly why it is refused: a token issued under "no
+deletes" would silently gain them and the approval on record would stop describing it.
+
+Two consequences worth keeping in step. The route is `requireUserActor` and scoped to the acting
+user's own grant — a grant is per (user, client) — and it 404s on a client that user holds no token
+for, so it can never write a row for an invented client id. And the client is told nothing:
+`tools.listChanged` is advertised false and a client re-lists on connect, so a session already open
+keeps offering tools that now refuse. That is why Settings → Account confirms with a sentence about
+it rather than letting an operator discover it.
 
 Neither implies the other and the narrower wins, which is what makes the surface differ per user
 without any per-user configuration: the same client approved by an editor and by an owner can do

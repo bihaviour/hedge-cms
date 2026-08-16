@@ -1,4 +1,4 @@
-import { TRUSTED_DEVICE_TTL_DAYS } from '@hedge/core'
+import { type AuthorizedClient, TRUSTED_DEVICE_TTL_DAYS } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -347,11 +347,21 @@ function AuthorizedClients() {
   const { formatDateTime } = useFormatters()
   const queryClient = useQueryClient()
   const clients = useQuery({ queryKey: ['oauth-clients'], queryFn: api.auth.oauthClients })
+  const [narrowing, setNarrowing] = useState<AuthorizedClient | null>(null)
 
   const revoke = useMutation({
     mutationFn: api.auth.revokeOauthClient,
     onSuccess: () => {
       toast.success('Access revoked')
+      queryClient.invalidateQueries({ queryKey: ['oauth-clients'] })
+    },
+  })
+
+  const narrow = useMutation({
+    mutationFn: api.auth.narrowOauthClient,
+    onSuccess: () => {
+      toast.success('This client can no longer delete')
+      setNarrowing(null)
       queryClient.invalidateQueries({ queryKey: ['oauth-clients'] })
     },
   })
@@ -382,11 +392,10 @@ function AuthorizedClients() {
                 <TableRow key={client.clientId}>
                   <TableCell>{client.name}</TableCell>
                   <TableCell>{formatDateTime(client.authorizedAt)}</TableCell>
-                  {/*
-                    Read-only, and deliberately so: narrowing an existing consent would mean
-                    editing what a live token may do, and the honest way to change your mind is to
-                    revoke and approve again — which is one click away in the next column.
-                  */}
+                  {/* "Yes" covers both "allowed" and "never asked" — every consent given before the
+                      grant existed has no row and reads as granted, which is true of what the client
+                      may do and is the only thing this column claims. Not a bug, and not worth a
+                      third state on a screen whose failure mode is being skimmed. */}
                   <TableCell>
                     {client.destructive ? (
                       <span className="text-muted-foreground">Yes</span>
@@ -394,7 +403,19 @@ function AuthorizedClients() {
                       <Badge variant="secondary">No</Badge>
                     )}
                   </TableCell>
+                  {/*
+                    Narrowing is offered, widening is not (#149). The grant is read on every MCP
+                    request, so taking deletes away lands on the client's next call and costs it
+                    nothing else — but handing them back would give a token a power the approval on
+                    record never described, so that stays a trip through consent: Revoke, approve
+                    again. A row already saying "No" therefore has one button, not two.
+                  */}
                   <TableCell className="text-right">
+                    {client.destructive && (
+                      <Button variant="ghost" size="sm" onClick={() => setNarrowing(client)}>
+                        Stop deletes
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -410,6 +431,38 @@ function AuthorizedClients() {
           </Table>
         )}
       </CardContent>
+
+      {/* The dialog's job is to stop this reading as "disconnect": what it removes is narrow, what
+          it leaves is everything else, and it cannot be undone from here. The listing caveat is in
+          it because it is the one rough edge — `tools.listChanged` is advertised false, so a client
+          already connected keeps offering the tools until it re-lists, and calling one then refuses
+          rather than deletes. */}
+      <Dialog open={narrowing !== null} onOpenChange={() => setNarrowing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stop {narrowing?.name} deleting?</DialogTitle>
+            <DialogDescription>
+              It stays connected and keeps working — reading, creating and editing as it does now.
+              It loses only the tools that delete or overwrite, from its next request onwards. A
+              session it already has open may keep offering them until it reconnects; calling one
+              then refuses and says why. Granting deletes back means revoking it and approving it
+              again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNarrowing(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={narrow.isPending}
+              onClick={() => narrowing && narrow.mutate(narrowing.clientId)}
+            >
+              Stop deletes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

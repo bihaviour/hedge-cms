@@ -535,6 +535,47 @@ app.get('/oauth/clients', async (c) => {
 })
 
 /**
+ * Takes deletes away from a client that keeps working otherwise (#149).
+ *
+ * **One-way, and that is the whole design.** The grant is read per request — `destructiveGrantFor`
+ * runs at the MCP endpoint, not at token issue — so the two directions are different problems.
+ * Narrowing lands on the client's next call with no token to reissue and nothing to propagate, and
+ * an operator withdrawing a power they granted is the same act as revoking, only smaller. Widening
+ * is also immediate, which is exactly why it is refused here: a token issued under "no deletes"
+ * would silently gain them, and the approval on record would stop describing what it may do. That
+ * path stays revoke-and-approve-again, which is a consent screen somebody reads.
+ *
+ * Scoped to the acting user's own grant, like the revoke below: a grant is per (user, client), so
+ * one operator must never narrow another's.
+ */
+app.patch('/oauth/clients/:clientId', async (c) => {
+  const actor = requireUserActor(c)
+  const clientId = c.req.param('clientId')
+  const input = await validate(c, z.object({ destructive: z.boolean() }))
+
+  if (input.destructive) {
+    throw ApiError.badRequest(
+      'Granting deletes back is a fresh approval: revoke the client and authorize it again.',
+    )
+  }
+
+  // A client this user never approved has no grant to narrow — and without the check, any signed-in
+  // operator could fill the table with rows for client ids they invented. The same query the
+  // listing is built from, so the control can only be offered for a row that passes it.
+  const [held] = await getDb(c.env)
+    .select({ id: oauthAccessTokens.id })
+    .from(oauthAccessTokens)
+    .where(and(eq(oauthAccessTokens.userId, actor.id), eq(oauthAccessTokens.clientId, clientId)))
+    .limit(1)
+
+  if (!held) throw ApiError.notFound('OAuth client')
+
+  await setDestructiveGrant(c.env, actor.id, clientId, false)
+
+  return c.body(null, 204)
+})
+
+/**
  * Ends a client's access: its tokens go, and so does the consent behind them — otherwise the next
  * authorization request would be approved silently on the strength of the old one.
  */
