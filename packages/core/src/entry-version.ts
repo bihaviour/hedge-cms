@@ -5,6 +5,7 @@ import { type Role, roleAtLeast } from './auth'
 import { approvalLevelsSchema } from './collection'
 import { entryMetadataSchema } from './entry'
 import { localeCodeSchema } from './i18n'
+import { SITE_ROLES } from './site'
 
 /**
  * An entry **version** is a proposed future state of one entry — `data` plus `metadata`, authored by
@@ -57,6 +58,22 @@ export function approvalLevelForSiteRole(role: Role): number {
   if (roleAtLeast(role, 'admin')) return 2
   if (roleAtLeast(role, 'editor')) return 1
   return 0
+}
+
+/**
+ * The same, for a grant that may name a **custom** site role (#151).
+ *
+ * A role a deployment defined is not on the `admin > editor > viewer` ladder, so there is nothing to
+ * derive a default from — and approval is the one site power that is a *level* rather than a verb,
+ * deliberately (#59). It answers 0: a custom role approves nothing until somebody sets
+ * `site_users.approvalLevel` on the grant and says so. Guessing upwards from a permission set would
+ * be inventing approval authority out of "may edit entries", which is exactly the conflation the
+ * workflow exists to prevent.
+ */
+export function approvalLevelForSlug(slug: string): number {
+  return (SITE_ROLES as readonly string[]).includes(slug)
+    ? approvalLevelForSiteRole(slug as Role)
+    : 0
 }
 
 /**

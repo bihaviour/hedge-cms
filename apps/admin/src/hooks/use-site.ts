@@ -1,4 +1,4 @@
-import { roleAtLeast, type Site, type SiteRole } from '@hedge/core'
+import { hasSitePermission, type Site, type SitePermission } from '@hedge/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useSyncExternalStore } from 'react'
 import { getActiveSite, setActiveSite, subscribeToActiveSite } from '@/lib/active-site'
@@ -58,13 +58,17 @@ export function useSiteAuthority() {
 }
 
 /**
- * Whether the person holds at least `minimum` on the active site. False while the answer is still
- * loading — a control that appears once authority resolves is better than one that appears for
- * everybody and then disappears for some.
+ * Whether the person may do one thing on the active site. False while the answer is still loading —
+ * a control that appears once authority resolves is better than one that appears for everybody and
+ * then disappears for some.
+ *
+ * **Gate on the permission, never on the role slug** (#151). A deployment defines its own roles and
+ * edits the built-in ones, so "is this person an admin here" stopped being a question with a fixed
+ * meaning; "may they delete an entry" did not. The server answers the same question the same way.
  */
-export function useHasSiteRole(minimum: SiteRole): boolean {
+export function useSitePermission(permission: SitePermission): boolean {
   const authority = useSiteAuthority()
-  return authority.data ? roleAtLeast(authority.data.role, minimum) : false
+  return authority.data ? hasSitePermission(authority.data.permissions, permission) : false
 }
 
 /** Switching site invalidates everything — all content queries are scoped to one tenant. */

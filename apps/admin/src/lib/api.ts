@@ -57,7 +57,6 @@ import type {
   Site,
   SiteAccess,
   SiteAuthority,
-  SiteRole,
   Subscriber,
   SystemUpdateInput,
   SystemUpdateResult,
@@ -347,7 +346,7 @@ export const api = {
      * `approvalLevel` omitted leaves whatever is stored alone, so changing the role does not
      * silently reset the approval authority; `null` clears the override back to the role's default.
      */
-    grantSite: (id: string, siteId: string, role: SiteRole, approvalLevel?: number | null) =>
+    grantSite: (id: string, siteId: string, role: string, approvalLevel?: number | null) =>
       request<SiteAccess>(`/users/${id}/sites/${siteId}`, {
         method: 'PUT',
         ...json({ role, ...(approvalLevel === undefined ? {} : { approvalLevel }) }),

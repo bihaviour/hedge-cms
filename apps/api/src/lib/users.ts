@@ -1,10 +1,4 @@
-import {
-  approvalLevelForSiteRole,
-  type InviteUserInput,
-  type SiteAccess,
-  type SiteRole,
-  type User,
-} from '@hedge/core'
+import { approvalLevelForSlug, type InviteUserInput, type SiteAccess, type User } from '@hedge/core'
 import { and, asc, eq } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { accounts, sites, siteUsers, type UserRow, users } from '../db/schema'
@@ -157,12 +151,9 @@ export async function listUserSites(env: Bindings, userId: string): Promise<Site
 
   // The effective level is resolved here rather than in the admin, so one rule decides it — the
   // same one `approvalLevelFor` applies when a decision is actually made.
-  // `site_users.role` is a plain slug since #151, and this shape still reports one of the three.
-  // Nothing assigns a custom site role yet; #157 is where this stops being a cast.
   return rows.map((row) => ({
     ...row,
-    role: row.role as SiteRole,
-    effectiveApprovalLevel: row.approvalLevel ?? approvalLevelForSiteRole(row.role as SiteRole),
+    effectiveApprovalLevel: row.approvalLevel ?? approvalLevelForSlug(row.role),
   }))
 }
 
@@ -170,7 +161,7 @@ export async function setUserSiteRole(
   env: Bindings,
   userId: string,
   siteId: string,
-  role: SiteRole,
+  role: string,
   approvalLevel?: number | null,
 ): Promise<SiteAccess> {
   const db = getDb(env)
@@ -179,6 +170,13 @@ export async function setUserSiteRole(
 
   const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1)
   if (!site) throw ApiError.notFound('Site')
+
+  // A grant names a role by slug since #151, so the slug has to exist — an assignment to a role
+  // nobody defined resolves to no permissions at all, which reads as a broken account rather than
+  // as a typo. `owner` is refused here for the same reason it is not in `SITE_ROLES`: it is an
+  // instance role, and granting it *per site* would be a second way of saying `sites:access_all`.
+  const definition = await getRole(env, role)
+  if (!definition || role === 'owner') throw ApiError.badRequest(`"${role}" is not a site role`)
 
   if ((await permissionsForRole(env, user.role)).includes('sites:access_all')) {
     throw ApiError.badRequest(`${user.name}'s role already reaches every site`)
@@ -203,7 +201,7 @@ export async function setUserSiteRole(
     siteName: site.name,
     role,
     approvalLevel: row?.approvalLevel ?? null,
-    effectiveApprovalLevel: row?.approvalLevel ?? approvalLevelForSiteRole(role),
+    effectiveApprovalLevel: row?.approvalLevel ?? approvalLevelForSlug(role),
   }
 }
 

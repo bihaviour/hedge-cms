@@ -6,7 +6,7 @@ import { ALL_SITE_PERMISSIONS, builtinSiteRole } from '@hedge/core'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { Hono } from 'hono'
-import { roles, type SiteRow, siteUsers, users } from '../db/schema'
+import { roles, type SiteRow, sites, siteUsers, users } from '../db/schema'
 import type { Actor, AppEnv } from '../env'
 
 /**
@@ -27,6 +27,7 @@ mock.module('../db/client', () => ({ ...realClient, getDb: () => db }))
 const { sitePermissionsFor, requireSitePermission } = await import('./auth')
 const { errorResponse } = await import('./errors')
 const { deleteRole, updateRole } = await import('./roles')
+const { setUserSiteRole } = await import('./users')
 
 const MIGRATIONS = join(import.meta.dir, '../../migrations')
 
@@ -296,6 +297,62 @@ describe('editing a built-in', () => {
     await grant('usr_1', 'proofreader')
 
     await expect(deleteRole(env, 'proofreader')).rejects.toThrow('still assigned')
+  })
+})
+
+describe('assigning a custom role to a site (#157)', () => {
+  beforeEach(async () => {
+    await db.insert(users).values({
+      id: 'usr_1',
+      email: 'someone@example.com',
+      name: 'Someone',
+      role: 'editor',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await db.insert(sites).values({ id: 'site_1', slug: 'blog', name: 'Blog' })
+    await db.insert(roles).values({
+      id: 'rol_proof',
+      slug: 'proofreader',
+      name: 'Proofreader',
+      sitePermissions: ['entries:read', 'entries:update'],
+      mcpPermissions: ['entries:read'],
+      apiKeyPermissions: [],
+    })
+  })
+
+  test('a grant can name one, and it resolves to that matrix', async () => {
+    await setUserSiteRole(env, 'usr_1', 'site_1', 'proofreader')
+
+    expect(await sitePermissionsFor(env, person(), 'site_1')).toEqual([
+      'entries:read',
+      'entries:update',
+    ])
+    expect(await sitePermissionsFor(env, person(), 'site_1', 'mcp')).toEqual(['entries:read'])
+  })
+
+  test('and approves nothing until somebody says so', async () => {
+    // A custom role is not on the `admin > editor > viewer` ladder, so there is no default to
+    // derive — and inventing one out of "may edit entries" is the conflation #59 exists to prevent.
+    const grant = await setUserSiteRole(env, 'usr_1', 'site_1', 'proofreader')
+    expect(grant.effectiveApprovalLevel).toBe(0)
+
+    const raised = await setUserSiteRole(env, 'usr_1', 'site_1', 'proofreader', 1)
+    expect(raised.effectiveApprovalLevel).toBe(1)
+  })
+
+  test('a slug nobody defined is refused, rather than stored as no access', async () => {
+    await expect(setUserSiteRole(env, 'usr_1', 'site_1', 'ghost')).rejects.toThrow(
+      'is not a site role',
+    )
+  })
+
+  test('and so is owner, which is an instance role', async () => {
+    // Granting it per site would be a second way of spelling `sites:access_all`, on a row that
+    // cannot carry the instance permissions that phrase actually means.
+    await expect(setUserSiteRole(env, 'usr_1', 'site_1', 'owner')).rejects.toThrow(
+      'is not a site role',
+    )
   })
 })
 
