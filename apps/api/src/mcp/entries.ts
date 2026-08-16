@@ -53,7 +53,7 @@ export const entryTools = [
     args: listEntriesQuerySchema.extend({
       collection: slugSchema.describe('Slug of the collection to list entries from'),
     }),
-    access: { scope: MCP_SCOPES.entriesRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.entriesRead, permission: 'entries:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ collection, ...query }, ctx) => {
       const page = await listEntries(ctx.env, ctx.site, collection, query)
@@ -71,7 +71,7 @@ export const entryTools = [
     title: 'Get entry',
     description: 'Fetch one entry by slug, with all of its field data and metadata.',
     args: entryTarget,
-    access: { scope: MCP_SCOPES.entriesRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.entriesRead, permission: 'entries:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ collection, slug, locale }, ctx) => {
       const data = await getEntry(ctx.env, ctx.site, collection, slug, locale)
@@ -92,7 +92,7 @@ export const entryTools = [
     args: createEntrySchema.extend({
       collection: slugSchema.describe('Slug of the collection to create the entry in'),
     }),
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:create' },
     handler: async ({ collection, ...input }, ctx) => {
       const data = await createEntry(ctx.env, ctx.site, collection, input, ctx.actor.id)
       return { structured: data, text: `Created entry ${summarise(data)} in "${collection}".` }
@@ -115,7 +115,7 @@ export const entryTools = [
       newSlug: slugSchema.optional().describe('Rename the entry to this slug'),
       newLocale: localeCodeSchema.optional().describe('Move the entry to this locale'),
     }),
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:update' },
     handler: async ({ collection, slug, locale, newSlug, newLocale, ...input }, ctx) => {
       const data = await updateEntry(
         ctx.env,
@@ -137,7 +137,7 @@ export const entryTools = [
       'Delete one entry, in one locale. This is not recoverable through revisions — the ' +
       'revision history goes with it.',
     args: entryTarget,
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ collection, slug, locale }, ctx) => {
       await deleteEntry(ctx.env, ctx.site, collection, slug, locale)
@@ -152,7 +152,7 @@ export const entryTools = [
       'The last 50 saved states of an entry, newest first, with who made each one. Use a ' +
       'revision id with `restore_entry_revision`.',
     args: entryTarget,
-    access: { scope: MCP_SCOPES.entriesRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesRead, permission: 'entries:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ collection, slug, locale }, ctx) => {
       const data = await listEntryRevisions(ctx.env, ctx.site, collection, slug, locale)
@@ -177,7 +177,7 @@ export const entryTools = [
       'Roll an entry back to an earlier revision. The current state is snapshotted first, so the ' +
       'restore is itself undoable.',
     args: entryTarget.extend({ revisionId: z.string().min(1) }),
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:update' },
     handler: async ({ collection, slug, revisionId, locale }, ctx) => {
       const data = await restoreEntryRevision(
         ctx.env,
@@ -210,7 +210,7 @@ export const entryTools = [
       'can differ per language.',
     // No locale: a slug names one post whichever of its languages it is written in.
     args: target.extend({ slug: slugSchema }).omit({ locale: true }),
-    access: { scope: MCP_SCOPES.entriesRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.entriesRead, permission: 'entries:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ collection, slug }, ctx) => {
       const data = await listTranslations(ctx.env, ctx.site, collection, slug)
@@ -237,7 +237,7 @@ export const entryTools = [
       slug: slugSchema,
       linkSlug: slugSchema.describe('Slug of the entry to pull into this one'),
     }),
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:update' },
     handler: async ({ collection, slug, linkSlug }, ctx) => {
       const data = await attachTranslation(ctx.env, ctx.site, collection, slug, {
         slug: linkSlug,
@@ -256,7 +256,7 @@ export const entryTools = [
       'Split one language out of a post, making it a piece of its own. The undo for ' +
       '`link_translation`. Nothing is deleted and the entry keeps its identifier code.',
     args: entryTarget,
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:update' },
     handler: async ({ collection, slug, locale }, ctx) => {
       const data = await detachTranslation(ctx.env, ctx.site, collection, slug, locale)
       return { structured: data, text: `${summarise(data)} is now a separate entry.` }
@@ -281,7 +281,7 @@ export const entryTools = [
       'one person and sitting beside the live row rather than on top of it. Shows who wrote each, ' +
       'where it is in review, and whether it was written against an older copy of the article.',
     args: entryTarget.extend(listEntryVersionsQuerySchema.shape),
-    access: { scope: MCP_SCOPES.entriesRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.entriesRead, permission: 'entries:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ collection, slug, locale, ...query }, ctx) => {
       const data = await listEntryVersions(ctx.env, ctx.site, collection, slug, query, locale)
@@ -308,7 +308,7 @@ export const entryTools = [
       'it is how a reviewer tells three open versions apart. Publishing it needs a person: submit ' +
       'it for review and a human approves and publishes it.',
     args: entryTarget.extend(createEntryVersionSchema.shape),
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:update' },
     handler: async ({ collection, slug, locale, ...input }, ctx) => {
       const data = await createEntryVersion(
         ctx.env,
@@ -331,7 +331,7 @@ export const entryTools = [
       'means an approver sends it back first, which resets the levels it had cleared. You cannot ' +
       'approve or publish it yourself; those are decisions only a signed-in person can make.',
     args: entryTarget.extend({ versionId: z.string().min(1) }),
-    access: { scope: MCP_SCOPES.entriesWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.entriesWrite, permission: 'entries:update' },
     handler: async ({ collection, slug, versionId, locale }, ctx) => {
       const data = await submitEntryVersion(ctx.env, ctx.site, collection, slug, versionId, locale)
       return {

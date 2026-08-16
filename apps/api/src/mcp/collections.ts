@@ -29,7 +29,7 @@ export const collectionTools = [
     title: 'List collections',
     description: 'List every collection defined on the current site.',
     args: z.object({}),
-    access: { scope: MCP_SCOPES.collectionsRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.collectionsRead, permission: 'collections:read' },
     annotations: { readOnlyHint: true },
     handler: async (_input, ctx) => {
       const data = await listCollections(ctx.env, ctx.site.id)
@@ -47,7 +47,7 @@ export const collectionTools = [
     title: 'Get collection',
     description: 'Fetch one collection and its full field definitions by slug.',
     args: slugArg,
-    access: { scope: MCP_SCOPES.collectionsRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.collectionsRead, permission: 'collections:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ slug }, ctx) => {
       const data = await getCollection(ctx.env, ctx.site.id, slug)
@@ -67,7 +67,10 @@ export const collectionTools = [
     // The update shape, which is the create shape with everything but `slug` optional. Carrying
     // both would inline the 13-kind field union twice for one operation with two names.
     args: slugArg.extend(updateCollectionSchema.shape),
-    access: { scope: MCP_SCOPES.collectionsWrite, site: 'admin' },
+    access: {
+      scope: MCP_SCOPES.collectionsWrite,
+      permission: ['collections:create', 'collections:update'],
+    },
     handler: async ({ slug, ...input }, ctx) => {
       const existing = await getCollection(ctx.env, ctx.site.id, slug).catch(() => null)
 
@@ -100,7 +103,7 @@ export const collectionTools = [
     title: 'Delete collection',
     description: 'Delete a collection by slug. Its entries are removed along with it.',
     args: slugArg,
-    access: { scope: MCP_SCOPES.collectionsWrite, site: 'admin' },
+    access: { scope: MCP_SCOPES.collectionsWrite, permission: 'collections:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ slug }, ctx) => {
       await deleteCollection(ctx.env, ctx.site.id, slug)

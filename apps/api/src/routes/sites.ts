@@ -1,12 +1,12 @@
 import {
   createSiteSchema,
-  roleAtLeast,
+  hasSitePermission,
   updateSiteConfigSchema,
   updateSiteSchema,
 } from '@hedge/core'
 import { Hono } from 'hono'
 import type { AppEnv } from '../env'
-import { accessibleSites, requireActor, requirePermission, siteRoleFor } from '../lib/auth'
+import { accessibleSites, requireActor, requirePermission, sitePermissionsFor } from '../lib/auth'
 import { ApiError } from '../lib/errors'
 import {
   createSite,
@@ -40,7 +40,7 @@ app.post('/', requirePermission('sites:create'), async (c) => {
 app.get('/:slug', async (c) => {
   const row = await findSite(c.env, c.req.param('slug'))
   // Not a 403: a user without access has no business learning which sites exist.
-  if (!(await siteRoleFor(c.env, requireActor(c), row.id))) throw ApiError.notFound('Site')
+  if (!(await sitePermissionsFor(c.env, requireActor(c), row.id))) throw ApiError.notFound('Site')
   return c.json({ data: toSite(row) })
 })
 
@@ -50,17 +50,23 @@ app.patch('/:slug', requirePermission('sites:update'), async (c) => {
 })
 
 /**
- * A site's metadata defaults and custom fields. Authorised at the site level — a per-site admin
- * owns their own site's content configuration — rather than requiring an instance admin the way
- * renaming or re-domaining a site does. Role is checked against the site named in the path, exactly
- * as `GET /:slug` does, so the active-site header cannot widen a caller's reach here.
+ * A site's metadata defaults and custom fields. Authorised at the site level — a site's own content
+ * configuration belongs to whoever runs that site — rather than requiring an instance admin the way
+ * renaming or re-domaining it does. Permissions are checked against the site named in the path,
+ * exactly as `GET /:slug` does, so the active-site header cannot widen a caller's reach here.
+ *
+ * **`collections:update`**, and the fit is closer than the name suggests (#154): what this writes
+ * is the per-entry custom field definitions and the metadata defaults every entry inherits — the
+ * shape of the site's content, which is what that permission means everywhere else. It is checked
+ * by hand rather than by `requireSitePermission` because the site is the one in the path, not the
+ * active one the middleware resolved.
  */
 app.patch('/:slug/config', async (c) => {
   const existing = await findSite(c.env, c.req.param('slug'))
 
-  const role = await siteRoleFor(c.env, requireActor(c), existing.id)
-  if (!role || !roleAtLeast(role, 'admin')) {
-    throw ApiError.forbidden('Site admin access is required to change site settings')
+  const permissions = await sitePermissionsFor(c.env, requireActor(c), existing.id)
+  if (!permissions || !hasSitePermission(permissions, 'collections:update')) {
+    throw ApiError.forbidden('Changing site settings requires "collections:update" on that site')
   }
 
   const input = await validate(c, updateSiteConfigSchema)

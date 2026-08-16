@@ -2,7 +2,7 @@ import { HEDGE_VERSION } from '@hedge/core'
 import { type Context, Hono } from 'hono'
 import { getCmsAuth } from '../auth/cms'
 import type { AppEnv } from '../env'
-import { currentSiteRole, userRole } from '../lib/auth'
+import { sitePermissionsFor, userRole } from '../lib/auth'
 import { handleRpcPayload, type McpServer } from '../lib/mcp'
 import { destructiveGrantFor } from '../lib/mcp-grants'
 import { permissionsForRole } from '../lib/roles'
@@ -53,8 +53,11 @@ app.post('/', async (c) => {
   }
   c.set('actor', actor)
 
-  const siteRole = await currentSiteRole(c)
-  if (!siteRole) {
+  // The **mcp** column, not the site one: what this person delegates to an agent acting as them
+  // (#151). Resolved per request like the destructive grant, so narrowing a role lands on the next
+  // call rather than on the next consent.
+  const sitePermissions = await sitePermissionsFor(c.env, actor, site.id, 'mcp')
+  if (!sitePermissions) {
     return c.json(
       {
         jsonrpc: '2.0',
@@ -74,7 +77,7 @@ app.post('/', async (c) => {
     site,
     actor,
     instancePermissions: permissions,
-    siteRole,
+    sitePermissions,
     destructive,
   }
   const tools = buildTools(ALL_TOOLS, ctx, scopes)

@@ -86,7 +86,7 @@ export const mediaTools = [
     // an agent to have even when they are happy for it to caption what is already there. It carries
     // no `destructiveHint`, because that annotation is what a client reads to decide whether to ask
     // a human, and claiming an upload may destroy something would be false.
-    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor', destructive: true },
+    access: { scope: MCP_SCOPES.mediaWrite, permission: 'media:create', destructive: true },
     handler: async (input, ctx) => {
       const source = input.url
         ? await fetchRemoteFile(input.url)
@@ -117,7 +117,7 @@ export const mediaTools = [
       '`q` (matched against filename and alt text) or `type`.',
     // The REST schema, so this tool cannot accept something `GET /api/v1/media` would reject.
     args: listMediaQuerySchema,
-    access: { scope: MCP_SCOPES.mediaRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.mediaRead, permission: 'media:read' },
     annotations: { readOnlyHint: true },
     handler: async (query, ctx) => {
       const page = await listMedia(ctx.env, ctx.site.id, query)
@@ -135,7 +135,7 @@ export const mediaTools = [
     title: 'Get media',
     description: 'Fetch one media item by id, including its dimensions, alt text and public URL.',
     args: z.object({ id: z.string().min(1) }),
-    access: { scope: MCP_SCOPES.mediaRead, site: 'viewer' },
+    access: { scope: MCP_SCOPES.mediaRead, permission: 'media:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ id }, ctx) => {
       const data = await getMedia(ctx.env, ctx.site.id, id)
@@ -154,7 +154,7 @@ export const mediaTools = [
     // An overwrite with no history is not an additive update, so it needs the grant (#145). No
     // `destructiveHint` either: a client would prompt a human before every caption fix, which is
     // the wrong trade for a tool whose whole point is working through a backlog.
-    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor', destructive: true },
+    access: { scope: MCP_SCOPES.mediaWrite, permission: 'media:update', destructive: true },
     handler: async ({ id, ...input }, ctx) => {
       const data = await updateMedia(ctx.env, ctx.site.id, id, input)
       return { structured: data, text: `Updated media "${data.filename}".` }
@@ -168,7 +168,7 @@ export const mediaTools = [
       'Delete a media item and the file behind it. Any entry still pointing at its URL will ' +
       'break — there is no reference check, and this cannot be undone.',
     args: z.object({ id: z.string().min(1) }),
-    access: { scope: MCP_SCOPES.mediaWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.mediaWrite, permission: 'media:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ id }, ctx) => {
       await deleteMedia(ctx.env, ctx.site.id, id)

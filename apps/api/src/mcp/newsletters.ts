@@ -51,7 +51,7 @@ export const newsletterTools = [
     title: 'List email templates',
     description: 'List this site’s reusable newsletter templates.',
     args: z.object({}),
-    access: { scope: MCP_SCOPES.newslettersRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersRead, permission: 'newsletters:read' },
     annotations: { readOnlyHint: true },
     handler: async (_input, ctx) => {
       const data = await listNewsletterTemplates(ctx.env, ctx.site.id)
@@ -69,7 +69,7 @@ export const newsletterTools = [
     title: 'Get email template',
     description: 'Fetch one template by id, with its full subject and body.',
     args: idArg,
-    access: { scope: MCP_SCOPES.newslettersRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersRead, permission: 'newsletters:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ id }, ctx) => {
       const data = await getNewsletterTemplate(ctx.env, ctx.site.id, id)
@@ -84,7 +84,7 @@ export const newsletterTools = [
       'Create a reusable email template. `body` is the message content; the site’s newsletter ' +
       'shell and unsubscribe footer are added at send time, so do not write your own.',
     args: createNewsletterTemplateSchema,
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:create' },
     handler: async (input, ctx) => {
       const data = await createNewsletterTemplate(ctx.env, ctx.site.id, input, ctx.actor.id)
       return { structured: data, text: `Created template "${data.name}" (${data.id}).` }
@@ -96,7 +96,7 @@ export const newsletterTools = [
     title: 'Update email template',
     description: 'Update a template by id. Only the keys you pass change.',
     args: updateNewsletterTemplateSchema.extend(idArg.shape),
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:update' },
     handler: async ({ id, ...input }, ctx) => {
       const data = await updateNewsletterTemplate(ctx.env, ctx.site.id, id, input)
       return { structured: data, text: `Updated template "${data.name}".` }
@@ -108,7 +108,7 @@ export const newsletterTools = [
     title: 'Delete email template',
     description: 'Delete a template. Campaigns already drafted from it are unaffected.',
     args: idArg,
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ id }, ctx) => {
       await deleteNewsletterTemplate(ctx.env, ctx.site.id, id)
@@ -128,7 +128,7 @@ export const newsletterTools = [
       limit: z.coerce.number().int().min(1).max(100).default(50),
       cursor: z.string().optional(),
     }),
-    access: { scope: MCP_SCOPES.newslettersRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersRead, permission: 'newsletters:read' },
     annotations: { readOnlyHint: true },
     handler: async (query, ctx) => {
       const page = await listNewsletters(ctx.env, ctx.site.id, query)
@@ -148,7 +148,7 @@ export const newsletterTools = [
     title: 'Get newsletter',
     description: 'Fetch one newsletter by id, with its full body and send status.',
     args: idArg,
-    access: { scope: MCP_SCOPES.newslettersRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersRead, permission: 'newsletters:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ id }, ctx) => {
       const data = await getNewsletter(ctx.env, ctx.site.id, id)
@@ -164,7 +164,7 @@ export const newsletterTools = [
       'the admin — this tool cannot send it. `audience` picks the subscriber list, the site’s ' +
       'members, or both deduplicated by email.',
     args: createNewsletterSchema,
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:create' },
     handler: async (input, ctx) => {
       const data = await createNewsletter(ctx.env, ctx.site.id, input, ctx.actor.id)
       return {
@@ -181,7 +181,7 @@ export const newsletterTools = [
       'Update a draft newsletter. A newsletter that has already been sent is a record of what ' +
       'went out and cannot be edited.',
     args: updateNewsletterSchema.extend(idArg.shape),
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:update' },
     handler: async ({ id, ...input }, ctx) => {
       const data = await updateNewsletter(ctx.env, ctx.site.id, id, input)
       return { structured: data, text: `Updated newsletter "${data.subject}".` }
@@ -193,7 +193,7 @@ export const newsletterTools = [
     title: 'Delete newsletter',
     description: 'Delete a newsletter. Deleting a sent one destroys the record that it went out.',
     args: idArg,
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ id }, ctx) => {
       await deleteNewsletter(ctx.env, ctx.site.id, id)
@@ -208,7 +208,7 @@ export const newsletterTools = [
       'How many addresses an audience reaches right now, deduplicated. Check this before asking ' +
       'somebody to send.',
     args: z.object({ audience: z.enum(NEWSLETTER_AUDIENCES).default('both') }),
-    access: { scope: MCP_SCOPES.newslettersRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersRead, permission: 'newsletters:read' },
     annotations: { readOnlyHint: true },
     handler: async ({ audience }, ctx) => {
       const recipients = await resolveRecipients(ctx.env, ctx.site.id, audience)
@@ -227,7 +227,7 @@ export const newsletterTools = [
       'human can see the rendered result. This does **not** send to the audience — no MCP tool ' +
       'does; a real send happens from the admin.',
     args: testSendSchema.extend(idArg.shape),
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'admin' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'newsletters:send' },
     handler: async ({ id, email }, ctx) => {
       await sendTestNewsletter(ctx.env, ctx.site, id, email)
       return { structured: { id, sentTo: email }, text: `Sent a test copy to ${email}.` }
@@ -247,7 +247,7 @@ export const newsletterTools = [
       limit: z.coerce.number().int().min(1).max(100).default(50),
       cursor: z.string().optional(),
     }),
-    access: { scope: MCP_SCOPES.newslettersRead, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersRead, permission: 'subscribers:read' },
     annotations: { readOnlyHint: true },
     handler: async (query, ctx) => {
       const page = await listSubscribers(ctx.env, ctx.site.id, query)
@@ -267,7 +267,7 @@ export const newsletterTools = [
       'Add an address to the subscriber list. A previously unsubscribed address is re-subscribed ' +
       'rather than duplicated. Only add addresses whose owner asked to be added.',
     args: createSubscriberSchema,
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'subscribers:create' },
     handler: async (input, ctx) => {
       const data = await createSubscriber(ctx.env, ctx.site.id, input, 'mcp')
       return { structured: data, text: `Subscribed ${data.email}.` }
@@ -279,7 +279,7 @@ export const newsletterTools = [
     title: 'Update subscriber',
     description: 'Change a subscriber’s name, or set their status to subscribed / unsubscribed.',
     args: updateSubscriberSchema.extend(idArg.shape),
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'subscribers:update' },
     handler: async ({ id, ...input }, ctx) => {
       const data = await updateSubscriber(ctx.env, ctx.site.id, id, input)
       return { structured: data, text: `Updated ${data.email} → ${data.status}.` }
@@ -293,7 +293,7 @@ export const newsletterTools = [
       'Remove a subscriber outright. To stop mailing somebody, prefer setting their status to ' +
       '"unsubscribed" — deleting the row loses the record that they opted out.',
     args: idArg,
-    access: { scope: MCP_SCOPES.newslettersWrite, site: 'editor' },
+    access: { scope: MCP_SCOPES.newslettersWrite, permission: 'subscribers:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ id }, ctx) => {
       await deleteSubscriber(ctx.env, ctx.site.id, id)

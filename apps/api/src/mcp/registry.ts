@@ -1,4 +1,9 @@
-import { type InstancePermission, type McpScope, type Role, roleAtLeast } from '@hedge/core'
+import {
+  hasSitePermission,
+  type InstancePermission,
+  type McpScope,
+  type SitePermission,
+} from '@hedge/core'
 import { z } from 'zod'
 import type { SiteRow } from '../db/schema'
 import type { Actor, Bindings } from '../env'
@@ -12,7 +17,7 @@ import { compactSchema } from './schema-compact'
  * Every tool declares two independent things, and both are enforced on every call:
  *
  * - a **scope**, which is what the operator delegated to this client at the consent screen
- * - a **role**, which is what the operator themselves actually holds
+ * - a **permission**, which is what the operator's own role delegates to MCP at all
  *
  * Neither implies the other, and the narrower one always wins. Granting `users:write` to a client
  * approved by an editor does not let it manage users, and an owner using a client that only asked
@@ -20,19 +25,34 @@ import { compactSchema } from './schema-compact'
  * user without any per-user configuration: the same client, approved by two different people, can
  * do two different things.
  *
+ * Since #151 the second half is a **set, and a delegated one**: `ctx.sitePermissions` is the `mcp`
+ * column of the approving user's role, which they may narrow below what they can do themselves.
+ * "I may delete entries; nothing acting as me may" is one edit on one role, and it holds for every
+ * client they ever approve — where the destructive grant (#145) is per client and per consent.
+ * Effective authority is `role.mcp ∩ token scopes ∩ destructive grant`, and all three are checked.
+ *
  * An owner needs no special case anywhere in here. The built-in owner role carries every instance
- * permission, and `siteRoleFor` resolves anyone with `sites:access_all` to site admin on *every*
- * site — so an owner passes both halves of every check by construction rather than by exemption.
+ * permission, and `sitePermissionsFor` resolves anyone with `sites:access_all` to every site
+ * permission on *every* site — so an owner passes both halves by construction, not by exemption.
  */
 
-/** What a tool requires: a delegated scope, plus a role at one of the two authorisation levels. */
+/** What a tool requires: a delegated scope, plus authority at one of the two levels. */
 export interface ToolAccess {
   scope: McpScope
   /**
-   * Minimum role on the **active site**. For anything that belongs to one tenant: content, media,
-   * newsletters, that site's keys.
+   * What the tool does on the **active site**, checked against the approving user's **mcp** column
+   * — not their site column (#151). That is the whole of the third column: a person who may delete
+   * an entry in the admin can withhold the delete from every agent acting as them, and does it once
+   * on their role rather than per client.
+   *
+   * Pick the same permission the REST route that does this thing asks for. A tool whose gate is
+   * looser than its route is a hole, and the vocabulary is now fine enough that "looser" is
+   * checkable rather than a judgement.
+   *
+   * A **list** means every one of them, for the merged tools: `write_collection` creates *or*
+   * updates depending on what it finds, and a caller cannot promise which half it will use.
    */
-  site?: Role
+  permission?: SitePermission | readonly SitePermission[]
   /**
    * The **instance** permission required. For anything that is not one site's business — managing
    * users, or creating and destroying sites. Matched against the operator's own role permissions,
@@ -61,8 +81,11 @@ export interface McpContext {
   actor: Actor
   /** The instance permissions their role carries — what user- and site-management tools check. */
   instancePermissions: string[]
-  /** Their role on the active site. Never null: the endpoint refuses a caller with none. */
-  siteRole: Role
+  /**
+   * What this client may do on the active site — the **mcp** column of the approving user's role,
+   * never their site column. Never null: the endpoint refuses a caller with no access at all.
+   */
+  sitePermissions: readonly SitePermission[]
   /**
    * Whether the operator let this client delete and overwrite (#145). **True when they never said
    * otherwise** — every consent given before the grant existed has no row, and must keep working
@@ -139,7 +162,7 @@ function parseArgs<S extends z.ZodType>(schema: S, args: unknown): z.infer<S> {
  * common refusal — then whichever role level the tool declared.
  */
 function authorize(definition: ToolDefinition, ctx: McpContext, granted: Set<string>) {
-  const { scope, site, instance } = definition.access
+  const { scope, permission, instance } = definition.access
 
   if (!granted.has(scope)) {
     throw new McpToolError(`This client was not granted the "${scope}" scope`)
@@ -161,10 +184,15 @@ function authorize(definition: ToolDefinition, ctx: McpContext, granted: Set<str
     )
   }
 
-  if (site && !roleAtLeast(ctx.siteRole, site)) {
-    throw new McpToolError(
-      `"${definition.name}" requires ${site} access to the "${ctx.site.slug}" site — you are ${ctx.siteRole}`,
-    )
+  if (permission) {
+    const required = typeof permission === 'string' ? [permission] : permission
+    const missing = required.filter((each) => !hasSitePermission(ctx.sitePermissions, each))
+    if (missing.length > 0) {
+      throw new McpToolError(
+        `"${definition.name}" needs ${missing.join(' and ')} on the "${ctx.site.slug}" site. ` +
+          'Your role either does not carry that, or does not delegate it to an MCP client.',
+      )
+    }
   }
 }
 
@@ -177,8 +205,11 @@ function authorize(definition: ToolDefinition, ctx: McpContext, granted: Set<str
  * client that calls one anyway gets the real reason ("not granted the `users:write` scope"), which
  * an operator can act on, instead of an "unknown tool" that reads as though the CMS cannot do it.
  *
- * Role, by contrast, is never used to hide anything: it can change between two calls with the same
- * token, and the tool that fails on it names the role that was missing.
+ * A **permission** is never used to hide anything, and that stayed true when the site matrix
+ * replaced the rank (#155). It is part of a role, and a role can change between two calls on one
+ * token — `tools.listChanged` is false here, so a list narrowed by something mutable would be a
+ * list the client never learns to refetch. The tool that fails names the permission that was
+ * missing, which an operator can act on.
  */
 export function buildTools(
   definitions: ToolDefinition[],
