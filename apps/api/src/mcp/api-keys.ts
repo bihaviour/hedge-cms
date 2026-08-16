@@ -21,7 +21,7 @@ export const apiKeyTools = [
       'List the active site’s API keys — names, prefixes, scopes and last use. The secrets ' +
       'themselves are stored hashed and are not returned.',
     args: z.object({}),
-    access: { scope: MCP_SCOPES.keysRead, site: 'admin' },
+    access: { scope: MCP_SCOPES.keysRead, permission: 'api_keys:read' },
     annotations: { readOnlyHint: true },
     handler: async (_input, ctx) => {
       const data = await listApiKeys(ctx.env, ctx.site.id)
@@ -48,7 +48,7 @@ export const apiKeyTools = [
       'website holds and reaches published content only; adding any write scope makes it an ' +
       'authoring key.',
     args: createApiKeySchema,
-    access: { scope: MCP_SCOPES.keysWrite, site: 'admin' },
+    access: { scope: MCP_SCOPES.keysWrite, permission: 'api_keys:create' },
     handler: async (input, ctx) => {
       const data = await createApiKey(ctx.env, ctx.site.id, input, ctx.actor.id)
       return {
@@ -65,7 +65,7 @@ export const apiKeyTools = [
       'Revoke an API key by id. Anything still presenting it starts failing immediately, so ' +
       'check what uses it first.',
     args: z.object({ id: z.string().min(1) }),
-    access: { scope: MCP_SCOPES.keysWrite, site: 'admin' },
+    access: { scope: MCP_SCOPES.keysWrite, permission: 'api_keys:delete' },
     annotations: { destructiveHint: true },
     handler: async ({ id }, ctx) => {
       await deleteApiKey(ctx.env, ctx.site.id, id)

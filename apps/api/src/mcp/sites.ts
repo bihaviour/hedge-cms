@@ -114,7 +114,7 @@ export const siteTools = [
       'its email sender overrides. This is the site’s own content configuration, so site admin ' +
       'is enough — unlike renaming or re-domaining it.',
     args: updateSiteConfigSchema,
-    access: { scope: MCP_SCOPES.sitesWrite, site: 'admin' },
+    access: { scope: MCP_SCOPES.sitesWrite, permission: 'collections:update' },
     handler: async (input, ctx) => {
       const data = await updateSiteConfig(ctx.env, ctx.site.id, input)
       return { structured: data, text: `Updated configuration for "${data.slug}".` }

@@ -180,13 +180,26 @@ accept something the HTTP API would reject. Keep it that way when adding a tool.
 The endpoint covers the whole CMS — collections, entries, media, newsletters and subscribers, sites,
 users, API keys — one module per area, assembled in `mcp/index.ts`.
 
-**A tool is defined by a scope *and* a role, and both are checked on every call** (`mcp/registry.ts`):
+**A tool is defined by a scope *and* an authority, and both are checked on every call**
+(`mcp/registry.ts`):
 
 | | Means | Checked against |
 | --- | --- | --- |
 | `access.scope` | what the operator delegated to this client at consent | the token's scopes |
-| `access.site` | site-level minimum, for one tenant's content | `currentSiteRole` |
+| `access.permission` | what the tool does to one tenant's content | the **`mcp` column** of the approving user's role |
 | `access.instance` | instance-level minimum, for users and creating/deleting sites | `users.role` |
+
+**`access.permission` reads the `mcp` column, never the `site` one** (#151). That is the third
+column's whole point: "I may delete entries; nothing acting as me may" is one edit on one role, and
+it holds for every client that person ever approves — where the destructive grant below is per
+client and per consent. Effective authority is `role.mcp ∩ token scopes ∩ destructive grant`, and
+none of the three implies another. A **list** of permissions means all of them, for the merged tools
+(`write_collection` creates *or* updates, and a caller cannot promise which half it will use).
+
+A permission is **never** used to hide a tool, unlike a scope or the grant. It is part of a role and
+a role can change between two calls on one token; `tools.listChanged` is false here, so a list
+narrowed by something mutable is a list the client has no reason to refetch. The refusal arrives at
+call time and names the permission, which an operator can act on.
 
 **A third check sits in front of those two: the destructive grant** (#145). Ten tools carry
 `destructiveHint` and two more opt in (`access.destructive`), and none of them runs unless the
@@ -218,13 +231,14 @@ for the life of the consent. Calling one anyway still reports the real reason.
 
 Neither implies the other and the narrower wins, which is what makes the surface differ per user
 without any per-user configuration: the same client approved by an editor and by an owner can do
-two different things. **An owner needs no special case** — `roleAtLeast` clears every minimum and
-`siteRoleFor` resolves an instance owner or admin to that role on every site, so an owner passes by
-construction rather than by exemption. Don't add one.
+two different things. **An owner needs no special case** — `sitePermissionsFor` resolves an instance
+owner or admin to every site permission on every site, so an owner passes by construction rather
+than by exemption. Don't add one.
 
-Pick the role a new tool declares by **matching the REST route that does the same thing**. Content
-writes are `editor`, schema and key writes are site `admin`, user management is instance `admin`,
-deleting a site is instance `owner`. A tool whose gate is looser than its route is a hole.
+Pick the permission a new tool declares by **matching the REST route that does the same thing** —
+literally the same string, now that both sides speak one vocabulary. `delete_entry` is
+`entries:delete` because `DELETE /collections/:c/entries/:slug` is. A tool whose gate is looser than
+its route is a hole, and that is checkable rather than a judgement.
 
 **A tool's `structured` result is a record, never a bare array** (#114). The spec says
 `structuredContent` is a JSON object, and a conforming client enforces it by *rejecting the whole

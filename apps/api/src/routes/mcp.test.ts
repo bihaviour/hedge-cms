@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { MAX_INLINE_UPLOAD_BYTES } from '@hedge/core'
+import { ALL_SITE_PERMISSIONS, builtinSiteRole, MAX_INLINE_UPLOAD_BYTES } from '@hedge/core'
 import { Hono } from 'hono'
 import type { SiteRow } from '../db/schema'
 import type { AppEnv } from '../env'
@@ -20,6 +20,8 @@ let destructiveGrant = true
 
 /** The signed-in user's role on the current site. `null` means they cannot reach it at all. */
 let siteRole: string | null = 'admin'
+/** Set to make the mcp column differ from the site one — the third column's whole point. */
+let mcpColumn: string[] | null = null
 /** Their instance role — `users.role`. What separates user management from site work. */
 let instanceRole: string | null = 'admin'
 
@@ -50,8 +52,19 @@ mock.module('../auth/cms', () => ({
 mock.module('../lib/auth', () => ({
   ...realAuth,
   userRole: async () => (token ? instanceRole : null),
-  currentSiteRole: async () => siteRole,
   siteRoleFor: async () => siteRole,
+  // The site matrix, driven by the same `siteRole` knob the rank used to be — plus `mcpColumn`,
+  // which is what a role narrowing its *delegation* looks like without narrowing the person.
+  sitePermissionsFor: async (
+    _env: unknown,
+    _actor: unknown,
+    _siteId: string,
+    surface: 'site' | 'mcp' | 'apiKey' = 'site',
+  ) => {
+    if (siteRole === null) return null
+    if (surface === 'mcp' && mcpColumn) return mcpColumn
+    return builtinSiteRole(siteRole)?.site ?? ALL_SITE_PERMISSIONS
+  },
   accessibleSites: async () => [{ id: 'site_1', slug: 'blog' }],
   generateApiKey: async () => ({ raw: 'hdg_secret', row: {} }),
 }))
@@ -315,6 +328,7 @@ const listTools = async (): Promise<string[]> => {
 function reset() {
   token = { userId: 'usr_1', scopes: ALL_SCOPES }
   siteRole = 'admin'
+  mcpColumn = null
   instanceRole = 'admin'
   destructiveGrant = true
 }
@@ -404,7 +418,7 @@ describe('POST /mcp', () => {
       }
     })
 
-    test('needs media:write and editor on the site — the gate POST /api/v1/media carries', async () => {
+    test('needs media:write and media:create — the gate POST /api/v1/media carries', async () => {
       reset()
       token = { userId: 'usr_1', scopes: 'openid media:read' }
       expect(
@@ -415,7 +429,7 @@ describe('POST /mcp', () => {
       siteRole = 'viewer'
       expect(
         JSON.stringify((await call('upload_media', { url: 'https://e.com/a.png' })).json),
-      ).toContain('editor')
+      ).toContain('media:create')
     })
 
     test('is hidden from a client that was not granted media:write', async () => {
@@ -519,6 +533,58 @@ describe('POST /mcp', () => {
 
       const { json } = await call('delete_entry', { collection: 'posts', slug: 'hello' })
       expect(json.result.content[0].text).toContain('deletes or overwrites')
+    })
+  })
+
+  /* ---------------------------------------------------------------- *
+   * The mcp column (#151, #155)
+   * ---------------------------------------------------------------- */
+
+  describe('what a role delegates to MCP', () => {
+    test('is checked instead of what the person may do themselves', async () => {
+      // The asymmetry the column exists for: a site admin, whose role delegates everything except
+      // the delete. Over REST they delete entries all day; nothing acting as them can.
+      reset()
+      mcpColumn = [...builtinSiteRole('admin')!.site].filter((each) => each !== 'entries:delete')
+
+      const write = await call('update_entry', {
+        collection: 'posts',
+        slug: 'hello',
+        data: { title: 'Edited' },
+      })
+      expect(write.json.result.isError).toBeUndefined()
+
+      const { json } = await call('delete_entry', { collection: 'posts', slug: 'hello' })
+      expect(json.result.isError).toBe(true)
+      expect(json.result.content[0].text).toContain('entries:delete')
+    })
+
+    test('differs per approving user on one client, with no per-client configuration', async () => {
+      // The same client, the same scopes, two people: what it can do is a property of who approved
+      // it. That is the whole reason the column lives on a role rather than on a consent.
+      reset()
+      mcpColumn = ['entries:read']
+      expect(
+        (await call('create_entry', { collection: 'posts', slug: 'a', data: {} })).json.result
+          .isError,
+      ).toBe(true)
+
+      reset()
+      expect(
+        (await call('create_entry', { collection: 'posts', slug: 'b', data: { title: 'B' } })).json
+          .result.isError,
+      ).toBeUndefined()
+    })
+
+    test('narrows nothing in tools/list, because a role can change under a live token', async () => {
+      // Unlike a scope or the destructive grant, both fixed for the life of the consent. This
+      // server reports `tools.listChanged: false`, so a list narrowed by something mutable is a
+      // list the client has no reason to refetch — the refusal has to arrive at call time instead,
+      // naming the permission.
+      reset()
+      mcpColumn = ['entries:read']
+
+      expect(await listTools()).toContain('delete_entry')
     })
   })
 
@@ -715,12 +781,13 @@ describe('POST /mcp', () => {
    * ---------------------------------------------------------------- */
 
   /** The scope is what was delegated; the role is what the user has. Both have to pass. */
-  test('write_collection is refused when the user is not a site admin', async () => {
+  test('write_collection is refused when the user cannot reshape the model', async () => {
     reset()
     siteRole = 'editor'
     const { json } = await call('write_collection', { slug: 'y', name: 'Y' })
     expect(json.result.isError).toBe(true)
-    expect(json.result.content[0].text).toContain('admin')
+    // A merged create/update tool names both, because a caller cannot promise which half it uses.
+    expect(json.result.content[0].text).toContain('collections:create and collections:update')
   })
 
   /** Drafting a post is an editor's job, so the same role that fails above succeeds here. */
@@ -744,7 +811,7 @@ describe('POST /mcp', () => {
 
     const write = await call('create_entry', { collection: 'posts', data: { title: 'No' } })
     expect(write.json.result.isError).toBe(true)
-    expect(write.json.result.content[0].text).toContain('editor')
+    expect(write.json.result.content[0].text).toContain('entries:create')
   })
 
   /**
