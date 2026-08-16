@@ -164,6 +164,27 @@ so both doors answer alike. Keep the status Better Auth chose rather than collap
 fine where the only possible failure is the credential (`signIn`, `magicLinkVerify`) and wrong
 anywhere the caller has to tell the two apart.
 
+**There is a third answer, and it is the one that is easy to get wrong in the direction of a leak:
+tell the caller nothing** (`swallowAuthFailure`, #164). A route whose contract is to answer the
+same either way must keep answering the same when Better Auth refuses — `/member/forgot-password`
+and `/member/send-verification-email` answer `{ ok: true }` for an address that is nobody, so *any*
+status that moves with the address is a test for which addresses are members, and translating there
+would replace a 500 with a tidier membership oracle. `/member/logout` is the same argument in a
+milder key: the no-token path already answers `{ ok: true }`, so a stale token must not be louder
+than no token at all. The failure still reaches the operator, in the Worker log.
+
+Which of the three a call site takes is decided by **who is asking**, not by which endpoint it
+reaches. `requestPasswordReset` is called twice in `routes/members.ts` and answers differently each
+time: swallowed in `/forgot-password`, where the caller is anonymous, and translated in
+`sendInvite`, where it is an admin whose member row is already written and who is owed the news that
+the invite did not go out. Pick by what the caller may learn, then check the route's own comments
+still describe what it does.
+
+**Assert the equality, not the status.** A test that pins `200` on one address passes on the day
+the other address starts answering `500`; `member-auth-errors.integration.test.ts` compares the two
+answers byte for byte, with the mailer up and again with it down — the send being the only half of
+either route a member has that a stranger does not, and where the leak actually was.
+
 ## Pagination
 
 Keyset, not offset: the cursor is the last row's sort value, and ids are timestamp-prefixed

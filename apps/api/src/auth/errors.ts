@@ -66,3 +66,24 @@ export function authApiError(error: unknown, path: string, message: string): Api
   if (!isAPIError(error)) return authError(500, message, path, error)
   return authError(error.statusCode, message, path, error.body)
 }
+
+/**
+ * The third option, and the one #131 did not name: a Better Auth failure the caller must not be
+ * told about at all (#164).
+ *
+ * `authApiError` is right wherever the caller can act on the difference. It is *wrong* on a route
+ * whose whole contract is to answer the same either way — `/member/forgot-password` and
+ * `/member/send-verification-email` answer `{ ok: true }` for an address that is nobody, so any
+ * status that moves with the address turns the route into a test for which addresses are members,
+ * which is precisely what those routes exist not to be. Translating there would replace a 500 with
+ * a tidier membership oracle. Logging out is the same argument in a milder key: the no-token path
+ * already answers `{ ok: true }`, so a stale token must not be louder than no token at all.
+ *
+ * Silent to the caller, never to the operator: the cause goes to the Worker log, which is the one
+ * place saying so leaks nothing. `path` is what makes two of these tellable apart in `wrangler tail`.
+ */
+export function swallowAuthFailure(path: string): (error: unknown) => void {
+  return (error) => {
+    console.error('[auth] ignored failure', path, error)
+  }
+}
