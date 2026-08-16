@@ -119,6 +119,14 @@ Details are in the rule files; these are the ones worth knowing before you read 
   reads or sets a credential. Reasoning in `auth.md`.
 - **Authorization is ours, not Better Auth's** — instance role (`users.role`) and site role
   (`site_users`) are checked independently in `lib/auth.ts`.
+- **A role is a permission matrix, and one definition drives three surfaces** (#151). Site authority
+  is a *set* — `requireSitePermission('entries:delete')`, never "at least editor" — with three
+  columns on the role: what the person may do, what an MCP client acting as them may do, and what a
+  key they issued may do. The last two are delegations and cannot exceed the first, which is
+  enforced where a role is written rather than where it is read. Nobody is configured twice, and
+  "may write, may not delete" is finally expressible. The floor is the instance owner:
+  `sites:access_all` resolves to every site permission without consulting a role at all, so no edit
+  to any matrix can lock a deployment out of itself — by construction, not by a special case.
 - **`siteId` is the tenant boundary.** A content query that doesn't filter on it is a bug.
 - **A post is a translation group; a slug is one language of it**. `entries` still holds one
   row per language, each with its own slug, status, revisions and versions — `translationGroupId` is
