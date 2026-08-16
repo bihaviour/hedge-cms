@@ -3,6 +3,7 @@ import {
   INSTANCE_PERMISSIONS,
   type InstancePermission,
   type RoleDefinition,
+  type RolePermissions,
   SITE_ROLES,
   type SiteRole,
   slugify,
@@ -12,6 +13,7 @@ import { Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
+import { PermissionMatrix } from '@/components/permission-matrix'
 import { TablePagination } from '@/components/table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,9 +52,14 @@ import { api } from '@/lib/api'
 const NO_SITE_ROLE = 'none'
 
 /**
- * Instance roles. The four built-ins are shown read-only — their powers are fixed so nobody can
- * edit themselves out of control — and operators define their own beside them. A role can only be
- * given permissions the person defining it already holds, so the editor disables the rest.
+ * Roles, at both levels, because a person holds one role and it answers every question about them.
+ *
+ * The **deployment** half of a built-in is fixed in code so nobody can edit themselves out of
+ * control. Its **site** half — the matrix — is editable on every role including the built-ins
+ * (#151): "an editor may write but not delete" is the change operators come to make, and no edit
+ * to it can lock a deployment out, because an instance owner reaches every site without consulting
+ * a role at all. A role can only carry deployment permissions the person defining it already holds,
+ * so the editor disables the rest.
  */
 export function RolesPage() {
   const session = useSession()
@@ -97,7 +104,8 @@ export function RolesPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead className="w-32">Slug</TableHead>
-                  <TableHead>Permissions</TableHead>
+                  <TableHead>Deployment permissions</TableHead>
+                  <TableHead className="w-40">On a site</TableHead>
                   <TableHead className="w-28">Default site</TableHead>
                   <TableHead className="w-20" />
                 </TableRow>
@@ -137,31 +145,34 @@ export function RolesPage() {
                         </span>
                       )}
                     </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      <SiteMatrixSummary permissions={role.sitePermissions} />
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-sm capitalize">
                       {role.defaultSiteRole ?? 'All sites'}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        {/* A built-in is editable too now — its matrix is, and the dialog disables
+                            the deployment half rather than hiding the whole role behind a lock. */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Edit ${role.name}`}
+                          onClick={() => setEditing(role)}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
                         {!role.builtin && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Edit ${role.name}`}
-                              onClick={() => setEditing(role)}
-                            >
-                              <Pencil className="size-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`Delete ${role.name}`}
-                              disabled={remove.isPending}
-                              onClick={() => remove.mutate(role.slug)}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          </>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Delete ${role.name}`}
+                            disabled={remove.isPending}
+                            onClick={() => remove.mutate(role.slug)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
                         )}
                       </div>
                     </TableCell>
@@ -189,12 +200,23 @@ export function RolesPage() {
   )
 }
 
+/** Three counts rather than 29 badges — the matrix itself is one click away in the editor. */
+function SiteMatrixSummary({ permissions }: { permissions: RolePermissions }) {
+  if (permissions.site.length === 0) return <span>No site access</span>
+  return (
+    <span className="font-mono text-xs">
+      {permissions.site.length} · MCP {permissions.mcp.length} · keys {permissions.apiKey.length}
+    </span>
+  )
+}
+
 interface RoleForm {
   name: string
   slug: string
   description: string
   permissions: InstancePermission[]
   defaultSiteRole: SiteRole | typeof NO_SITE_ROLE
+  sitePermissions: RolePermissions
 }
 
 const emptyForm: RoleForm = {
@@ -203,6 +225,7 @@ const emptyForm: RoleForm = {
   description: '',
   permissions: [],
   defaultSiteRole: 'editor',
+  sitePermissions: { site: [], mcp: [], apiKey: [] },
 }
 
 /** Create-or-edit. A missing `role` is a create; slug is only editable then, being permanent after. */
@@ -231,6 +254,7 @@ function RoleDialog({
         description: role.description,
         permissions: role.permissions,
         defaultSiteRole: role.defaultSiteRole ?? NO_SITE_ROLE,
+        sitePermissions: role.sitePermissions,
       })
       setSlugEdited(true)
     } else {
@@ -243,12 +267,21 @@ function RoleDialog({
     mutationFn: async () => {
       const defaultSiteRole = form.defaultSiteRole === NO_SITE_ROLE ? null : form.defaultSiteRole
       if (role) {
-        return api.roles.update(role.slug, {
-          name: form.name,
-          description: form.description,
-          permissions: form.permissions,
-          defaultSiteRole,
-        })
+        // A built-in sends its matrix and nothing else: the API refuses any other field on one, and
+        // sending the values back unchanged would turn a refusal into a silent no-op if that ever
+        // stopped being true.
+        return api.roles.update(
+          role.slug,
+          role.builtin
+            ? { sitePermissions: form.sitePermissions }
+            : {
+                name: form.name,
+                description: form.description,
+                permissions: form.permissions,
+                defaultSiteRole,
+                sitePermissions: form.sitePermissions,
+              },
+        )
       }
       return api.roles.create({
         slug: form.slug,
@@ -256,9 +289,7 @@ function RoleDialog({
         description: form.description,
         permissions: form.permissions,
         defaultSiteRole,
-        // A new role reaches no site content until somebody says what it may do there. The matrix
-        // that says it is #157; this screen only edits the deployment half so far.
-        sitePermissions: { site: [], mcp: [], apiKey: [] },
+        sitePermissions: form.sitePermissions,
       })
     },
     onSuccess: () => {
@@ -271,7 +302,9 @@ function RoleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      {/* Wider than the default: the matrix is three column groups of five, and a dialog that
+          scrolls sideways to show them is a dialog nobody reads. */}
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <form
           onSubmit={(event) => {
             event.preventDefault()
@@ -281,17 +314,30 @@ function RoleDialog({
           <DialogHeader>
             <DialogTitle>{role ? `Edit ${role.name}` : 'New role'}</DialogTitle>
             <DialogDescription>
-              A role bundles the deployment permissions its holders get. You can only grant
-              permissions you hold yourself.
+              A role answers two questions: what its holders may do to the deployment, and what they
+              may do inside a site. You can only grant deployment permissions you hold yourself.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {role?.builtin && (
+              // Editing a built-in is new, and what it affects is not obvious from a dialog that
+              // looks like every other one: this is not a copy, it is the role everybody already
+              // holds. Nothing here can lock the deployment out — an instance owner reaches every
+              // site without a role — which is why the warning is a warning and not a refusal.
+              <p className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <strong>{role.name} is a built-in role.</strong> Its deployment permissions are
+                fixed, but what it may do on a site is yours to change — and the change applies to
+                everyone holding it, on every site, as soon as you save.
+              </p>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="role-name">Name</Label>
               <Input
                 id="role-name"
                 required
+                disabled={role?.builtin}
                 placeholder="Content manager"
                 value={form.name}
                 onChange={(event) => {
@@ -330,6 +376,7 @@ function RoleDialog({
               <Textarea
                 id="role-description"
                 rows={2}
+                disabled={role?.builtin}
                 placeholder="What this role is for."
                 value={form.description}
                 onChange={(event) =>
@@ -342,6 +389,7 @@ function RoleDialog({
               <Label htmlFor="role-default-site">Default site access</Label>
               <Select
                 value={form.defaultSiteRole}
+                disabled={role?.builtin}
                 onValueChange={(value) =>
                   setForm((current) => ({
                     ...current,
@@ -368,16 +416,34 @@ function RoleDialog({
             </div>
 
             <div className="space-y-3">
-              <Label>Permissions</Label>
+              <Label>What a holder may do on a site</Label>
+              <p className="text-muted-foreground text-xs">
+                MCP and API-key columns are what this role <em>delegates</em>: an agent acting as
+                somebody, and a key they issue. Neither can exceed the Site column, so tick that
+                first.
+              </p>
+              <PermissionMatrix
+                value={form.sitePermissions}
+                onChange={(sitePermissions) =>
+                  setForm((current) => ({ ...current, sitePermissions }))
+                }
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label>Deployment permissions</Label>
               {INSTANCE_PERMISSIONS.map((permission) => {
-                const canGrant = heldPermissions.includes(permission)
+                const canGrant = heldPermissions.includes(permission) && !role?.builtin
                 return (
                   <div key={permission} className="flex items-start justify-between gap-3 text-sm">
                     <Label htmlFor={`perm-${permission}`} className="font-normal">
                       <span className="font-mono text-xs">{permission}</span>
                       <span className="block text-muted-foreground text-xs">
                         {INSTANCE_PERMISSION_LABELS[permission]}
-                        {!canGrant && ' — you do not hold this permission'}
+                        {!canGrant &&
+                          (role?.builtin
+                            ? ' — fixed on a built-in role'
+                            : ' — you do not hold this permission')}
                       </span>
                     </Label>
                     <Switch

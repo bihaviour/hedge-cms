@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActiveSiteSlug, useHasSiteRole } from '@/hooks/use-site'
+import { useActiveSiteSlug, useSitePermission } from '@/hooks/use-site'
 import { ApiClientError, api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 
@@ -37,11 +37,12 @@ export function CollectionSettingsPage() {
 
   const siteSlug = useActiveSiteSlug()
 
-  // Editing the content model is site-admin work — `POST`, `PATCH` and `DELETE` on a collection all
-  // carry `requireSitePermission('collections:update')`. An editor may fill this collection but not reshape or delete
-  // it, so they are shown the fields rather than a button whose only answer is a 403 toast. The
-  // server check is what makes it true; this only keeps the UI from lying about it.
-  const canManage = useHasSiteRole('admin')
+  // Two controls, two permissions, because a role can now carry one without the other (#151):
+  // reshaping a collection is `collections:update` and destroying it and everything in it is
+  // `collections:delete`. Somebody who may do neither is shown the fields rather than buttons whose
+  // only answer is a 403 toast. The server check is what makes it true; this keeps the UI honest.
+  const canUpdate = useSitePermission('collections:update')
+  const canDelete = useSitePermission('collections:delete')
 
   const collection = useQuery({
     queryKey: ['collection', siteSlug, slug],
@@ -117,8 +118,8 @@ export function CollectionSettingsPage() {
         title={t('collections.settingsTitle', { name: collection.data?.name ?? slug })}
         description={t('collections.settingsDescription')}
         actions={
-          canManage && (
-            <>
+          <>
+            {canDelete && (
               <Button
                 variant="destructive"
                 disabled={remove.isPending}
@@ -129,11 +130,13 @@ export function CollectionSettingsPage() {
               >
                 {t('collections.delete')}
               </Button>
+            )}
+            {canUpdate && (
               <Button onClick={() => save.mutate()} disabled={save.isPending}>
                 Save changes
               </Button>
-            </>
-          )
+            )}
+          </>
         }
       />
 
@@ -141,7 +144,7 @@ export function CollectionSettingsPage() {
         {/* The page still renders in full for an editor — knowing the shape of a collection is
             ordinary content work. Only the two controls that write it are gone, so the notice says
             which access is missing rather than leaving a header that lost its buttons. */}
-        {!canManage && (
+        {!canUpdate && !canDelete && (
           <p className="rounded border p-3 text-muted-foreground text-sm">
             {t('collections.readOnly')}
           </p>

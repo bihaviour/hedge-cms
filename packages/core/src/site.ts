@@ -22,9 +22,14 @@ import { SITE_PERMISSIONS } from './site-permissions'
 export const SITE_HEADER = 'x-hedge-site'
 
 /**
- * Roles a user can hold *on one site*. `owner` is missing on purpose: it is an instance-level
- * role, and site-level `admin` already means full control of that site's content, keys and
- * members — it does not confer the right to add users or create sites.
+ * The site roles every deployment starts with. `owner` is missing on purpose: it is an
+ * instance-level role, and site-level `admin` already means full control of that site's content,
+ * keys and members — it does not confer the right to add users or create sites.
+ *
+ * Since #151 these are three **names for matrices**, not an ordering, and not the only ones: a
+ * deployment defines its own on Settings → Roles and assigns them here. Anywhere a grant's role
+ * crosses the wire it is therefore a plain slug; this list is what the UI offers first and what
+ * `approvalLevelForSiteRole` still derives a default approval level from.
  */
 export const SITE_ROLES = ['admin', 'editor', 'viewer'] as const
 export type SiteRole = (typeof SITE_ROLES)[number]
@@ -34,7 +39,8 @@ export const siteAccessSchema = z.object({
   siteId: z.string(),
   siteSlug: z.string(),
   siteName: z.string(),
-  role: z.enum(SITE_ROLES),
+  /** A role slug — one of `SITE_ROLES`, or one this deployment defined (#151). */
+  role: z.string(),
   /**
    * What this user may approve on this site, or `null` to derive it from their site role. Kept as a
    * column on the grant rather than a table of its own: approval is a *site* power, and this row
@@ -57,7 +63,7 @@ export type SiteAccess = z.infer<typeof siteAccessSchema>
  * for itself — but without it a viewer is offered buttons that can only answer 403.
  */
 export const siteAuthoritySchema = z.object({
-  role: z.enum(SITE_ROLES),
+  role: z.string(),
   approvalLevel: z.number().int().min(0).max(2),
   /**
    * What they may actually do, verb by verb (#151). The role slug above stays because the admin
@@ -71,7 +77,8 @@ export const siteAuthoritySchema = z.object({
 export type SiteAuthority = z.infer<typeof siteAuthoritySchema>
 
 export const setSiteRoleSchema = z.object({
-  role: z.enum(SITE_ROLES),
+  /** Any role this deployment defines, not just the three built-ins — the route checks it exists. */
+  role: slugSchema,
   /** Omitted leaves any existing override alone; `null` clears it back to the role's default. */
   approvalLevel: z.number().int().min(0).max(2).nullable().optional(),
 })

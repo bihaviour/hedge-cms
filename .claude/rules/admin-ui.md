@@ -30,19 +30,29 @@ synchronously while building headers — and mirrored to `localStorage`. Subscri
 - Pages live in `src/pages/`, one per route, wired in `src/App.tsx`. Routing there is gated in three
   stages: setup-required → signed-out (token flows and `/login` stay reachable, and the query string
   must survive, because an MCP authorization request is carried in it) → the authenticated shell.
-- Role gating in the UI uses `roleAtLeast` from `@hedge/core` — the same ordering the API enforces.
-  UI gating is cosmetic; the server check is the real one, and both must exist. The same goes for
+- Gating in the UI uses the same predicate the API does — `hasPermission` for instance powers,
+  `hasSitePermission` for site ones. `roleAtLeast` is the *instance* ordering only, and nothing in
+  the UI should compare site roles at all (#151). UI gating is cosmetic; the server check is the
+  real one, and both must exist. The same goes for
   approval authority: the version panel mirrors what `decideEntryVersion` would allow, so it never
   offers a button that 403s, but the server is what makes it true.
 - **Two authority levels, two sources.** Instance powers are on the session: `user.permissions`
   from `useSession`, a set-membership check (the sidebar gates on it). **Site** powers are not —
   the same person can be an admin on one site and a viewer on the next, so they come from
-  `useSiteAuthority` / `useHasSiteRole` in `hooks/use-site.ts`, one `GET /api/v1/access` per site,
+  `useSiteAuthority` / `useSitePermission` in `hooks/use-site.ts`, one `GET /api/v1/access` per site,
   keyed on the active slug. A control whose route carries `requireSitePermission` is gated with the
   second, never with `user.role` — that field is only the default someone was invited with, and
   reading it would hide controls the server would allow and show ones it would refuse. Since #151
   that answer carries a **permission set** beside the role slug: gate on the set, because the slug
   is a name and two deployments can define `editor` differently.
+- **The role matrix editor** (`components/permission-matrix.tsx`, #151) edits one role's three
+  columns — Site, MCP, API key — as a grid, and **a built-in role is editable there**: its
+  deployment permissions stay fixed in code, its site matrix does not. The dialog says what saving
+  one affects, because "this is the `editor` everybody already holds" is not obvious from a form
+  that looks like every other form. An MCP or API-key box is unavailable while its Site box is
+  unticked, and unticking a Site box clears the two beside it — `lib/permission-matrix.ts` is that
+  rule as a pure function, out of the component because this workspace has no DOM test setup and it
+  is the part worth pinning.
 - **Both catalogs, always.** `catalog.test.ts` fails when an English key has no Indonesian
   translation, or when the two disagree on `{placeholders}`. A key present in one and missing from
   the other degrades silently to English and can sit unnoticed for a release, which is why it is a

@@ -1,4 +1,4 @@
-import { approvalLevelForSiteRole, SITE_ROLES, type SiteRole, type User } from '@hedge/core'
+import { approvalLevelForSlug, type User } from '@hedge/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeySquare, Send, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
@@ -208,6 +208,15 @@ function SiteAccessDialog({
     enabled: Boolean(user),
   })
 
+  // Any role this deployment defined, not just the three built-in slugs (#151). A role that grants
+  // nothing on a site is left out — assigning it would read as access and behave as none — and so
+  // is `owner`, which is an instance role: granting it per site would be a second way of spelling
+  // `sites:access_all`, and `setUserSiteRole` refuses it anyway.
+  const roles = useQuery({ queryKey: ['roles'], queryFn: api.roles.list, enabled: Boolean(user) })
+  const siteRoles = (roles.data ?? []).filter(
+    (role) => role.slug !== 'owner' && role.sitePermissions.site.length > 0,
+  )
+
   const update = useMutation({
     mutationFn: async ({
       siteId,
@@ -215,7 +224,7 @@ function SiteAccessDialog({
       approvalLevel,
     }: {
       siteId: string
-      role: SiteRole | 'none'
+      role: string
       approvalLevel?: number | null
     }) => {
       if (role === 'none') await api.users.revokeSite(user!.id, siteId)
@@ -260,18 +269,16 @@ function SiteAccessDialog({
                     <Select
                       value={grant?.role ?? 'none'}
                       disabled={update.isPending}
-                      onValueChange={(role) =>
-                        update.mutate({ siteId: site.id, role: role as SiteRole | 'none' })
-                      }
+                      onValueChange={(role) => update.mutate({ siteId: site.id, role })}
                     >
                       <SelectTrigger className="h-8 w-36">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">No access</SelectItem>
-                        {SITE_ROLES.map((role) => (
-                          <SelectItem key={role} value={role} className="capitalize">
-                            {role}
+                        {siteRoles.map((role) => (
+                          <SelectItem key={role.slug} value={role.slug}>
+                            {role.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -302,7 +309,7 @@ function SiteAccessDialog({
                         <SelectContent>
                           <SelectItem value="inherit">
                             {t('users.approvalInherit', {
-                              level: approvalLevelForSiteRole(grant.role),
+                              level: approvalLevelForSlug(grant.role),
                             })}
                           </SelectItem>
                           <SelectItem value="0">{t('users.approvalNone')}</SelectItem>

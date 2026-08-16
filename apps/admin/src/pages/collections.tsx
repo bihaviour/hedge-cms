@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActiveSiteSlug, useHasSiteRole } from '@/hooks/use-site'
+import { useActiveSiteSlug, useSitePermission } from '@/hooks/use-site'
 import { api } from '@/lib/api'
 import { useT } from '@/lib/i18n'
 
@@ -33,9 +33,10 @@ export function CollectionsPage() {
   const t = useT()
   const [open, setOpen] = useState(false)
   const siteSlug = useActiveSiteSlug()
-  // Creating one is `requireSitePermission('collections:create')`, like reshaping and deleting one — see
-  // collection-settings.tsx. An editor sees the collections and none of the model-editing controls.
-  const canManage = useHasSiteRole('admin')
+  // Both controls this gates create a collection, so it asks for exactly that (#151) rather than
+  // for a role that happens to include it — a deployment can define one that creates but does not
+  // delete. Reshaping and deleting are gated separately in collection-settings.tsx.
+  const canCreate = useSitePermission('collections:create')
   const collections = useQuery({
     queryKey: ['collections', siteSlug],
     queryFn: api.collections.list,
@@ -48,7 +49,7 @@ export function CollectionsPage() {
         title={t('collections.title')}
         description={t('collections.subtitle')}
         actions={
-          canManage && (
+          canCreate && (
             <Button onClick={() => setOpen(true)}>
               <Plus className="size-4" />
               {t('collections.new')}
@@ -71,7 +72,7 @@ export function CollectionsPage() {
             title={t('collections.emptyTitle')}
             description={t('collections.emptyDescription')}
             action={
-              canManage && (
+              canCreate && (
                 <Button onClick={() => setOpen(true)}>{t('collections.emptyAction')}</Button>
               )
             }

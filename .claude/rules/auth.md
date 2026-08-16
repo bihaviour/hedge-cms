@@ -38,7 +38,10 @@ session actor. An approval is a statement by a person, and the credential that c
 most likely to be automated. That is a third check on top of the two below, deliberately.
 
 Approval authority itself is a *site* power, not an instance one: `site_users.approvalLevel`, per
-user per site, null meaning "derive from the site role" (`approvalLevelForSiteRole`). A user reaching
+user per site, null meaning "derive from the site role" (`approvalLevelForSiteRole`). It stayed a
+**level** when everything else became a matrix (#151), and a grant naming a *custom* role derives 0
+— there is no ladder position to read, and inventing approval authority out of "may edit entries"
+is the conflation this workflow exists to prevent. Set the level on the grant to give one. A user reaching
 a site through `sites:access_all` has no grant row and resolves to site admin, hence level 2 — by
 construction, not by exemption, which is the same shape the MCP owner case has.
 

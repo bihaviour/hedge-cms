@@ -152,10 +152,13 @@ describe('isValidTimeZone', () => {
 })
 
 describe('setSiteRoleSchema', () => {
-  test('accepts site roles but not owner — owner is an instance role', () => {
+  test('takes any role slug, because a deployment defines its own (#151)', () => {
     expect(setSiteRoleSchema.safeParse({ role: 'admin' }).success).toBe(true)
     expect(setSiteRoleSchema.safeParse({ role: 'viewer' }).success).toBe(true)
-    expect(setSiteRoleSchema.safeParse({ role: 'owner' }).success).toBe(false)
+    expect(setSiteRoleSchema.safeParse({ role: 'proofreader' }).success).toBe(true)
+    // It is a slug, not free text — and `owner` is refused by `setUserSiteRole` rather than here,
+    // because "is this a role, and is it a site one" needs the roles a deployment actually has.
+    expect(setSiteRoleSchema.safeParse({ role: 'Not A Slug' }).success).toBe(false)
   })
 })
 
