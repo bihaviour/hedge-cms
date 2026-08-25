@@ -46,61 +46,51 @@ export interface StoreUploadInput {
 }
 
 /**
- * What a metered upload learned on its way past: the head, for dimensions, and the true length.
+ * Reads a body to its end, counting as it goes, and refuses the moment it outgrows the cap.
  *
- * Both come out of the *stream*, not out of a header or a `File.size`, and that is the difference
- * that matters for a fetched URL: `content-length` is a claim by somebody else's server, and a
- * chunked response makes no claim at all.
+ * It holds the whole file, and that is not a shortcut taken over streaming — it is what R2 leaves
+ * available. **`put` will not accept a body whose length it cannot know**: anything that is not a
+ * request/response body or the readable half of a `FixedLengthStream` is rejected with
+ * `TypeError: Provided readable stream must have a known length`. Metering *is* a transform, so a
+ * metered body is exactly the shape R2 refuses, and the two cannot both be had for a body whose
+ * length nobody knows up front.
+ *
+ * Measuring is the half worth keeping. The size and the dimensions come out of the bytes that
+ * actually arrived, never out of a `content-length` — which is a claim by somebody else's server on
+ * the fetched-URL path, and no claim at all on a chunked response. That is the difference between a
+ * cap and a suggestion, and `MAX_UPLOAD_BYTES` against the isolate's 128 MB is what it costs.
+ *
+ * Refusing mid-read rather than after keeps the other half of that promise: an oversized body is
+ * dropped, and its source cancelled, before a byte of it has reached the bucket.
  */
-interface Metered {
-  head: Uint8Array
-  bytes: number
+async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_UPLOAD_BYTES) {
+      // Cancelling is what frees the connection a fetched URL is still holding open.
+      await reader.cancel().catch(() => {})
+      throw new ApiError('payload_too_large', `Files must be under ${MAX_UPLOAD_BYTES} bytes`)
+    }
+    chunks.push(value)
+  }
+
+  const joined = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    joined.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return joined
 }
 
 /**
- * Wraps a body so it can be measured while it streams, without ever holding the whole of it.
- *
- * Two jobs in one pass. It keeps the first `IMAGE_HEAD_BYTES` — which is all `readImageSize` reads,
- * whatever the file weighs — and it counts every byte, erroring the stream the moment the count
- * passes `MAX_UPLOAD_BYTES`. Erroring mid-stream is what makes the cap real rather than advisory:
- * the R2 write fails with it, so an oversized file cannot land and then be rejected afterwards.
- */
-function meter(body: ReadableStream<Uint8Array>, into: Metered): ReadableStream<Uint8Array> {
-  const head: Uint8Array[] = []
-  let headBytes = 0
-
-  return body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        into.bytes += chunk.byteLength
-        if (into.bytes > MAX_UPLOAD_BYTES) {
-          controller.error(
-            new ApiError('payload_too_large', `Files must be under ${MAX_UPLOAD_BYTES} bytes`),
-          )
-          return
-        }
-        if (headBytes < IMAGE_HEAD_BYTES) {
-          const take = chunk.subarray(0, IMAGE_HEAD_BYTES - headBytes)
-          head.push(take)
-          headBytes += take.byteLength
-        }
-        controller.enqueue(chunk)
-      },
-      flush() {
-        const joined = new Uint8Array(headBytes)
-        let offset = 0
-        for (const part of head) {
-          joined.set(part, offset)
-          offset += part.byteLength
-        }
-        into.head = joined
-      },
-    }),
-  )
-}
-
-/**
- * Streams a file into R2 and records it. The one place either upload path writes an object.
+ * Puts a file in R2 and records it. The one place either upload path writes an object.
  *
  * The content type is checked here rather than by each caller, so a source added later cannot skip
  * it — `upload_media` fetching an arbitrary URL is exactly the caller that would.
@@ -116,23 +106,28 @@ export async function storeUpload(
     throw new ApiError('unsupported_media_type', `Files of type "${contentType}" are not allowed`)
   }
 
+  // Read before a key exists: an oversized body is refused with nothing named after it, so there is
+  // no half-written object for the failure path to sweep up.
+  const bytes = await readCapped(input.body)
   const key = buildKey(site.slug, input.filename)
-  const metered: Metered = { head: new Uint8Array(), bytes: 0 }
 
   try {
-    await env.MEDIA.put(key, meter(input.body, metered), {
+    await env.MEDIA.put(key, bytes, {
       httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
     })
   } catch (error) {
-    // A body that tripped the cap failed *during* the write, so the object may be partly there.
-    // Nothing references it — no row was written — so it would sit in the bucket unreachable.
+    // Nothing references the key — no row is written until the put returns — so anything the failed
+    // write left behind would sit in the bucket unreachable.
     await env.MEDIA.delete(key).catch(() => {})
-    throw error instanceof ApiError
-      ? error
-      : new ApiError('internal_error', 'The upload could not be stored')
+    if (error instanceof ApiError) throw error
+    // The caller is told only that it failed, which is right; the operator is owed the reason, and
+    // without this line the bucket refusing every write is a 500 with no cause anywhere. It is how
+    // this function's last bug took a day to find.
+    console.error('[media] R2 put failed', key, error)
+    throw new ApiError('internal_error', 'The upload could not be stored')
   }
 
-  const size = readImageSize(metered.head)
+  const size = readImageSize(bytes.subarray(0, IMAGE_HEAD_BYTES))
 
   const [row] = await getDb(env)
     .insert(media)
@@ -142,7 +137,7 @@ export async function storeUpload(
       key,
       filename: input.filename || 'file',
       contentType,
-      size: metered.bytes,
+      size: bytes.byteLength,
       // Null for anything the reader does not recognise, which is what these columns already mean.
       width: size?.width ?? null,
       height: size?.height ?? null,
