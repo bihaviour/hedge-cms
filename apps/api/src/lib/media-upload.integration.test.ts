@@ -11,10 +11,11 @@ import type { Bindings } from '../env'
  * `storeUpload`, against a real SQLite built from the committed migrations and a stand-in R2.
  *
  * It is the one place either upload path writes an object, so what is pinned here is the part
- * neither caller can check for itself: the size is counted *from the stream*, not taken from a
- * header or a `File.size`, and a body that outgrows the cap mid-flight leaves neither a row nor an
- * object behind. A fetched URL has no trustworthy length, which is what makes that the difference
- * between a cap and a suggestion.
+ * neither caller can check for itself: the size is counted from the bytes that actually arrived, not
+ * taken from a header or a `File.size`, and a body that outgrows the cap is refused before a key is
+ * ever named. A fetched URL has no trustworthy length, which is what makes that the difference
+ * between a cap and a suggestion — and what forces the body into memory, since R2 will not take a
+ * stream whose length it cannot know.
  */
 
 let db: ReturnType<typeof drizzle>
@@ -49,7 +50,16 @@ function migrate(sqlite: Database) {
 
 const site = { id: 'site_1', slug: 'blog' }
 
-/** Records what reached the bucket, and honours the stream erroring part-way through. */
+/**
+ * Records what reached the bucket, and refuses what R2 itself refuses.
+ *
+ * The type check is the whole value of this stand-in, not decoration. R2's `put` takes bytes, a
+ * blob, or a stream *whose length it can know* — a request/response body, or the readable half of a
+ * `FixedLengthStream` — and throws `TypeError: Provided readable stream must have a known length`
+ * for anything else, a body piped through a `TransformStream` included. A fake that cheerfully
+ * drained whatever it was handed is exactly what let a metered upload ship green and then fail on
+ * every real request, with the reason swallowed into a 500. So this one throws what R2 throws.
+ */
 function bucket() {
   const objects = new Map<string, number>()
   const deleted: string[] = []
@@ -58,17 +68,14 @@ function bucket() {
     objects,
     deleted,
     binding: {
-      put: async (key: string, body: ReadableStream<Uint8Array>) => {
-        let bytes = 0
-        const reader = body.getReader()
-        // Reads to completion so an error raised mid-stream surfaces here, exactly as R2's own
-        // consumption of the body would surface it.
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          bytes += value.byteLength
+      put: async (key: string, body: unknown) => {
+        if (!(body instanceof Uint8Array)) {
+          throw new TypeError(
+            'Provided readable stream must have a known length ' +
+              '(request/response body or readable half of FixedLengthStream)',
+          )
         }
-        objects.set(key, bytes)
+        objects.set(key, body.byteLength)
       },
       delete: async (key: string) => {
         objects.delete(key)
@@ -199,7 +206,30 @@ describe('storeUpload', () => {
     expect(code).toBe('payload_too_large')
     expect(await db.select().from(media)).toHaveLength(0)
     expect(store.objects.size).toBe(0)
-    // The partial object is swept, not left unreachable in the bucket.
-    expect(store.deleted).toHaveLength(1)
+    // Refused while reading, before a key existed — so there is no partial object to sweep either.
+    expect(store.deleted).toHaveLength(0)
+  })
+
+  test('hands R2 a body it will accept, not a metered stream', async () => {
+    // The regression this file exists to stop. Counting bytes means transforming the body, and a
+    // transformed body is precisely the one shape R2 rejects — so the count has to come off bytes
+    // already read rather than off a pipe into the bucket. Chunked, because the fetched-URL path
+    // arrives that way and is where a declared length is least trustworthy.
+    const captured: unknown[] = []
+    const put = store.binding.put
+    store.binding.put = async (key: string, body: unknown) => {
+      captured.push(body)
+      return put(key, body)
+    }
+
+    const result = await storeUpload(env, site, {
+      body: chunked(40_000),
+      filename: 'clip.mp4',
+      contentType: 'video/mp4',
+    })
+
+    expect(captured[0]).toBeInstanceOf(Uint8Array)
+    expect((captured[0] as Uint8Array).byteLength).toBe(40_000)
+    expect(result.size).toBe(40_000)
   })
 })

@@ -27,7 +27,7 @@ export type UpdateMediaInput = z.infer<typeof updateMediaSchema>
  * Upper bound on an upload sent as base64 *inside* a request body, well below `MAX_UPLOAD_BYTES`.
  *
  * The MCP `upload_media` tool accepts two sources and they are deliberately not equals. A `url` is
- * fetched and streamed into R2 and costs a model's context window nothing, so it carries the full
+ * fetched by the Worker and costs a model's context window nothing, so it carries the full
  * 25 MB. Base64 arrives through the context window itself, at four bytes per three, and exists only
  * for content that has no URL because the model just produced it — a generated SVG, a small chart.
  * A cap low enough to make that the obvious reading is the point: the refusal above it names `url`.

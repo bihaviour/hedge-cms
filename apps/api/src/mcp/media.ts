@@ -18,8 +18,8 @@ import { defineTool } from './registry'
  * into R2 and that base64 through a context window is not a substitute. The second half of that is
  * still true and is why `data` is capped an order of magnitude below the REST limit — but it was
  * never an argument against uploading, only against one *transport* for it. The common case is a
- * URL, and a URL costs the context window nothing: the Worker fetches it and streams the body into
- * R2 exactly as the multipart route does, through the same `storeUpload`.
+ * URL, and a URL costs the context window nothing: the Worker fetches it and stores the body
+ * exactly as the multipart route does, through the same `storeUpload`.
  */
 /**
  * Turns the `data` argument into a stream `storeUpload` can consume.
